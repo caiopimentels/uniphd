@@ -1,0 +1,33 @@
+/* Folha do certificado: A4 deitada (297 x 210 mm). Fonte em "cqw" para
+   escalar junto com a folha em qualquer tamanho de tela. */
+.cert-folha { position: relative; width: 100%; aspect-ratio: 297 / 210; container-type: inline-size; background: #fff center / cover no-repeat;
+              font-family: Georgia, 'Times New Roman', serif; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
+.cert-campo { position: absolute; transform: translate(-50%, -50%); line-height: 1.35; white-space: normal; overflow-wrap: break-word; }
+.cert-uma-linha { white-space: nowrap; overflow: hidden; }
+/* Caixa com altura definida: conteúdo centralizado na vertical; o que não
+   couber tem a letra reduzida pelo certificado.js. */
+.cert-caixa { overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+.cert-caixa > .cert-conteudo { width: 100%; }
+.cert-imagem img { display: block; width: 100%; height: auto; }
+.cert-imagem.cert-caixa img { height: 100%; object-fit: contain; }
+.cert-modulos .cert-conteudo { column-gap: 4%; }
+/* Lista começa do alto da caixa, logo abaixo do título. */
+.cert-modulos.cert-caixa { justify-content: flex-start; }
+.cert-modulo { break-inside: avoid; padding: .15em 0; }
+.cert-qr { aspect-ratio: 1; background: #fff; }
+.cert-qr canvas { display: none !important; }
+.cert-qr img { display: block !important; width: 100% !important; height: auto !important; }
+.cert-pagina { background: #e9ecef; margin: 0; padding: 16px; min-height: 100vh; font-family: Arial, sans-serif; }
+.cert-barra { display: flex; gap: 8px; justify-content: center; margin-bottom: 12px; flex-wrap: wrap; }
+.cert-barra a, .cert-barra button { font: inherit; font-size: 14px; padding: 8px 16px; border-radius: 8px; border: 1px solid #999; background: #fff; color: #222; text-decoration: none; cursor: pointer; }
+.cert-barra .principal { background: #071f4a; border-color: #071f4a; color: #fff; }
+.cert-moldura { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+@media print {
+    @page { size: A4 landscape; margin: 0; }
+    .cert-pagina { background: #fff; padding: 0; }
+    .cert-barra { display: none; }
+    .cert-moldura { max-width: none; width: 297mm; }
+    .cert-moldura { gap: 0; }
+    .cert-folha { box-shadow: none; width: 297mm; height: 210mm; aspect-ratio: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; break-after: page; }
+    .cert-folha:last-child { break-after: auto; }
+}

@@ -1,0 +1,752 @@
+<title>Harmonize Prime — Manual Técnico</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root {
+  --navy: #071f4a;
+  --gold: #bd8206;
+  --gold-ink: #8a5e04;
+  --paper: #f5f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f6;
+  --code-bg: #0d1b33;
+  --code-ink: #d8e2f2;
+  --code-dim: #7f92b3;
+  --code-key: #e0a83a;
+  --code-str: #86c9a4;
+  --ink: #101828;
+  --ink-2: #2c3646;
+  --muted: #5c6779;
+  --line: #dde2ea;
+  --line-strong: #c3cbd8;
+  --ok: #1a7f4b;
+  --no: #b42318;
+  --warn: #9a6700;
+  --shadow: 0 1px 2px rgba(7, 31, 74, .06), 0 8px 24px rgba(7, 31, 74, .05);
+
+  --display: "Newsreader", Georgia, "Times New Roman", serif;
+  --body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --navy: #9fb6dd;
+    --gold: #e0a83a;
+    --gold-ink: #f0c368;
+    --paper: #0a1120;
+    --surface: #111b2d;
+    --surface-2: #17233a;
+    --code-bg: #060d1a;
+    --ink: #e8edf5;
+    --ink-2: #c6d0e0;
+    --muted: #8e9bb2;
+    --line: #22314c;
+    --line-strong: #33456a;
+    --ok: #4ec98a;
+    --no: #f28b82;
+    --warn: #e0b45c;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+  }
+}
+
+:root[data-theme="dark"] {
+  --navy: #9fb6dd;
+  --gold: #e0a83a;
+  --gold-ink: #f0c368;
+  --paper: #0a1120;
+  --surface: #111b2d;
+  --surface-2: #17233a;
+  --code-bg: #060d1a;
+  --ink: #e8edf5;
+  --ink-2: #c6d0e0;
+  --muted: #8e9bb2;
+  --line: #22314c;
+  --line-strong: #33456a;
+  --ok: #4ec98a;
+  --no: #f28b82;
+  --warn: #e0b45c;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .25);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--gold-ink); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 2px; }
+
+.shell {
+  display: grid;
+  grid-template-columns: 244px minmax(0, 1fr);
+  max-width: 1280px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+/* sidebar */
+.toc {
+  position: sticky; top: 0;
+  max-height: 100vh; overflow-y: auto;
+  padding: 34px 20px 40px 26px;
+  border-right: 1px solid var(--line);
+}
+.toc-brand { font-family: var(--display); font-size: 19px; font-weight: 600; line-height: 1.2; margin: 0; }
+.toc-sub { font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--gold-ink); font-weight: 500; margin: 4px 0 24px; }
+.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; display: flex; flex-direction: column; gap: 1px; }
+.toc li { counter-increment: toc; }
+.toc a { display: grid; grid-template-columns: 20px 1fr; gap: 7px; padding: 5px 8px 5px 0; font-size: 13.5px; color: var(--ink-2); text-decoration: none; border-radius: 4px; line-height: 1.35; }
+.toc a::before { content: counter(toc, decimal-leading-zero); font-family: var(--mono); font-size: 10px; color: var(--muted); padding-top: 3px; }
+.toc a:hover { color: var(--gold-ink); background: var(--surface-2); }
+
+/* content */
+main { padding: 34px 44px 90px; min-width: 0; }
+
+.masthead { border-bottom: 2px solid var(--navy); padding-bottom: 22px; }
+.eyebrow { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; font-weight: 500; color: var(--gold-ink); margin-bottom: 10px; }
+h1 { font-family: var(--display); font-weight: 500; font-size: clamp(29px, 4vw, 40px); line-height: 1.12; letter-spacing: -.015em; margin: 0 0 10px; text-wrap: balance; }
+.lede { font-size: 16.5px; color: var(--muted); max-width: 64ch; margin: 0; }
+
+section { padding-top: 46px; scroll-margin-top: 16px; }
+h2 { font-family: var(--display); font-weight: 600; font-size: 25px; line-height: 1.2; margin: 0; letter-spacing: -.01em; text-wrap: balance; }
+.h2-rule { height: 1px; background: var(--line); margin: 14px 0 22px; }
+h3 { font-size: 13.5px; font-weight: 700; letter-spacing: .02em; margin: 30px 0 10px; }
+h4 { font-family: var(--mono); font-size: 12.5px; font-weight: 500; letter-spacing: 0; margin: 22px 0 8px; color: var(--navy); }
+p { margin: 0 0 14px; max-width: 70ch; }
+main ul, main ol { max-width: 70ch; padding-left: 20px; }
+main li { margin-bottom: 6px; }
+
+code { font-family: var(--mono); font-size: .855em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; color: var(--ink-2); word-break: break-word; }
+
+pre {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  padding: 15px 18px;
+  margin: 16px 0;
+  overflow-x: auto;
+  border-radius: 4px;
+  max-width: 78ch;
+  tab-size: 4;
+}
+pre code { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; word-break: normal; }
+pre .c { color: var(--code-dim); }
+pre .k { color: var(--code-key); }
+pre .s { color: var(--code-str); }
+.pre-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 18px 0 -8px; }
+
+.note { background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--gold); padding: 14px 18px; margin: 20px 0; max-width: 70ch; box-shadow: var(--shadow); }
+.note.alerta { border-left-color: var(--no); }
+.note p:last-child { margin-bottom: 0; }
+.note-title { font-family: var(--mono); font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; font-weight: 700; color: var(--gold-ink); margin-bottom: 6px; }
+.note.alerta .note-title { color: var(--no); }
+
+.tbl-wrap { overflow-x: auto; margin: 18px 0 8px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { background: var(--surface-2); font-family: var(--mono); font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); font-weight: 500; white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+td code { background: transparent; border: 0; padding: 0; color: var(--navy); }
+.fn { font-family: var(--mono); font-size: 12px; color: var(--navy); white-space: nowrap; }
+
+.pill { display: inline-block; font-family: var(--mono); font-size: 10.5px; font-weight: 500; padding: 1.5px 7px; border-radius: 3px; border: 1px solid currentColor; white-space: nowrap; }
+.pill.ok { color: var(--ok); }
+.pill.no { color: var(--no); }
+.pill.mid { color: var(--warn); }
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 5px 20px; margin: 14px 0 18px; font-size: 14px; max-width: 70ch; }
+.kv dt { font-family: var(--mono); font-size: 12px; color: var(--navy); padding-top: 2px; }
+.kv dd { margin: 0; color: var(--ink-2); }
+
+/* fluxo bootstrap */
+.chain { display: flex; flex-direction: column; gap: 0; margin: 18px 0; max-width: 74ch; font-family: var(--mono); font-size: 12.5px; }
+.chain-item { display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr); gap: 16px; padding: 9px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+.chain-item:first-child { border-top: 1px solid var(--line); }
+.chain-item span:first-child { color: var(--navy); font-weight: 500; }
+.chain-item span:last-child { font-family: var(--body); font-size: 13.5px; color: var(--ink-2); }
+
+.receita { border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); padding: 18px 20px; margin: 18px 0; max-width: 74ch; }
+.receita h4 { margin-top: 0; }
+.receita ol { margin: 0; padding-left: 18px; font-size: 14px; }
+.receita ol li { margin-bottom: 8px; }
+.receita pre { margin: 10px 0; }
+
+.fim { margin-top: 60px; padding-top: 18px; border-top: 2px solid var(--navy); font-size: 12.5px; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .toc { position: static; max-height: none; border-right: 0; border-bottom: 1px solid var(--line); padding: 26px 24px 20px; }
+  .toc ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 14px; }
+  main { padding: 28px 24px 70px; }
+  .chain-item { grid-template-columns: 1fr; gap: 2px; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="shell">
+  <nav class="toc">
+    <div class="toc-brand">Harmonize Prime</div>
+    <div class="toc-sub">manual técnico</div>
+    <ol>
+      <li><a href="#stack">Stack e ambientes</a></li>
+      <li><a href="#bootstrap">Ciclo da requisição</a></li>
+      <li><a href="#anatomia">Anatomia de uma página</a></li>
+      <li><a href="#convencoes">Convenções de nomes</a></li>
+      <li><a href="#dados">Camada de dados</a></li>
+      <li><a href="#api">Referência da API interna</a></li>
+      <li><a href="#padroes">Padrões recorrentes</a></li>
+      <li><a href="#autorizacao">Auth e permissões</a></li>
+      <li><a href="#estoque">Domínio: estoque</a></li>
+      <li><a href="#financeiro">Domínio: financeiro</a></li>
+      <li><a href="#loja">Loja e o problema do docroot</a></li>
+      <li><a href="#uploads">Uploads e imagens</a></li>
+      <li><a href="#banco-de-dados">Banco de dados</a></li>
+      <li><a href="#receitas">Receitas de manutenção</a></li>
+      <li><a href="#debito">Armadilhas e débito técnico</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="masthead">
+      <div class="eyebrow">Documentação de manutenção · 09/2026</div>
+      <h1>Manual técnico do Harmonize Prime</h1>
+      <p class="lede">Como o código está organizado, quais contratos internos existem e onde encostar a mão para cada tipo de mudança. Escrito para quem vai dar manutenção — não para o usuário final.</p>
+    </header>
+
+    <!-- 1 -->
+    <section id="stack">
+      <h2>1. Stack e ambientes</h2>
+      <div class="h2-rule"></div>
+
+      <p>PHP 8 puro, sem framework e sem Composer. MySQL via PDO. No front, Bootstrap 5.3 e Bootstrap Icons pelo CDN, mais CSS e JS próprios em <code>public/assets/</code>. Não há build step: editou o arquivo, recarregou o navegador.</p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>Onde</th><th>Observação</th></tr></thead>
+          <tbody>
+            <tr><td>Credenciais do banco</td><td><code>config/config.php</code></td><td><strong>Fora do Git</strong> (<code>.gitignore</code>). Cada ambiente tem o seu.</td></tr>
+            <tr><td>Conexão PDO</td><td><code>config/database.php</code></td><td>Singleton estático, <code>ERRMODE_EXCEPTION</code>, <code>EMULATE_PREPARES=false</code>, fuso <code>-03:00</code> no MySQL.</td></tr>
+            <tr><td>Banco</td><td><code>DB_NAME</code> em <code>config/config.php</code></td><td>33 tabelas, InnoDB, utf8mb4. Estrutura em <code>sql/schema.sql</code>.</td></tr>
+            <tr><td>Fotos de produto</td><td><code>public/uploads/produtos/</code></td><td>Fora do Git. Precisa entrar no backup à parte.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note alerta">
+        <div class="note-title">Docroot: a diferença entre local e servidor</div>
+        <p>No servidor, o docroot aponta para <code>public/</code> — as URLs saem como <code>/produtos/listar.php</code>. Localmente você roda a partir da raiz do projeto, então as URLs viram <code>/public/produtos/listar.php</code>. É a origem de praticamente todo bug de link quebrado que apareceu até hoje. A loja já é imune a isso (seção 11); o painel <strong>ainda usa caminhos absolutos fixos</strong> e por isso só funciona corretamente com docroot em <code>public/</code>.</p>
+      </div>
+
+      <h4>Subir o ambiente local</h4>
+      <pre><code><span class="c"># docroot na raiz do projeto (URLs com /public/...)</span>
+php -S localhost:3000
+
+<span class="c"># docroot em public/ — igual ao servidor, recomendado</span>
+php -S localhost:3000 -t public</code></pre>
+    </section>
+
+    <!-- 2 -->
+    <section id="bootstrap">
+      <h2>2. Ciclo da requisição</h2>
+      <div class="h2-rule"></div>
+
+      <p>Toda página começa com <code>require_once .../includes/bootstrap.php</code>. Esse arquivo é o único ponto de entrada e faz, nesta ordem:</p>
+
+      <div class="chain">
+        <div class="chain-item"><span>session_set_cookie_params()</span><span>Cookie <code>httponly</code>, <code>samesite=Lax</code>, <code>secure</code> quando há HTTPS.</span></div>
+        <div class="chain-item"><span>session_start()</span><span>Com <code>use_strict_mode</code> ligado.</span></div>
+        <div class="chain-item"><span>header() × 4</span><span><code>X-Content-Type-Options</code>, <code>X-Frame-Options</code>, <code>Referrer-Policy</code> e HSTS sob HTTPS.</span></div>
+        <div class="chain-item"><span>config/database.php</span><span>Que por sua vez carrega <code>config/config.php</code>, define <code>APP_NAME</code> e <code>BASE_PATH</code>.</span></div>
+        <div class="chain-item"><span>helpers · auth · estoque</span><span>Funções utilitárias, autenticação e movimentação de estoque.</span></div>
+        <div class="chain-item"><span>imagens · financeiro · lotes</span><span>Miniaturas, contas a pagar/receber e controle FIFO.</span></div>
+        <div class="chain-item"><span>rate_limit</span><span>Contadores de tentativa de login e recuperação de senha.</span></div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">Ordem sutil que já causou confusão</div>
+        <p><code>database.php</code> faz <code>require config.php</code> na primeira linha, mas <code>config.php</code> chama <code>getDB()</code> no fim — função declarada em <code>database.php</code> logo abaixo do require. Funciona porque o PHP registra as funções de um arquivo na compilação, antes de executar qualquer linha dele. Consequência prática: <strong>não dá para incluir <code>config.php</code> isoladamente</strong> num script CLI; inclua sempre <code>database.php</code> (ou o <code>bootstrap.php</code>).</p>
+      </div>
+    </section>
+
+    <!-- 3 -->
+    <section id="anatomia">
+      <h2>3. Anatomia de uma página</h2>
+      <div class="h2-rule"></div>
+
+      <p>Toda tela do painel segue o mesmo esqueleto. Copiar uma tela existente é o caminho mais rápido para criar outra.</p>
+
+      <pre><code><span class="k">&lt;?php</span>
+require_once __DIR__ . <span class="s">'/../../includes/bootstrap.php'</span>;
+exigirLogin();
+exigirVendas();                      <span class="c">// permissão da tela</span>
+
+$pdo = getDB();
+<span class="c">// ... filtros vindos de $_GET, queries preparadas ...</span>
+
+$pageTitle      = <span class="s">'Pedidos de venda'</span>;   <span class="c">// &lt;title&gt; e H1</span>
+$pageBreadcrumb = <span class="s">'Vendas'</span>;             <span class="c">// linha acima do H1</span>
+$activeMenu     = <span class="s">'vendas'</span>;             <span class="c">// destaca o item do menu</span>
+$pageAction     = <span class="s">'&lt;a href="..." class="btn btn-brand"&gt;Incluir&lt;/a&gt;'</span>;
+
+require __DIR__ . <span class="s">'/../../includes/layout_header.php'</span>;
+<span class="k">?&gt;</span>
+
+<span class="c">&lt;!-- HTML da tela --&gt;</span>
+
+<span class="k">&lt;?php</span> require __DIR__ . <span class="s">'/../../includes/layout_footer.php'</span>; <span class="k">?&gt;</span></code></pre>
+
+      <p>As quatro variáveis <code>$page*</code> / <code>$activeMenu</code> são o contrato com o <code>layout_header.php</code>. Todas são opcionais — o header aplica <code>?? ''</code> em cada uma.</p>
+
+      <p>Páginas da loja usam o mesmo padrão, trocando <code>layout_header/footer</code> por <code>loja_header/footer</code> e sem nenhuma chamada <code>exigir*()</code>.</p>
+    </section>
+
+    <!-- 4 -->
+    <section id="convencoes">
+      <h2>4. Convenções de nomes</h2>
+      <div class="h2-rule"></div>
+
+      <p>Cada módulo é uma pasta em <code>public/</code> com os mesmos papéis de arquivo. Sabendo a convenção, você acha qualquer coisa sem procurar:</p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Arquivo</th><th>Papel</th><th>Método</th><th>Devolve</th></tr></thead>
+          <tbody>
+            <tr><td><code>listar.php</code></td><td>Listagem com filtros</td><td>GET</td><td>HTML</td></tr>
+            <tr><td><code>form.php</code></td><td>Criar e editar (mesmo arquivo, <code>?id=</code> decide)</td><td>GET + POST</td><td>HTML</td></tr>
+            <tr><td><code>visualizar.php</code></td><td>Tela de trabalho do pedido (itens, lançamentos)</td><td>GET</td><td>HTML</td></tr>
+            <tr><td><code>salvar.php</code></td><td>Grava e redireciona</td><td>POST</td><td>redirect</td></tr>
+            <tr><td><code>excluir.php</code></td><td>Remove e redireciona</td><td>POST</td><td>redirect</td></tr>
+            <tr><td><code>item_*.php</code></td><td>CRUD dos itens de um pedido</td><td>POST</td><td>redirect ou JSON</td></tr>
+            <tr><td><code>lancar_*.php</code></td><td>Efetiva estoque / financeiro / preço</td><td>POST</td><td>redirect ou JSON</td></tr>
+            <tr><td><code>estornar_*.php</code></td><td>Desfaz o lançamento correspondente</td><td>POST</td><td>redirect ou JSON</td></tr>
+            <tr><td><code>imprimir_*.php</code></td><td>Versão para impressão</td><td>GET</td><td>HTML</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Nomes de variáveis, funções e comentários são <strong>em português</strong>, sem acento em identificadores. Colunas do banco também. Mantenha o padrão — o código mistura mal quando entra inglês no meio.</p>
+    </section>
+
+    <!-- 5 -->
+    <section id="dados">
+      <h2>5. Camada de dados</h2>
+      <div class="h2-rule"></div>
+
+      <p>Não há ORM nem repositórios: cada página monta seu SQL. As regras não escritas, mas seguidas em todo o projeto:</p>
+
+      <ul>
+        <li><strong>Sempre <code>prepare()</code> + placeholders</strong> para qualquer valor vindo do usuário. <code>query()</code> só para SQL 100% estático.</li>
+        <li><strong>Filtros dinâmicos</strong> se montam acumulando em <code>$where</code> e <code>$params</code>, nunca concatenando valores.</li>
+        <li><strong>Transações</strong> em toda operação que toca mais de uma tabela, com <code>try/catch</code> e <code>rollBack()</code>.</li>
+        <li><strong><code>FOR UPDATE</code></strong> ao ler saldo de produto ou lote antes de alterar — evita corrida entre duas baixas simultâneas.</li>
+      </ul>
+
+      <pre><code>$where  = <span class="s">'1=1'</span>;
+$params = [];
+
+<span class="k">if</span> ($busca !== <span class="s">''</span>) {
+    $where .= <span class="s">' AND (p.codigo LIKE ? OR p.descricao LIKE ?)'</span>;
+    $like = <span class="s">'%'</span> . $busca . <span class="s">'%'</span>;
+    $params = [$like, $like];
+}
+
+$stmt = $pdo->prepare(<span class="s">"SELECT * FROM produtos p WHERE {$where} ORDER BY p.descricao"</span>);
+$stmt->execute($params);</code></pre>
+
+      <div class="note alerta">
+        <div class="note-title">Pegadinha do alias</div>
+        <p>Quando o <code>$where</code> usa alias (<code>p.codigo</code>), <strong>toda</strong> query que reaproveita esse <code>$where</code> precisa declarar o mesmo alias — inclusive o <code>SELECT COUNT(*)</code> da paginação. Como o PDO está em <code>ERRMODE_EXCEPTION</code>, esquecer isso derruba a página inteira com erro 500. Foi exatamente o bug da busca de produtos.</p>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="api">
+      <h2>6. Referência da API interna</h2>
+      <div class="h2-rule"></div>
+      <p>Tudo que <code>bootstrap.php</code> deixa disponível globalmente.</p>
+
+      <h4>includes/helpers.php</h4>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Função</th><th>Para quê</th></tr></thead>
+          <tbody>
+            <tr><td class="fn">e($valor)</td><td>Escapa HTML. <strong>Obrigatório</strong> em toda saída de dado do banco.</td></tr>
+            <tr><td class="fn">input($chave)</td><td>Lê <code>$_POST</code> com <code>trim</code>. Não sanitiza — a proteção é no <code>e()</code> da saída.</td></tr>
+            <tr><td class="fn">decimalInput($chave)</td><td>Converte “1.234,56” do formato BR para float.</td></tr>
+            <tr><td class="fn">formatMoney / formatQty / formatDate / formatDateTime / formatPercent</td><td>Formatação de saída no padrão BR.</td></tr>
+            <tr><td class="fn">redirect($path)</td><td><code>header('Location')</code> + <code>exit</code>.</td></tr>
+            <tr><td class="fn">flash($tipo, $msg) · getFlashes()</td><td>Mensagem que sobrevive ao redirect. Tipos: <code>success</code>, <code>danger</code>, <code>warning</code>.</td></tr>
+            <tr><td class="fn">ehRequisicaoAjax() · responderJson($dados)</td><td>Dupla que sustenta o padrão AJAX (seção 7).</td></tr>
+            <tr><td class="fn">lojaUrl($caminho) · publicUrl($caminho)</td><td>URLs resistentes a docroot (seção 11).</td></tr>
+            <tr><td class="fn">buscarConfiguracoes($pdo)</td><td>Linha única de <code>configuracoes</code>, com cache estático na requisição.</td></tr>
+            <tr><td class="fn">proximoNumero($pdo, $tabela)</td><td><code>MAX(numero)+1</code>. <strong>Interpola o nome da tabela</strong> — só passe literal.</td></tr>
+            <tr><td class="fn">recalcularTotalVenda / recalcularTotalCompra</td><td>Recalcula o cabeçalho a partir dos itens. Chamar após qualquer mexida em item.</td></tr>
+            <tr><td class="fn">validarCpf / validarCnpj / validarCpfCnpj</td><td>Validação de dígito verificador.</td></tr>
+            <tr><td class="fn">buscarClientePorTelefone($pdo, $tel)</td><td>Busca por telefone principal ou secundário, ignorando máscara.</td></tr>
+            <tr><td class="fn">linkWhatsapp($numero, $msg)</td><td>Monta URL <code>wa.me</code>.</td></tr>
+            <tr><td class="fn">contaStatusLabel / compraStatusLabel / lojaPedidoStatusLabel (+ …BadgeClass)</td><td>Rótulo e classe de badge por status.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>includes/estoque.php · lotes.php</h4>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Função</th><th>Para quê</th></tr></thead>
+          <tbody>
+            <tr><td class="fn">registrarMovimentacao($pdo, $produtoId, $tipo, $qtd, $origem, $origemId, $obs, $usuarioId, $permitirNegativo = false)</td><td><strong>Único</strong> caminho para alterar saldo. Bloqueia negativo salvo se o último parâmetro for <code>true</code>. Devolve o id da movimentação.</td></tr>
+            <tr><td class="fn">criarLoteEstoque(...)</td><td>Cria lote na entrada de compra ou ajuste.</td></tr>
+            <tr><td class="fn">consumirLoteFIFO($pdo, $produtoId, $qtd, $loteIdPreferencial, $permitirNegativo, $movimentacaoId)</td><td>Consome do lote mais antigo primeiro e registra o rastro em <code>movimentacao_lotes</code>.</td></tr>
+            <tr><td class="fn">estornarLotesDeCompra($pdo, $compraId)</td><td>Zera os lotes criados por uma compra. Nunca lança exceção.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>includes/financeiro.php</h4>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Função</th><th>Para quê</th></tr></thead>
+          <tbody>
+            <tr><td class="fn">criarContaReceberDeVenda($pdo, $venda, $forma, $usuarioId)</td><td>À vista nasce <code>pago</code> com data de recebimento; a prazo nasce <code>pendente</code>.</td></tr>
+            <tr><td class="fn">criarContaPagarDeCompra($pdo, $compra, $forma, $usuarioId)</td><td>Gera uma conta por parcela; a última absorve o arredondamento.</td></tr>
+            <tr><td class="fn">cancelarContasDeVenda / cancelarContasDeCompra</td><td>Marca as contas do pedido como <code>cancelado</code>.</td></tr>
+            <tr><td class="fn">saldoDevedorCliente($pdo, $clienteId)</td><td>Soma das contas a receber pendentes — base do limite de crédito.</td></tr>
+            <tr><td class="fn">calcularDRE($pdo, $ini, $fim)</td><td>Regime de competência, por data de venda/emissão.</td></tr>
+            <tr><td class="fn">calcularFluxoCaixa($pdo, $ini, $fim)</td><td>Regime de caixa, por data de recebimento/pagamento. Datas vazias = sem limite.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h4>includes/imagens.php · rate_limit.php · smtp_mailer.php</h4>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Função</th><th>Para quê</th></tr></thead>
+          <tbody>
+            <tr><td class="fn">caminhoMiniaturaFoto($caminho, $larguraMax = 400)</td><td>Devolve o caminho da miniatura, gerando-a se não existir. Cai no original se o GD faltar.</td></tr>
+            <tr><td class="fn">limiteDeTentativasExcedido($pdo, $tipo, $ident, $maxIdent, $maxIp, $minutos)</td><td>Retorna <code>true</code> se estourou por identificador <em>ou</em> por IP.</td></tr>
+            <tr><td class="fn">registrarTentativaAcesso · limparTentativasAcesso</td><td>Contabiliza a tentativa / limpa após sucesso.</td></tr>
+            <tr><td class="fn">enviarEmail($config, $para, $nome, $assunto, $html)</td><td>SMTP na unha (sem PHPMailer). Devolve <code>['sucesso' =&gt; bool, 'mensagem' =&gt; string]</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section id="padroes">
+      <h2>7. Padrões recorrentes</h2>
+      <div class="h2-rule"></div>
+
+      <h3>Endpoint que serve AJAX e POST comum</h3>
+      <p>Usado em todos os <code>lancar_*</code>, <code>estornar_*</code> e <code>item_*</code>. O mesmo arquivo responde JSON quando chamado por <code>fetch</code> e redireciona com flash quando veio de um form.</p>
+
+      <pre><code>$ajax = ehRequisicaoAjax();   <span class="c">// header X-Requested-With</span>
+
+<span class="k">function</span> falhar(<span class="k">bool</span> $ajax, <span class="k">int</span> $id, <span class="k">string</span> $msg): <span class="k">void</span> {
+    <span class="k">if</span> ($ajax) responderJson([<span class="s">'sucesso'</span> =&gt; <span class="k">false</span>, <span class="s">'mensagem'</span> =&gt; $msg]);
+    flash(<span class="s">'danger'</span>, $msg);
+    redirect(<span class="s">'/vendas/visualizar.php?id='</span> . $id);
+}
+
+<span class="k">try</span> {
+    $pdo-&gt;beginTransaction();
+    <span class="c">// ... trabalho ...</span>
+    $pdo-&gt;commit();
+    <span class="k">if</span> ($ajax) responderJson([<span class="s">'sucesso'</span> =&gt; <span class="k">true</span>]);
+    flash(<span class="s">'success'</span>, <span class="s">'Feito.'</span>);
+} <span class="k">catch</span> (Throwable $e) {
+    $pdo-&gt;rollBack();
+    falhar($ajax, $id, <span class="s">'Erro: '</span> . $e-&gt;getMessage());
+}</code></pre>
+
+      <h3>Filtro de período reutilizável</h3>
+      <p><code>includes/filtro_periodo.php</code> é um partial com contrato explícito: precisa de <code>$dataInicio</code> e <code>$dataFim</code> (strings <code>Y-m-d</code> ou vazias) no escopo, e <strong>tem que estar dentro de um <code>&lt;form method="get"&gt;</code></strong>. Ele injeta dois <code>&lt;input type="hidden"&gt;</code> e o JS de <code>public/assets/js/filtro-periodo.js</code> preenche esses campos e chama <code>form.submit()</code> — por isso qualquer outro filtro precisa estar no mesmo form para não se perder.</p>
+
+      <pre><code>&lt;form method="get"&gt;
+    &lt;select name="status" onchange="this.form.submit()"&gt;…&lt;/select&gt;
+    <span class="k">&lt;?php</span> require __DIR__ . <span class="s">'/../../includes/filtro_periodo.php'</span>; <span class="k">?&gt;</span>
+&lt;/form&gt;</code></pre>
+
+      <p><strong>Use sempre esse componente</strong> em qualquer tela nova com data. O DRE ainda usa selects de mês/ano próprios — é o único fora do padrão.</p>
+
+      <h3>Filtro que lembra o último estado</h3>
+      <p>Telas cujo filtro tem default diferente de “tudo” guardam o estado em sessão, senão o acesso pelo menu (sem querystring) reseta a escolha do usuário. Adotado em contas a pagar, contas a receber e fluxo de caixa:</p>
+
+      <pre><code>$_SESSION[<span class="s">'filtro_contas_receber'</span>] ??= [<span class="s">'status'</span> =&gt; <span class="s">'pendente'</span>, <span class="s">'data_inicio'</span> =&gt; <span class="s">''</span>, <span class="s">'data_fim'</span> =&gt; <span class="s">''</span>];
+
+<span class="k">if</span> (isset($_GET[<span class="s">'status'</span>]) || isset($_GET[<span class="s">'data_inicio'</span>]) || isset($_GET[<span class="s">'data_fim'</span>])) {
+    $_SESSION[<span class="s">'filtro_contas_receber'</span>] = [
+        <span class="s">'status'</span>      =&gt; $_GET[<span class="s">'status'</span>]      ?? <span class="s">''</span>,
+        <span class="s">'data_inicio'</span> =&gt; $_GET[<span class="s">'data_inicio'</span>] ?? <span class="s">''</span>,
+        <span class="s">'data_fim'</span>    =&gt; $_GET[<span class="s">'data_fim'</span>]    ?? <span class="s">''</span>,
+    ];
+}
+$status = $_SESSION[<span class="s">'filtro_contas_receber'</span>][<span class="s">'status'</span>];</code></pre>
+
+      <p>Detalhe que faz funcionar: o form envia <strong>todos</strong> os campos juntos, então basta um <code>isset()</code> em qualquer um deles para saber que veio de um submit real, e não de navegação pelo menu.</p>
+    </section>
+
+    <!-- 8 -->
+    <section id="autorizacao">
+      <h2>8. Auth e permissões</h2>
+      <div class="h2-rule"></div>
+
+      <p>A sessão do painel guarda <code>user_id</code>, <code>user_administrador</code>, o array <code>user_permissoes</code> e um <code>token_sessao</code>. <code>exigirLogin()</code> valida os três pontos a cada requisição: sessão existe, token bate com o do banco (sessão única) e não estourou o timeout.</p>
+
+      <div class="kv">
+        <dt>exigirLogin()</dt><dd>Só exige estar logado.</dd>
+        <dt>exigirAdmin()</dt><dd>Exige perfil administrador. Usado em Configurações, Usuários e Perfis.</dd>
+        <dt>exigirPermissao($chave, $msg)</dt><dd>Base genérica; quem falha vai para <code>/sem_acesso.php</code>.</dd>
+        <dt>exigirVendas() etc.</dt><dd>Atalhos por módulo: <code>exigirCompras</code>, <code>exigirEstoque</code>, <code>exigirProdutos</code>, <code>exigirClientes</code>, <code>exigirFornecedores</code>, <code>exigirFormasPagamento</code>, <code>exigirFinanceiro</code>, <code>exigirDRE</code>, <code>exigirRelatorioVendas</code>, <code>exigirLojaPedidos</code>, <code>exigirDashboard</code>.</dd>
+      </div>
+
+      <p><code>usuarioTemPermissao()</code> devolve <code>true</code> automaticamente para administradores — <strong>perfil admin nunca precisa ter as permissões marcadas</strong> na tabela de junção.</p>
+
+      <div class="note">
+        <div class="note-title">Sempre nos dois lugares</div>
+        <p>Esconder o item no menu (<code>layout_header.php</code>) <strong>não protege nada</strong> — é só cosmético. A proteção real é a chamada <code>exigir*()</code> no topo do arquivo. Toda tela nova precisa das duas.</p>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section id="estoque">
+      <h2>9. Domínio: estoque</h2>
+      <div class="h2-rule"></div>
+
+      <p>O modelo central do sistema é o de <strong>lançamento reversível</strong>: digitar o pedido não movimenta nada; o efeito só acontece no <code>lancar_*</code> e é desfeito no <code>estornar_*</code>. O estado fica gravado nas colunas de data do cabeçalho:</p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Coluna</th><th>Em</th><th>Significa</th></tr></thead>
+          <tbody>
+            <tr><td><code>estoque_lancado_em</code></td><td>vendas, compras</td><td>Estoque já movimentado. <code>NULL</code> após estorno.</td></tr>
+            <tr><td><code>financeiro_lancado_em</code></td><td>vendas, compras</td><td>Contas já geradas.</td></tr>
+            <tr><td><code>preco_lancado_em</code></td><td>compras</td><td>Preço de venda já atualizado. <strong>Repetível</strong>, ao contrário dos outros.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Regras que valem para qualquer código novo</h3>
+      <ul>
+        <li>Nunca faça <code>UPDATE produtos SET estoque_atual</code> direto. Use <code>registrarMovimentacao()</code>, que grava saldo anterior e posterior em <code>movimentacoes_estoque</code>.</li>
+        <li>Entrada de mercadoria também cria lote (<code>criarLoteEstoque</code>); saída também consome lote (<code>consumirLoteFIFO</code>). Manter os dois em sincronia é responsabilidade de quem chama.</li>
+        <li>O flag de estoque negativo vem de <code>buscarConfiguracoes($pdo)['permite_estoque_negativo']</code> e é repassado como último argumento. Governa tanto a venda sem saldo quanto o estorno de compra já vendida.</li>
+      </ul>
+    </section>
+
+    <!-- 10 -->
+    <section id="financeiro">
+      <h2>10. Domínio: financeiro</h2>
+      <div class="h2-rule"></div>
+
+      <p>Duas tabelas espelhadas — <code>contas_receber</code> (vendas) e <code>contas_pagar</code> (compras) — com a mesma forma: <code>valor</code>, <code>data_emissao</code>, <code>data_vencimento</code>, <code>status</code> e a data de baixa. A diferença de nome da data de baixa é fonte recorrente de erro:</p>
+
+      <div class="kv">
+        <dt>contas_receber</dt><dd><code>data_recebimento</code></dd>
+        <dt>contas_pagar</dt><dd><code>data_pagamento</code></dd>
+      </div>
+
+      <p>O que decide se a conta nasce baixada é <code>formas_pagamento.modalidade</code>: <code>avista</code> nasce <code>pago</code> com a data preenchida; <code>aprazo</code> nasce <code>pendente</code>. Contas com <code>venda_id</code>/<code>compra_id</code> nulos são lançamentos avulsos — são só esses que o DRE agrupa por categoria.</p>
+
+      <h3>Competência × caixa</h3>
+      <p>São dois cortes diferentes da mesma base, e não devem bater:</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Relatório</th><th>Fonte</th><th>Data usada</th></tr></thead>
+          <tbody>
+            <tr><td><code>calcularDRE</code></td><td><code>vendas</code> + <code>vendas_itens</code> (CMV pelo <code>custo_unitario</code> congelado no item) + contas avulsas</td><td><code>data_venda</code> / <code>data_emissao</code></td></tr>
+            <tr><td><code>calcularFluxoCaixa</code></td><td>contas com <code>status = 'pago'</code></td><td><code>data_recebimento</code> / <code>data_pagamento</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>O fluxo de caixa calcula o saldo inicial somando tudo que foi baixado <em>antes</em> do início do período, junta entradas e saídas em PHP, ordena por data (desempate por <code>criado_em</code>) e acumula o saldo linha a linha.</p>
+    </section>
+
+    <!-- 11 -->
+    <section id="loja">
+      <h2>11. Loja e o problema do docroot</h2>
+      <div class="h2-rule"></div>
+
+      <p>A loja pode ser servida de três formas, e o código não sabe qual está em uso:</p>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Cenário</th><th>URL da vitrine</th><th>Prefixo necessário</th></tr></thead>
+          <tbody>
+            <tr><td>Docroot em <code>public/</code></td><td><code>/loja/index.php</code></td><td><code>/loja</code></td></tr>
+            <tr><td>Domínio próprio em <code>public/loja/</code></td><td><code>/index.php</code></td><td>vazio</td></tr>
+            <tr><td>Docroot na raiz do projeto</td><td><code>/public/loja/index.php</code></td><td><code>/public/loja</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Por isso <strong>nenhuma URL da loja pode ser escrita fixa</strong>. Dois helpers resolvem em tempo de execução:</p>
+
+      <div class="kv">
+        <dt>lojaUrl($caminho)</dt><dd>Para links entre páginas da loja. Usa <code>dirname($_SERVER['SCRIPT_NAME'])</code> — como todas as páginas da loja vivem na mesma pasta, o diretório do script atual <em>é</em> a raiz da loja.</dd>
+        <dt>publicUrl($caminho)</dt><dd>Para assets e uploads. Compara o caminho em disco do script com o de <code>public/</code> e subtrai o sufixo comum da URL, achando o prefixo que aponta para <code>public/</code>.</dd>
+      </div>
+
+      <pre><code>&lt;a href="<span class="k">&lt;?=</span> e(lojaUrl(<span class="s">'/carrinho.php'</span>)) <span class="k">?&gt;</span>"&gt;Carrinho&lt;/a&gt;
+&lt;img src="<span class="k">&lt;?=</span> e(publicUrl($foto)) <span class="k">?&gt;</span>"&gt;
+redirect(lojaUrl(<span class="s">'/index.php'</span>));</code></pre>
+
+      <div class="note">
+        <div class="note-title">Limite conhecido</div>
+        <p>Se o docroot apontar direto para <code>public/loja/</code>, os assets em <code>public/assets/</code> ficam fora do docroot e nenhum código resolve isso — precisa de symlink ou alias no servidor. O painel administrativo, por sua vez, ainda usa caminhos fixos (<code>/produtos/...</code>) e não passou por esse tratamento.</p>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="uploads">
+      <h2>12. Uploads e imagens</h2>
+      <div class="h2-rule"></div>
+
+      <p>Dois fluxos de upload: fotos de produto (<code>produtos/form.php</code>, até 10 por produto, 5 MB cada) e logo do sistema (<code>configuracoes/form.php</code>, 2 MB). Ambos seguem o mesmo roteiro de validação, que <strong>deve ser copiado em qualquer upload novo</strong>:</p>
+
+      <ol>
+        <li>Checar <code>$_FILES[...]['error']</code> e o tamanho.</li>
+        <li>Detectar o MIME real com <code>finfo(FILEINFO_MIME_TYPE)</code> — nunca confiar na extensão enviada.</li>
+        <li>Aceitar só <code>image/jpeg</code>, <code>image/png</code>, <code>image/webp</code>.</li>
+        <li>Gerar o nome com <code>bin2hex(random_bytes(16))</code> e <strong>forçar a extensão a partir do MIME detectado</strong>. É isso que impede subir um <code>.php</code> disfarçado.</li>
+        <li>Gravar no banco o caminho relativo (<code>/uploads/produtos/{id}/arquivo.jpg</code>) e, se o <code>INSERT</code> falhar, apagar o arquivo.</li>
+      </ol>
+
+      <p>As miniaturas são geradas sob demanda por <code>caminhoMiniaturaFoto()</code> — na primeira exibição, com GD, salvas em <code>thumbs/</code> ao lado do original, preservando transparência e o formato de origem. Apagar a pasta <code>thumbs/</code> é seguro: regenera sozinha.</p>
+    </section>
+
+    <!-- 13 -->
+    <section id="banco-de-dados">
+      <h2>13. Banco de dados (schema único)</h2>
+      <div class="h2-rule"></div>
+
+      <p><code>sql/schema.sql</code> é o <strong>único</strong> arquivo de inicialização: cria todas as tabelas já na estrutura final, com os dados iniciais (configuração id=1, perfis, permissões, usuário admin, formas de pagamento, tipos e status de pedido). O histórico de migrações (002 a 035) foi consolidado nele e removido.</p>
+
+      <p>O arquivo não cria nem apaga banco, porque o nome muda por instalação (<code>DB_NAME</code> em <code>config/config.php</code>):</p>
+
+      <pre><code>mysql -u root -e "CREATE DATABASE nome_do_banco CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+mysql -u root nome_do_banco &lt; sql/schema.sql</code></pre>
+
+      <p>Ao mudar a estrutura: edite <code>schema.sql</code> (instalações novas) e aplique o <code>ALTER TABLE</code> equivalente à mão nos bancos existentes (local e servidor).</p>
+    </section>
+
+    <!-- 14 -->
+    <section id="receitas">
+      <h2>14. Receitas de manutenção</h2>
+      <div class="h2-rule"></div>
+
+      <div class="receita">
+        <h4>Adicionar uma tela nova</h4>
+        <ol>
+          <li>Crie a pasta em <code>public/</code> seguindo a convenção da seção 4.</li>
+          <li>Copie o esqueleto da seção 3, trocando a chamada <code>exigir*()</code>.</li>
+          <li>Registre no array <code>$menus</code> de <code>includes/layout_header.php</code>: <code>['Rótulo', '/caminho.php', permissao(), 'chave-activemenu']</code>. Um quinto elemento <code>true</code> abre em nova aba.</li>
+          <li>Use a mesma <code>'chave-activemenu'</code> na variável <code>$activeMenu</code> da página.</li>
+        </ol>
+      </div>
+
+      <div class="receita">
+        <h4>Criar uma permissão nova</h4>
+        <ol>
+          <li>Inserir em <code>permissoes</code> (<code>chave</code> + <code>descricao</code>) no <code>schema.sql</code> e, à mão, nos bancos existentes.</li>
+          <li>Em <code>includes/auth.php</code>, adicione o par de funções seguindo o padrão:</li>
+        </ol>
+        <pre><code><span class="k">function</span> usuarioPodeVerX(): <span class="k">bool</span> {
+    <span class="k">return</span> usuarioTemPermissao(<span class="s">'ver_x'</span>);
+}
+<span class="k">function</span> exigirX(): <span class="k">void</span> {
+    exigirPermissao(<span class="s">'ver_x'</span>, <span class="s">'Seu perfil não tem acesso a X.'</span>);
+}</code></pre>
+        <ol start="3">
+          <li>Chame <code>exigirX()</code> na tela e use <code>usuarioPodeVerX()</code> no menu.</li>
+          <li>A tela de Perfis lista as permissões direto do banco — não precisa mexer nela.</li>
+        </ol>
+      </div>
+
+      <div class="receita">
+        <h4>Adicionar um campo em Configurações</h4>
+        <ol>
+          <li>Coluna nova em <code>configuracoes</code> no <code>schema.sql</code> + <code>ALTER TABLE configuracoes ADD COLUMN ...</code> nos bancos existentes.</li>
+          <li>Em <code>configuracoes/form.php</code>, o campo precisa aparecer em <strong>três</strong> lugares: leitura do <code>$_POST</code>, o <code>UPDATE</code> e o array do <code>execute()</code> — na mesma ordem — e o input no HTML.</li>
+          <li>Consuma com <code>buscarConfiguracoes($pdo)['sua_coluna']</code>.</li>
+        </ol>
+      </div>
+
+      <div class="receita">
+        <h4>Criar um relatório novo</h4>
+        <ol>
+          <li>Função de cálculo em <code>includes/financeiro.php</code> (ou include próprio), recebendo <code>$pdo, $dataInicio, $dataFim</code> e devolvendo array — sem HTML dentro.</li>
+          <li>Página em <code>public/financeiro/</code> só com filtro, chamada da função e a tabela.</li>
+          <li>Filtro de data: <strong>sempre</strong> o <code>filtro_periodo.php</code> (seção 7), nunca inputs de data próprios.</li>
+          <li>Persistir o período em sessão, como faz o <code>fluxo_caixa.php</code>.</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- 15 -->
+    <section id="debito">
+      <h2>15. Armadilhas e débito técnico</h2>
+      <div class="h2-rule"></div>
+
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>Situação</th><th>Impacto</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Login da loja só por telefone</td>
+              <td>Sem senha, sem código de confirmação e <strong>sem rate limit</strong> — <code>rate_limit.php</code> existe mas não é chamado nesse fluxo.</td>
+              <td><span class="pill no">Alto</span> Quem souber o telefone vê pedidos, endereço e finaliza compra no nome do cliente.</td>
+            </tr>
+            <tr>
+              <td>Sem token CSRF</td>
+              <td>Nenhum form tem token; a defesa é só o cookie <code>SameSite=Lax</code>.</td>
+              <td><span class="pill mid">Médio</span> Mitigado em navegadores atuais, mas não é defesa em profundidade.</td>
+            </tr>
+            <tr>
+              <td>Painel com URLs fixas</td>
+              <td>Só a loja usa <code>lojaUrl</code>/<code>publicUrl</code>.</td>
+              <td><span class="pill mid">Médio</span> O painel só funciona com docroot em <code>public/</code>.</td>
+            </tr>
+            <tr>
+              <td>DRE fora do padrão de filtro</td>
+              <td>Usa selects de mês/ano em vez do <code>filtro_periodo.php</code>.</td>
+              <td><span class="pill mid">Baixo</span> Inconsistência de UX.</td>
+            </tr>
+            <tr>
+              <td>Senha mínima divergente</td>
+              <td>4 caracteres em <code>minha_conta.php</code>, 6 em <code>redefinir_senha.php</code>.</td>
+              <td><span class="pill mid">Baixo</span> Política inconsistente.</td>
+            </tr>
+            <tr>
+              <td>Sem <code>.htaccess</code> em <code>uploads/</code></td>
+              <td>Nada impede execução de PHP na pasta, caso um arquivo chegue lá.</td>
+              <td><span class="pill mid">Baixo</span> A validação de upload já bloqueia o vetor conhecido.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Erros que já apareceram e o motivo</h3>
+      <div class="kv">
+        <dt>“Estoque insuficiente” ao estornar compra</dt><dd>Estorno é uma saída; se a mercadoria já foi vendida, o saldo iria a negativo. Depende do flag de configuração.</dd>
+        <dt>Busca de produtos com erro 500</dt><dd><code>SELECT COUNT(*)</code> sem o alias que o <code>$where</code> usava.</dd>
+        <dt>Loja com todos os links quebrados</dt><dd>URLs fixas sem o prefixo do docroot — resolvido por <code>lojaUrl</code>/<code>publicUrl</code>.</dd>
+        <dt>Filtro voltando para “Pendentes”</dt><dd>Sem querystring, o default do PHP reassumia. Resolvido persistindo em sessão.</dd>
+      </div>
+    </section>
+
+    <div class="fim">
+      Levantado a partir do código-fonte de <code>sistema_dy</code> em 09/09/2026 — <code>public/</code> (93 arquivos), <code>includes/</code> (16 arquivos), 19 migrações e 27 tabelas.
+    </div>
+  </main>
+</div>

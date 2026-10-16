@@ -1,0 +1,20 @@
+:root { --azul:#071f4a; --ouro:#bd8206; }
+* { box-sizing:border-box; }
+body { margin:0; color:#212529; background:#e9edf2; font-family:Arial,Helvetica,sans-serif; }
+.toolbar { padding:12px; text-align:center; }
+.toolbar button { border:0; border-radius:7px; padding:10px 22px; color:#fff; background:var(--azul); font-weight:700; cursor:pointer; }
+.relatorio { width:210mm; min-height:297mm; margin:0 auto 18px; padding:14mm; background:#fff; }
+.relatorio h1 { margin:0 0 2mm; color:var(--azul); font-size:20px; }
+.relatorio-meta { margin:0 0 8mm; color:#6c757d; font-size:11px; }
+.relatorio table { width:100%; border-collapse:collapse; font-size:11px; }
+.relatorio thead th { padding:2.5mm 3mm; text-align:left; color:#fff; background:var(--azul); border-right:1px solid #ffffff33; }
+.relatorio thead th:last-child { border-right:0; }
+.relatorio tbody td { padding:2mm 3mm; border-bottom:1px solid #e0e0e0; }
+.relatorio tfoot td { padding:3mm; font-weight:700; background:#f1ecdb; border-top:2px solid var(--ouro); }
+.text-end { text-align:right; }
+@page { size:A4 portrait; margin:0; }
+@media print {
+    body { background:#fff; }
+    .toolbar { display:none; }
+    .relatorio { margin:0; width:210mm; min-height:297mm; }
+}

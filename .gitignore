@@ -1,0 +1,18 @@
+#Ignorar configuraçao do servidor
+/config/config.php
+
+
+/public/uploads/produtos/*
+/public/assets/img/
+
+# Certificados do banco e chave de criptografia dos segredos
+/storage/
+
+/credenciais_itau
+/public/uploads/portal/*
+
+# Coleções/especificações da API do Itaú baixadas do portal do banco
+/itau_*.json
+
+# Arquivos do Finder (macOS)
+.DS_Store

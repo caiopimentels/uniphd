@@ -1,0 +1,75 @@
+<?php
+require_once __DIR__ . '/../../includes/bootstrap.php';
+exigirAluno();
+
+$pdo = getDB();
+$parcela = parcelaDoAluno($pdo, alunoAtualId(), (int) ($_GET['id'] ?? 0));
+if (!$parcela) {
+    flash('danger', 'Parcela não encontrada.');
+    redirect('/portal/financeiro.php');
+}
+if ($parcela['status'] === 'pago') {
+    flash('success', 'Esta parcela já está paga.');
+    redirect('/portal/financeiro.php');
+}
+
+// Registra o boleto + Pix no banco na primeira vez que o aluno abre.
+$garantia = garantirCobrancaParcelaPortal($pdo, $parcela);
+$dados = $garantia['ok'] ? dadosBoletoParcela($pdo, (int) $parcela['id']) : null;
+if ($dados && !$dados['registrada']) {
+    $dados = null;
+}
+
+$tituloPagina = 'Pagamento';
+require __DIR__ . '/../../includes/portal_header.php';
+?>
+<a href="/portal/financeiro.php" class="small"><i class="bi bi-arrow-left"></i> Pagamentos</a>
+
+<div class="portal-acesso largo mt-2">
+    <div class="portal-card text-center">
+        <div class="text-muted"><?= e($parcela['descricao']) ?></div>
+        <div class="fs-2 fw-bold"><?= formatMoney($parcela['valor']) ?></div>
+        <div class="small text-muted">Vencimento <?= formatDate($parcela['data_vencimento']) ?></div>
+        <?php if ($dados && $dados['desconto'] && $dados['desconto']['data_limite'] >= date('Y-m-d')): ?>
+            <div class="small text-success fw-semibold mt-1"><?= e($dados['desconto']['texto']) ?></div>
+        <?php endif; ?>
+    </div>
+
+    <?php if (!$dados): ?>
+        <div class="alert alert-warning mt-3">
+            <?= e($garantia['mensagem'] ?: 'O pagamento desta parcela ainda não está disponível.') ?>
+            <?php if (str_contains($garantia['mensagem'], 'Meus dados')): ?><a href="/portal/conta.php?voltar=<?= urlencode('/portal/pagar.php?id=' . (int) $parcela['id']) ?>" class="alert-link">Completar agora</a><?php endif; ?>
+        </div>
+    <?php else: ?>
+        <?php if ($dados['pix_copia_cola']): ?>
+            <div class="portal-card mt-3 text-center">
+                <div class="fw-semibold mb-2"><i class="bi bi-qr-code"></i> Pague com Pix — cai na hora</div>
+                <div id="qr-pix" class="d-inline-block p-2 bg-white rounded-3 border mb-3"></div>
+                <div class="small text-muted mb-2">Abra o app do seu banco, escolha Pix › Ler QR Code. No celular, use o "copia e cola":</div>
+                <div class="input-group">
+                    <input type="text" id="pix-codigo" class="form-control" readonly value="<?= e($dados['pix_copia_cola']) ?>">
+                    <button class="btn btn-brand" type="button" data-copiar="pix-codigo"><i class="bi bi-clipboard"></i> Copiar</button>
+                </div>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($dados['linha_digitavel']): ?>
+            <div class="portal-card mt-3">
+                <div class="fw-semibold mb-2"><i class="bi bi-upc"></i> Ou pague o boleto</div>
+                <label class="small text-muted">Linha digitável</label>
+                <div class="input-group mb-3">
+                    <input type="text" id="linha-digitavel" class="form-control font-monospace" readonly value="<?= e($dados['linha_digitavel']) ?>">
+                    <button class="btn btn-outline-brand" type="button" data-copiar="linha-digitavel"><i class="bi bi-clipboard"></i> Copiar</button>
+                </div>
+                <a href="/portal/boleto.php?id=<?= (int) $parcela['id'] ?>" target="_blank" class="btn btn-outline-brand w-100"><i class="bi bi-printer"></i> Ver / imprimir boleto</a>
+                <div class="small text-muted mt-2">O boleto leva até 3 dias úteis para ser compensado.</div>
+            </div>
+        <?php endif; ?>
+    <?php endif; ?>
+</div>
+
+<?php if ($dados && $dados['pix_copia_cola']): ?>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>new QRCode(document.getElementById('qr-pix'), { text: <?= json_encode($dados['pix_copia_cola']) ?>, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });</script>
+<?php endif; ?>
+<?php require __DIR__ . '/../../includes/portal_footer.php'; ?>

@@ -1,0 +1,22 @@
+# Esta pasta só guarda arquivos enviados pelo sistema (fotos de produto).
+# Mesmo o app já validando o tipo do arquivo antes de salvar, esta é uma
+# segunda trava: nada aqui deve rodar como código nem listar o diretório.
+
+Options -Indexes -ExecCGI
+
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+
+<FilesMatch "\.(php|php3|php4|php5|php7|phtml|pl|py|cgi|asp|aspx|sh)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

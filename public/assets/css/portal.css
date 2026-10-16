@@ -1,0 +1,167 @@
+/* ---------------------------------------------------------------
+   Portal do aluno — público, pensado primeiro para o celular.
+   As cores vêm das configurações do sistema (--accent no <head>).
+   --------------------------------------------------------------- */
+:root {
+    --accent: #16a34a;
+    --accent-dark: #15803d;
+    --accent-soft: #eefbf2;
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --border: #e4e7eb;
+    --text: #1a1d21;
+    --text-muted: #6b7280;
+    --radius: 12px;
+}
+
+body.portal { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-size: 15px; min-height: 100vh; display: flex; flex-direction: column; }
+.portal a { color: var(--accent-dark); }
+.portal-main { flex: 1; width: 100%; max-width: 1140px; margin: 0 auto; padding: 20px 16px 40px; }
+
+/* Botão feito com <a> não pode herdar a cor dos links (.portal a): usa a
+   cor do próprio botão (variáveis do Bootstrap). */
+.portal a.btn { color: var(--bs-btn-color); }
+.portal a.btn:hover, .portal a.btn:focus { color: var(--bs-btn-hover-color); }
+.btn-brand { --bs-btn-color: #fff; --bs-btn-hover-color: #fff; background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 550; }
+.btn-brand:hover, .btn-brand:focus { background: var(--accent-dark); border-color: var(--accent-dark); color: #fff; }
+.btn-outline-brand { --bs-btn-color: var(--accent-dark); --bs-btn-hover-color: #fff; border-color: var(--accent); color: var(--accent-dark); font-weight: 550; }
+.btn-outline-brand:hover { background: var(--accent); color: #fff; }
+
+/* ---- topo */
+.portal-topo { background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1020; }
+.portal-topo-inner { max-width: 1140px; margin: 0 auto; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
+.portal-marca { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text) !important; font-weight: 600; min-width: 0; }
+.portal-marca img { height: 38px; width: auto; max-width: 140px; object-fit: contain; }
+.portal-marca .letra { width: 38px; height: 38px; border-radius: 10px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; flex-shrink: 0; }
+.portal-marca span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.portal-nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.portal-nav a.item { padding: 8px 12px; border-radius: 8px; color: var(--text) !important; text-decoration: none; font-weight: 500; white-space: nowrap; }
+.portal-nav a.item:hover { background: var(--accent-soft); }
+.portal-nav a.item.ativo { color: var(--accent-dark) !important; background: var(--accent-soft); }
+.portal-menu-btn { display: none; margin-left: auto; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 6px 10px; font-size: 20px; line-height: 1; }
+
+@media (max-width: 860px) {
+    .portal-menu-btn { display: block; }
+    .portal-nav { display: none; position: absolute; top: 100%; left: 0; right: 0; background: var(--surface); border-bottom: 1px solid var(--border);
+                  flex-direction: column; align-items: stretch; padding: 8px 16px 14px; gap: 2px; box-shadow: 0 10px 20px rgba(0,0,0,.06); }
+    .portal-nav.aberto { display: flex; }
+    .portal-nav .dropdown-menu { position: static !important; transform: none !important; border: 0; box-shadow: none; padding-left: 12px; }
+    .portal-nav .btn { margin-top: 6px; }
+}
+
+/* ---- títulos e cartões */
+.portal-titulo { font-size: 1.5rem; font-weight: 650; margin: 4px 0 4px; }
+.portal-sub { color: var(--text-muted); margin-bottom: 20px; }
+.portal-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; }
+.portal-card + .portal-card { margin-top: 14px; }
+.portal-vazio { text-align: center; color: var(--text-muted); padding: 40px 16px; }
+.portal-vazio i { font-size: 2.2rem; display: block; margin-bottom: 8px; opacity: .6; }
+
+/* ---- blocos da página inicial (grade de 6 colunas) */
+.portal-blocos { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; }
+.bloco { min-width: 0; }
+.bloco-inteira { grid-column: span 6; }
+.bloco-metade { grid-column: span 3; }
+.bloco-terco { grid-column: span 2; }
+@media (max-width: 860px) { .bloco-terco { grid-column: span 3; } }
+@media (max-width: 600px) { .bloco-metade, .bloco-terco { grid-column: span 6; } }
+.bloco-titulo { font-size: 1.15rem; font-weight: 650; margin: 4px 0 10px; }
+
+.banner { position: relative; border-radius: var(--radius); overflow: hidden; background: #dfe3e8; }
+.banner-baixa { aspect-ratio: 6 / 1; }
+.banner-media { aspect-ratio: 3 / 1; }
+.banner-alta { aspect-ratio: 2 / 1; }
+.bloco-metade .banner-baixa, .bloco-terco .banner-baixa { aspect-ratio: 3 / 1; }
+.bloco-metade .banner-media, .bloco-terco .banner-media { aspect-ratio: 16 / 9; }
+.bloco-metade .banner-alta, .bloco-terco .banner-alta { aspect-ratio: 4 / 5; }
+@media (max-width: 600px) {
+    .banner-baixa { aspect-ratio: 3 / 1; }
+    .banner-media, .banner-alta { aspect-ratio: 16 / 10; }
+}
+.banner-slide { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; display: block; }
+.banner-slide.ativo { opacity: 1; z-index: 1; }
+.banner-slide img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.banner-pontos { position: absolute; bottom: 10px; left: 0; right: 0; display: flex; justify-content: center; gap: 6px; z-index: 2; }
+.banner-pontos button { width: 9px; height: 9px; border-radius: 50%; border: 0; padding: 0; background: rgba(255,255,255,.55); box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
+.banner-pontos button.ativo { background: #fff; }
+
+.bloco-texto { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; white-space: pre-line; height: 100%; }
+
+/* ---- cartões de turma */
+.turmas-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.turma-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: var(--text) !important; transition: box-shadow .15s, transform .15s; }
+.turma-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,.08); transform: translateY(-2px); }
+.turma-card .capa { aspect-ratio: 16 / 9; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 2.4rem; }
+.turma-card .capa img { width: 100%; height: 100%; object-fit: cover; }
+.turma-card .corpo { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.turma-card .curso { font-weight: 650; font-size: 1.05rem; line-height: 1.3; }
+.turma-card .info { color: var(--text-muted); font-size: .88rem; }
+.turma-card .preco { margin-top: auto; padding-top: 8px; font-weight: 650; color: var(--accent-dark); }
+.selo-vagas { display: inline-block; font-size: .75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-dark); }
+.selo-vagas.poucas { background: #fff4e5; color: #b45309; }
+
+/* ---- listas da área do aluno */
+.lista-linha { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.lista-linha:last-child { border-bottom: 0; }
+.lista-linha .principal { flex: 1; min-width: 0; }
+.lista-linha .principal .t { font-weight: 600; }
+.lista-linha .principal .s { color: var(--text-muted); font-size: .85rem; }
+.lista-linha .valor { font-weight: 650; white-space: nowrap; }
+.etiqueta { display: inline-block; font-size: .72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.etiqueta.aberta { background: #eef2ff; color: #3730a3; }
+.etiqueta.vencida { background: #fee2e2; color: #b91c1c; }
+.etiqueta.paga { background: #dcfce7; color: #166534; }
+.etiqueta.aguardando { background: #fff4e5; color: #b45309; }
+
+.atalhos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.atalho { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-decoration: none; color: var(--text) !important; display: flex; flex-direction: column; gap: 6px; }
+.atalho i { font-size: 1.5rem; color: var(--accent); }
+.atalho:hover { border-color: var(--accent); }
+
+/* ---- calendário */
+.dia-aula { display: flex; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.dia-aula .data { width: 56px; text-align: center; flex-shrink: 0; border-radius: 10px; background: var(--accent-soft); color: var(--accent-dark); padding: 6px 0; line-height: 1.1; }
+.dia-aula .data .d { font-size: 1.4rem; font-weight: 700; }
+.dia-aula .data .m { font-size: .72rem; text-transform: uppercase; font-weight: 600; }
+.dia-aula.cancelada .data { background: #f3f4f6; color: #9ca3af; }
+.dia-aula.cancelada .principal .t { text-decoration: line-through; color: var(--text-muted); }
+
+/* ---- formulários de acesso */
+.portal-acesso { max-width: 440px; margin: 10px auto; }
+.portal-acesso.largo { max-width: 720px; }
+
+.portal-rodape { border-top: 1px solid var(--border); background: var(--surface); color: var(--text-muted); font-size: .85rem; }
+.portal-rodape-inner { max-width: 1140px; margin: 0 auto; padding: 18px 16px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; }
+
+/* ---- blocos do construtor de site */
+.bloco-imagem-texto { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; height: 100%; }
+.bloco-imagem-texto.imagem-direita .lado-imagem { order: 2; }
+.bloco-imagem-texto .lado-imagem img { width: 100%; border-radius: 10px; display: block; object-fit: cover; max-height: 420px; }
+.bloco-imagem-texto h2 { font-size: 1.4rem; font-weight: 650; }
+.bloco-imagem-texto p { color: var(--text-muted); }
+.bloco-metade .bloco-imagem-texto, .bloco-terco .bloco-imagem-texto { grid-template-columns: 1fr; }
+@media (max-width: 700px) { .bloco-imagem-texto { grid-template-columns: 1fr; } .bloco-imagem-texto.imagem-direita .lado-imagem { order: 0; } }
+
+.bloco-chamada { background: var(--accent); color: #fff; border-radius: var(--radius); padding: 28px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; height: 100%; }
+.bloco-chamada .chamada-titulo { font-size: 1.5rem; font-weight: 700; line-height: 1.2; }
+.bloco-chamada .chamada-texto { opacity: .9; margin-top: 4px; }
+.bloco-chamada .chamada-botao { --bs-btn-color: var(--accent-dark); --bs-btn-hover-color: var(--accent-dark); background: #fff; color: var(--accent-dark); font-weight: 650; border: 0; white-space: nowrap; }
+
+.bloco-faq details { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; }
+.bloco-faq summary { font-weight: 600; cursor: pointer; }
+.bloco-faq details[open] summary { margin-bottom: 8px; }
+.bloco-faq details > div { color: var(--text-muted); }
+
+.bloco-destacado { outline: 3px solid #e83e8c; outline-offset: 6px; border-radius: 6px; }
+.portal-redes a { font-size: 1.2rem; }
+
+/* Financeiro do aluno: um bloco por turma (e "Outros lançamentos") que abre ao clicar */
+.grupo-financeiro { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; background: var(--surface, #fff); }
+.grupo-financeiro > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; padding: 14px 16px; }
+.grupo-financeiro > summary::-webkit-details-marker { display: none; }
+.grupo-financeiro > summary .nome { flex: 1; min-width: 0; font-weight: 600; }
+.grupo-financeiro > summary .nome .s { font-weight: 400; color: var(--text-muted); font-size: .85rem; }
+.grupo-financeiro > summary .seta { transition: transform .2s; color: var(--text-muted); }
+.grupo-financeiro[open] > summary .seta { transform: rotate(180deg); }
+.grupo-financeiro .parcelas { padding: 0 16px 6px; border-top: 1px solid var(--border); }
+.valor-riscado { text-decoration: line-through; color: var(--text-muted); font-weight: 400; font-size: .85rem; }
