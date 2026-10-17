@@ -544,9 +544,6 @@ function garantirCobrancaParcelaPortal(PDO $pdo, array $parcela): array
     if ($parcela['status'] !== 'pendente') {
         return ['ok' => false, 'mensagem' => 'Esta parcela não está em aberto.'];
     }
-    if ($parcela['data_vencimento'] < date('Y-m-d')) {
-        return ['ok' => false, 'mensagem' => 'Esta parcela já venceu. Fale com a secretaria para gerar uma nova cobrança.'];
-    }
 
     // Falhou há pouco: não insiste a cada recarga da página (cada tentativa
     // que chega ao banco consome um nosso número).

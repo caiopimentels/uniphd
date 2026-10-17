@@ -466,10 +466,10 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="card">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead><tr><th>Descrição</th><th>Vencimento</th><th class="text-end">Valor</th><th>Pagamento</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+                <thead><tr><th>Descrição</th><th>Vencimento</th><th class="text-end">Valor</th><th>Pago em</th><th class="text-end">Valor pago</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
                 <tbody>
                 <?php if (!$parcelas): ?>
-                    <tr><td colspan="6" class="text-center text-muted py-3">Nenhum lançamento financeiro para este aluno.</td></tr>
+                    <tr><td colspan="7" class="text-center text-muted py-3">Nenhum lançamento financeiro para este aluno.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($parcelas as $p): ?>
                     <?php $vencida = $p['status'] === 'pendente' && $p['data_vencimento'] < date('Y-m-d'); ?>
@@ -482,9 +482,9 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <?php if ($p['status'] === 'pendente' && $p['desconto_valor'] !== null): ?>
                         <div class="small <?= (float) $p['desconto_valor'] > 0 ? 'text-success' : 'text-muted' ?>"><?= (float) $p['desconto_valor'] > 0 ? '− ' . formatMoney($p['desconto_valor']) . ' até ' . formatDate($p['desconto_ate'] ?: $p['data_vencimento']) : 'sem desconto' ?></div>
                     <?php endif; ?>
-                    <?php if ($p['status'] === 'pago' && $p['valor_recebido'] !== null && (float) $p['valor_recebido'] !== (float) $p['valor']): ?>
-                                <div class="small text-muted">recebido <?= formatMoney($p['valor_recebido']) ?></div>
-                            <?php endif; ?>
+                        </td>
+                        <td class="text-end">
+                            <?= $p['status'] === 'pago' ? '<span class="text-success fw-semibold">' . formatMoney($p['valor_recebido'] ?? $p['valor']) . '</span>' : '-' ?>
                         </td>
                         <td>
                             <?php if ($vencida): ?>

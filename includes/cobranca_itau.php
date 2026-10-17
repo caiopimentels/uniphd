@@ -122,6 +122,35 @@ function contaBancariaParaCobranca(PDO $pdo, ?int $formaPagamentoId): ?array
  * (avisos) antes de enviar. Não reserva nosso número nem grava nada — o
  * número mostrado é o próximo da sequência da conta.
  */
+// Parcela vencida sem boleto: o boleto sai com vencimento daqui a tantos
+// dias (o banco não registra boleto vencido). A parcela guarda a data
+// original — o atraso continua contando nos relatórios.
+const DIAS_BOLETO_PARCELA_VENCIDA = 2;
+
+/**
+ * Multa e juros do atraso de uma parcela até hoje, pela configuração da
+ * conta bancária: multa (% sobre o valor) uma vez só; juros simples pelos
+ * dias de atraso (percentual diário, mensal ÷ 30 ou anual ÷ 360).
+ * Retorna ['dias' => int, 'multa' => float, 'juros' => float, 'total' => float].
+ */
+function encargosAtrasoParcela(array $conta, float $valor, string $vencimento, ?string $hoje = null): array
+{
+    $hoje ??= date('Y-m-d');
+    $dias = max(0, (int) round((strtotime($hoje) - strtotime($vencimento)) / 86400));
+    if (!$dias) {
+        return ['dias' => 0, 'multa' => 0.0, 'juros' => 0.0, 'total' => 0.0];
+    }
+    $multa = ($conta['multa_tipo'] ?? '03') === '02' ? round($valor * (float) $conta['multa_percentual'] / 100, 2) : 0.0;
+    $taxaDia = match ($conta['juros_tipo'] ?? '05') {
+        '91' => (float) $conta['juros_percentual'],
+        '90' => (float) $conta['juros_percentual'] / 30,
+        '92' => (float) $conta['juros_percentual'] / 360,
+        default => 0.0,
+    };
+    $juros = round($valor * $taxaDia / 100 * $dias, 2);
+    return ['dias' => $dias, 'multa' => $multa, 'juros' => $juros, 'total' => round($multa + $juros, 2)];
+}
+
 function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
 {
     $pendencias = [];
@@ -148,8 +177,14 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
     if ((float) $parcela['valor'] <= 0) {
         $pendencias[] = 'A parcela não tem valor.';
     }
-    if ($parcela['data_vencimento'] < date('Y-m-d')) {
-        $avisos[] = 'O vencimento (' . formatDate($parcela['data_vencimento']) . ') já passou. O banco pode recusar; ajuste o vencimento antes de enviar.';
+    $parcela['vencimento_original'] = $parcela['data_vencimento'];
+    $parcela['valor_original'] = $parcela['valor'];
+    $parcela['encargos'] = null;
+    $vencida = $parcela['data_vencimento'] < date('Y-m-d');
+    if ($vencida) {
+        $parcela['data_vencimento'] = date('Y-m-d', strtotime('+' . DIAS_BOLETO_PARCELA_VENCIDA . ' days'));
+        $avisos[] = 'A parcela venceu em ' . formatDate($parcela['vencimento_original']) . ': o boleto vai com vencimento em '
+            . formatDate($parcela['data_vencimento']) . ' e sem o desconto por pontualidade.';
     }
 
     $stmt = $pdo->prepare('SELECT COUNT(*) FROM cobrancas_bancarias WHERE conta_receber_id = ? AND status IN (\'pendente_envio\', \'registrada\')');
@@ -236,7 +271,8 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
 
     // ---- desconto por pontualidade (códigos do Itaú: 01 = valor fixo até a
     // data, 02 = percentual até a data)
-    $pontualidade = descontoPontualidadeParcela($pdo, $parcela);
+    // Parcela vencida perdeu o desconto por pontualidade.
+    $pontualidade = $vencida ? null : descontoPontualidadeParcela($pdo, $parcela);
     $desconto = blocoDescontoItau($pontualidade);
     if ($pontualidade) {
         if ($pontualidade['tipo'] !== 'valor') {
@@ -244,6 +280,19 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
         }
         if ($pontualidade['data_limite'] < date('Y-m-d')) {
             $avisos[] = 'O prazo do desconto por pontualidade (' . formatDate($pontualidade['data_limite']) . ') já passou; o banco pode recusar ou ignorar o desconto.';
+        }
+    }
+
+    // ---- parcela vencida: multa + juros do atraso já entram no valor; ao
+    // banco vai só o juros (continua correndo depois do novo vencimento) e a
+    // multa isenta — ela já foi cobrada uma vez, aqui.
+    if ($vencida && $conta) {
+        $encargos = encargosAtrasoParcela($conta, (float) $parcela['valor'], $parcela['vencimento_original']);
+        if ($encargos['total'] > 0) {
+            $parcela['encargos'] = $encargos;
+            $parcela['valor'] = round((float) $parcela['valor'] + $encargos['total'], 2);
+            $avisos[] = 'Atraso de ' . $encargos['dias'] . ' dia(s): multa ' . formatMoney($encargos['multa']) . ' + juros ' . formatMoney($encargos['juros'])
+                . ' — boleto de ' . formatMoney($parcela['valor']) . '.';
         }
     }
 
@@ -256,8 +305,8 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
         $juros['percentual_juros'] = number_format((float) $conta['juros_percentual'], 5, '.', '');
         $juros['data_juros'] = $diaSeguinte;
     }
-    $multa = ['codigo_tipo_multa' => $conta['multa_tipo'] ?? '03'];
-    if (($conta['multa_tipo'] ?? '03') !== '03') {
+    $multa = ['codigo_tipo_multa' => $vencida ? '03' : ($conta['multa_tipo'] ?? '03')];
+    if ($multa['codigo_tipo_multa'] !== '03') {
         $multa['percentual_multa'] = number_format((float) $conta['multa_percentual'], 5, '.', '');
         $multa['data_multa'] = $diaSeguinte;
     }
@@ -649,6 +698,9 @@ function registrarChamadaBanco(PDO $pdo, array $conta, string $operacao, string 
             if ($valor === null) {
                 return null;
             }
+            if ($valor === []) {
+                return '{}';
+            }
             if (is_string($valor)) {
                 $json = json_decode($valor, true);
                 $valor = is_array($json) ? $json : $valor;
@@ -710,24 +762,78 @@ function buscarChamadasBanco(PDO $pdo, int $contaId, array $filtros, int $pagina
         $condicoes[] = 'bc.conta_receber_id = ?';
         $parametros[] = (int) $filtros['parcela'];
     }
+    // Busca livre: nome do aluno / descrição da parcela, ou números (CPF,
+    // nosso número — que vai na URL das instruções e no corpo do registro).
+    $busca = trim((string) ($filtros['busca'] ?? ''));
+    if ($busca !== '') {
+        $digitos = apenasDigitos($busca);
+        $ou = ['ca.nome LIKE ?', 'a.nome LIKE ?', 'cr.descricao LIKE ?'];
+        array_push($parametros, '%' . $busca . '%', '%' . $busca . '%', '%' . $busca . '%');
+        if (strlen($digitos) >= 3) {
+            $ou[] = "REPLACE(REPLACE(ca.cpf, '.', ''), '-', '') LIKE ?";
+            $ou[] = 'bc.url LIKE ?';
+            $ou[] = 'bc.requisicao LIKE ?';
+            array_push($parametros, '%' . $digitos . '%', '%' . $digitos . '%', '%' . $digitos . '%');
+        }
+        $condicoes[] = '(' . implode(' OR ', $ou) . ')';
+    }
     $where = 'WHERE ' . implode(' AND ', $condicoes);
+    $juncoes = 'LEFT JOIN usuarios u ON u.id = bc.usuario_id
+         LEFT JOIN alunos a ON a.id = bc.aluno_id
+         LEFT JOIN contas_receber cr ON cr.id = bc.conta_receber_id
+         LEFT JOIN alunos ca ON ca.id = cr.aluno_id';
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM banco_chamadas bc {$where}");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM banco_chamadas bc {$juncoes} {$where}");
     $stmt->execute($parametros);
     $total = (int) $stmt->fetchColumn();
     $pagina = max(1, $pagina);
     $offset = ($pagina - 1) * $porPagina;
     $stmt = $pdo->prepare(
-        "SELECT bc.*, u.nome AS usuario_nome, a.nome AS aluno_nome, cr.descricao AS parcela_descricao, ca.nome AS parcela_aluno
-         FROM banco_chamadas bc
-         LEFT JOIN usuarios u ON u.id = bc.usuario_id
-         LEFT JOIN alunos a ON a.id = bc.aluno_id
-         LEFT JOIN contas_receber cr ON cr.id = bc.conta_receber_id
-         LEFT JOIN alunos ca ON ca.id = cr.aluno_id
+        "SELECT bc.*, u.nome AS usuario_nome, a.nome AS aluno_nome, cr.descricao AS parcela_descricao, ca.nome AS parcela_aluno,
+                ca.cpf AS parcela_cpf, cr.valor AS parcela_valor, cr.data_vencimento AS parcela_vencimento, cr.status AS parcela_status
+         FROM banco_chamadas bc {$juncoes}
          {$where} ORDER BY bc.id DESC LIMIT {$porPagina} OFFSET {$offset}"
     );
     $stmt->execute($parametros);
-    return ['itens' => $stmt->fetchAll(), 'total' => $total, 'pagina' => $pagina, 'total_paginas' => max(1, (int) ceil($total / $porPagina))];
+    $itens = $stmt->fetchAll();
+
+    // Qual boleto cada chamada tocou: o nosso número sai da URL das
+    // instruções (/boletos/{id_boleto}/...) ou do corpo do registro.
+    $numeros = [];
+    foreach ($itens as $i => $item) {
+        $itens[$i]['nosso_numero'] = nossoNumeroDaChamadaBanco($item);
+        if ($itens[$i]['nosso_numero']) {
+            $numeros[] = $itens[$i]['nosso_numero'];
+        }
+    }
+    $boletos = [];
+    if ($numeros) {
+        $numeros = array_values(array_unique($numeros));
+        $stmt = $pdo->prepare('SELECT * FROM cobrancas_bancarias WHERE conta_bancaria_id = ? AND nosso_numero IN (' . implode(',', array_fill(0, count($numeros), '?')) . ')');
+        $stmt->execute(array_merge([$contaId], $numeros));
+        foreach ($stmt->fetchAll() as $cb) {
+            $boletos[(int) $cb['nosso_numero']] = $cb;
+        }
+    }
+    foreach ($itens as $i => $item) {
+        $itens[$i]['boleto'] = $item['nosso_numero'] ? ($boletos[$item['nosso_numero']] ?? null) : null;
+    }
+    return ['itens' => $itens, 'total' => $total, 'pagina' => $pagina, 'total_paginas' => max(1, (int) ceil($total / $porPagina))];
+}
+
+function nossoNumeroDaChamadaBanco(array $chamada): ?int
+{
+    // id_boleto = agência (4) + conta (7) + DAC (1) + carteira (3) + nosso número.
+    if (preg_match('~/boletos/(\d{23,})(?:/|$)~', (string) $chamada['url'], $m)) {
+        return (int) substr($m[1], 15);
+    }
+    if (in_array($chamada['operacao'], ['registro_boleto', 'validacao_boleto'], true) && $chamada['requisicao']) {
+        $corpo = json_decode($chamada['requisicao'], true);
+        $corpo = $corpo['data'] ?? $corpo;
+        $numero = $corpo['dado_boleto']['dados_individuais_boleto'][0]['numero_nosso_numero'] ?? null;
+        return $numero !== null && (int) $numero > 0 ? (int) $numero : null;
+    }
+    return null;
 }
 
 // Rótulos das operações na tela de auditoria.
@@ -984,6 +1090,12 @@ function dadosBoletoParcela(PDO $pdo, int $contaReceberId): ?array
     );
     $stmt->execute([$contaReceberId]);
     $cobranca = $stmt->fetch() ?: null;
+    // Com boleto no banco, valem a data e o valor dele (parcela vencida
+    // ganha um boleto com vencimento novo).
+    if ($cobranca) {
+        $parcela['data_vencimento'] = $cobranca['data_vencimento'];
+        $parcela['valor'] = $cobranca['valor'];
+    }
 
     $endereco = null;
     if ($parcela['aluno_id']) {
@@ -1016,7 +1128,10 @@ function dadosBoletoParcela(PDO $pdo, int $contaReceberId): ?array
         'nosso_numero' => $calculo['nosso_numero_formatado'] ?? null,
         'agencia_codigo' => $calculo['agencia_codigo'] ?? null,
         'pix_copia_cola' => $pix,
-        'desconto' => descontoPontualidadeParcela($pdo, $parcela),
+        // Desconto com o prazo já passado não vale mais: nem aparece.
+        // (calculado pelo vencimento original da parcela, não pelo do boleto).
+        'desconto' => ($descontoParcela = descontoPontualidadeParcela($pdo, array_merge($parcela, ['data_vencimento' => $parcela['vencimento_original'] ?? $parcela['data_vencimento']])))
+            && $descontoParcela['data_limite'] >= date('Y-m-d') ? $descontoParcela : null,
         // As pendências são do REGISTRO; depois de registrada não há o que cobrar.
         'pendencias' => $cobranca ? [] : $previa['pendencias'],
     ];
@@ -1036,32 +1151,6 @@ function blocoDescontoItau(?array $pontualidade): array
     }
     $item['percentual_desconto'] = number_format($pontualidade['percentual'], 5, '.', '');
     return ['codigo_tipo_desconto' => '02', 'descontos' => [$item]];
-}
-
-/**
- * Formatos de corpo para PATCH /boletos/{id}/desconto, na ordem em que são
- * tentados. A documentação do Itaú não traz o corpo desta instrução (só o
- * objeto "desconto" do registro); o formato solto foi recusado com "Dados
- * informados no corpo da requisição não condizem com a instrução".
- */
-function corposDescontoItau(array $bloco): array
-{
-    // Valores no formato do registro (17 dígitos / 12 dígitos), como no POST.
-    $digitos = $bloco;
-    foreach ($digitos['descontos'] ?? [] as $i => $item) {
-        if (isset($item['valor_desconto'])) {
-            $digitos['descontos'][$i]['valor_desconto'] = str_pad(apenasDigitos(number_format((float) $item['valor_desconto'], 2, '.', '')), 17, '0', STR_PAD_LEFT);
-        }
-        if (isset($item['percentual_desconto'])) {
-            $digitos['descontos'][$i]['percentual_desconto'] = str_pad(apenasDigitos(number_format((float) $item['percentual_desconto'], 5, '.', '')), 12, '0', STR_PAD_LEFT);
-        }
-    }
-    return [
-        ['desconto' => $bloco],
-        ['data' => ['desconto' => $bloco]],
-        ['desconto' => $digitos],
-        $bloco,
-    ];
 }
 
 // ---------------------------------------------------------------------
@@ -1139,11 +1228,15 @@ function baixarBoletoBancoItau(PDO $pdo, int $contaReceberId): array
 }
 
 /**
- * Leva ao boleto registrado as mudanças da parcela (valor, vencimento e
- * desconto), uma instrução por vez, e para na primeira recusa. Valor e
- * vencimento mudam o código de barras: a linha digitável guardada é
- * recalculada (o cálculo do sistema é o mesmo do Itaú).
- * Retorna ['ok' => bool, 'mensagem' => string, 'havia_boleto' => bool,
+ * Leva ao boleto registrado as mudanças da parcela. Valor e vencimento vão
+ * por instrução (PATCH), uma por vez, parando na primeira recusa; mudam o
+ * código de barras, e a linha digitável guardada é recalculada (o cálculo do
+ * sistema é o mesmo do Itaú).
+ * Desconto: a instrução de desconto do Itaú recusa todos os formatos de
+ * corpo testados (e a documentação não traz o dela). Então, mudando o
+ * desconto, o boleto antigo é baixado e 'reemitir' volta true: quem chama
+ * salva a parcela e registra um boleto novo, já com tudo atualizado.
+ * Retorna ['ok' => bool, 'mensagem' => string, 'havia_boleto' => bool, 'reemitir' => bool,
  *          'aceito' => ['valor' => bool, 'vencimento' => bool, 'desconto' => bool]].
  */
 function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
@@ -1151,7 +1244,16 @@ function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
     $aceito = ['valor' => false, 'vencimento' => false, 'desconto' => false];
     $cobranca = cobrancaRegistradaParcela($pdo, (int) $antes['id']);
     if (!$cobranca) {
-        return ['ok' => true, 'mensagem' => '', 'havia_boleto' => false, 'aceito' => $aceito];
+        return ['ok' => true, 'mensagem' => '', 'havia_boleto' => false, 'reemitir' => false, 'aceito' => $aceito];
+    }
+
+    if (blocoDescontoItau(descontoPontualidadeParcela($pdo, $antes)) !== blocoDescontoItau(descontoPontualidadeParcela($pdo, $depois))) {
+        $baixa = baixarBoletoBancoItau($pdo, (int) $antes['id']);
+        if (!$baixa['ok']) {
+            return ['ok' => false, 'havia_boleto' => true, 'reemitir' => false, 'aceito' => $aceito, 'mensagem' => $baixa['mensagem']];
+        }
+        return ['ok' => true, 'havia_boleto' => true, 'reemitir' => true, 'aguardando_aprovacao' => str_contains($baixa['mensagem'], AVISO_APROVACAO_ITAU),
+            'aceito' => ['valor' => true, 'vencimento' => true, 'desconto' => true], 'mensagem' => $baixa['mensagem']];
     }
     // Uma instrução por vez; na primeira recusa, para. O que já foi aceito
     // vale (o banco já mudou) e o código de barras acompanha.
@@ -1162,22 +1264,11 @@ function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
     if ($antes['data_vencimento'] !== $depois['data_vencimento']) {
         $instrucoes['vencimento'] = ['data_vencimento', ['data_vencimento' => $depois['data_vencimento']], 'alteracao_vencimento'];
     }
-    $descontoDepois = blocoDescontoItau(descontoPontualidadeParcela($pdo, $depois));
-    if (blocoDescontoItau(descontoPontualidadeParcela($pdo, $antes)) !== $descontoDepois) {
-        $instrucoes['desconto'] = ['desconto', corposDescontoItau($descontoDepois), 'alteracao_desconto'];
-    }
 
     $recusa = null;
     $aguardando = false;
-    foreach ($instrucoes as $campo => [$instrucao, $corpos, $operacao]) {
-        // Uma instrução pode ter mais de um formato de corpo a tentar
-        // (desconto); 400 = recusado sem mudar nada, então tenta o próximo.
-        foreach (array_is_list($corpos) && $corpos && is_array($corpos[0]) ? $corpos : [$corpos] as $corpo) {
-            $r = instrucaoBoletoItau($pdo, $cobranca, $instrucao, $corpo, $operacao);
-            if ($r['ok'] || $r['status'] !== 400) {
-                break;
-            }
-        }
+    foreach ($instrucoes as $campo => [$instrucao, $corpo, $operacao]) {
+        $r = instrucaoBoletoItau($pdo, $cobranca, $instrucao, $corpo, $operacao);
         if (!$r['ok']) {
             $recusa = "O banco não aceitou a mudança de {$campo}: " . $r['mensagem'];
             break;
@@ -1191,7 +1282,7 @@ function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
             $aceito['vencimento'] ? $depois['data_vencimento'] : $antes['data_vencimento'],
             (float) ($aceito['valor'] ? $depois['valor'] : $antes['valor']));
     }
-    return ['ok' => $recusa === null, 'havia_boleto' => true, 'aceito' => $aceito, 'aguardando_aprovacao' => $aguardando,
+    return ['ok' => $recusa === null, 'havia_boleto' => true, 'reemitir' => false, 'aceito' => $aceito, 'aguardando_aprovacao' => $aguardando,
         'mensagem' => ($recusa ?? 'Boleto alterado também no banco.') . ($aguardando ? ' ' . AVISO_APROVACAO_ITAU : '')];
 }
 
@@ -1270,9 +1361,6 @@ function registrarCobrancaItau(PDO $pdo, int $contaReceberId, ?int $usuarioId, ?
     }
     if ($previa['pendencias']) {
         return ['ok' => false, 'mensagem' => implode(' ', $previa['pendencias']), 'cobranca_id' => null];
-    }
-    if ($previa['parcela']['data_vencimento'] < date('Y-m-d')) {
-        return ['ok' => false, 'mensagem' => 'A parcela já venceu; o banco não registra boleto com vencimento no passado.', 'cobranca_id' => null];
     }
     $conta = $previa['conta'];
 

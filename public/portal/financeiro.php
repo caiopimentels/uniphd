@@ -90,12 +90,9 @@ unset($g);
                                 <div class="valor text-success"><?= formatMoney($desconto['valor_com_desconto']) ?></div>
                             <?php else: ?>
                                 <div class="valor"><?= formatMoney($p['valor']) ?></div>
+                                <?php if ($p['vencida']): ?><div class="small text-danger">+ multa e juros</div><?php endif; ?>
                             <?php endif; ?>
-                            <?php if (!$p['vencida'] || $p['tem_boleto']): ?>
-                                <a href="/portal/pagar.php?id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-brand mt-1">Pagar</a>
-                            <?php else: ?>
-                                <div class="small text-muted mt-1">fale com a secretaria</div>
-                            <?php endif; ?>
+                            <a href="/portal/pagar.php?id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-brand mt-1">Pagar</a>
                         <?php endif; ?>
                     </div>
                 </div>

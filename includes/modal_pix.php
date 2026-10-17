@@ -24,7 +24,7 @@
                     <div class="fs-4 fw-bold" id="pix-valor"></div>
                     <div class="small text-muted">Vencimento <span id="pix-vencimento"></span> · <span id="pix-pagador"></span></div>
                     <div class="small text-success fw-semibold d-none" id="pix-desconto"></div>
-                    <div id="pix-registrado" class="badge text-bg-success my-2 d-none"><i class="bi bi-check-circle"></i> Registrado no Itaú</div>
+                    <div id="pix-registrado" class="badge text-bg-success my-2 d-none"><i class="bi bi-check-circle"></i> Registrado no Itaú <span id="pix-nosso-numero"></span></div>
                     <div class="mb-2"></div>
 
                     <div class="pix-qr-caixa mx-auto mb-3">
@@ -169,6 +169,7 @@ function mostrarCobrancaPix(d) {
     desconto.textContent = d.desconto || '';
     desconto.classList.toggle('d-none', !d.desconto);
     document.getElementById('pix-registrado').classList.toggle('d-none', !d.boleto_registrado);
+    document.getElementById('pix-nosso-numero').textContent = d.nosso_numero ? '· nosso nº ' + d.nosso_numero : '';
 
     // Sem registro não há Pix: desenha um QR com texto neutro (não leva
     // a pagamento nenhum), borrado, só para mostrar onde ele aparecerá.

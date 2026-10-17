@@ -12,8 +12,9 @@
             </div>
             <div class="modal-body">
                 <div id="ep-aviso-banco" class="alert alert-info small py-2 d-none">
-                    <i class="bi bi-bank"></i> Esta parcela tem boleto/Pix registrado no Itaú. Mudanças de <strong>valor, vencimento e desconto</strong>
-                    são enviadas ao banco ao salvar; o que o banco recusar não é alterado.
+                    <i class="bi bi-bank"></i> Esta parcela tem boleto/Pix registrado no Itaú. Mudanças de <strong>valor e vencimento</strong>
+                    são enviadas ao banco ao salvar; o que o banco recusar não é alterado. Mudando o <strong>desconto</strong>, o boleto é
+                    baixado e emitido de novo — o boleto e o Pix já enviados ao aluno deixam de valer.
                 </div>
                 <input type="hidden" name="id" id="ep-id">
                 <input type="hidden" name="voltar" value="<?= e($voltarEdicaoParcela ?? 'lista') ?>">

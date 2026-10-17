@@ -59,6 +59,7 @@ responderJson([
     'sucesso' => true,
     'registrado' => $registrado,
     'boleto_registrado' => (bool) $dados['registrada'],
+    'nosso_numero' => $dados['cobranca'] ? formatarNossoNumeroItau((int) $dados['cobranca']['nosso_numero']) : null,
     'copia_cola' => $dados['pix_copia_cola'],
     'linha_digitavel' => $dados['registrada'] ? $dados['linha_digitavel'] : null,
     'erro_geracao' => $erroGeracao,

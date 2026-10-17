@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
+require_once __DIR__ . '/../../includes/documento.php';
 exigirAdmin();
 
 // Auditoria de tudo o que a conta trocou com o banco: as chamadas que o
@@ -30,6 +31,7 @@ $filtros = [
     'operacao' => array_key_exists($_GET['operacao'] ?? '', operacoesChamadaBanco()) ? $_GET['operacao'] : '',
     'resultado' => in_array($_GET['resultado'] ?? '', ['ok', 'erro'], true) ? $_GET['resultado'] : '',
     'parcela' => $parcelaFiltro ?: '',
+    'busca' => trim($_GET['busca'] ?? ''),
 ];
 $pagina = max(1, (int) ($_GET['pagina'] ?? 1));
 $base = ['id' => $id, 'ver' => $ver];
@@ -40,12 +42,12 @@ if ($ver === 'enviadas') {
     $filtrosWebhook = [
         'data_inicio' => $filtros['data_inicio'], 'data_fim' => $filtros['data_fim'], 'conta_bancaria_id' => $id,
         'resultado' => $filtros['resultado'] === 'erro' ? 'falha' : $filtros['resultado'],
-        'busca' => trim($_GET['busca'] ?? ''),
+        'busca' => $filtros['busca'],
     ];
     $resultado = buscarRequisicoesWebhook($pdo, $filtrosWebhook, $pagina, 50);
     $statusEvento = statusEventoWebhook();
     $endpoints = ['itau/boletos' => 'Aviso de pagamento', 'itau/pix' => 'Aviso de Pix', 'itau/token' => 'Pedido de token'];
-    $linkPaginaWebhook = fn (int $p) => '?' . http_build_query(array_merge($base, $filtros, ['busca' => $filtrosWebhook['busca'], 'pagina' => $p]));
+    $linkPaginaWebhook = fn (int $p) => '?' . http_build_query(array_merge($base, $filtros, ['pagina' => $p]));
 }
 $usuarios = $pdo->query('SELECT id, nome FROM usuarios ORDER BY nome')->fetchAll();
 $operacoes = operacoesChamadaBanco();
@@ -85,6 +87,10 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
             <input type="date" name="data_fim" class="form-control form-control-sm" value="<?= e($filtros['data_fim']) ?>">
         </div>
         <?php if ($ver === 'enviadas'): ?>
+            <div class="col-auto">
+                <label class="form-label small mb-1">Aluno, CPF ou nosso número</label>
+                <input type="text" name="busca" class="form-control form-control-sm" style="width: 220px;" placeholder="Ex.: Maria, 123.456.789-00, 10003" value="<?= e($filtros['busca']) ?>">
+            </div>
             <div class="col-auto">
                 <label class="form-label small mb-1">Quem pediu</label>
                 <select name="quem" class="form-select form-select-sm">
@@ -136,10 +142,10 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
 <div class="card">
     <div class="table-responsive">
         <table class="table table-sm mb-0 align-middle">
-            <thead><tr><th>Data/hora</th><th>Operação</th><th>Quem pediu</th><th>Parcela</th><th>Resposta</th><th></th></tr></thead>
+            <thead><tr><th>Data/hora</th><th>Operação</th><th>Quem pediu</th><th>Aluno · parcela</th><th>Boleto</th><th>Resposta</th><th></th></tr></thead>
             <tbody>
             <?php if (!$resultado['itens']): ?>
-                <tr><td colspan="6" class="text-center text-muted py-4">Nenhuma chamada registrada com esses filtros.</td></tr>
+                <tr><td colspan="7" class="text-center text-muted py-4">Nenhuma chamada registrada com esses filtros.</td></tr>
             <?php endif; ?>
             <?php foreach ($resultado['itens'] as $c): ?>
                 <tr>
@@ -156,8 +162,24 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
                     </td>
                     <td>
                         <?php if ($c['conta_receber_id']): ?>
-                            <a href="?<?= e(http_build_query(['id' => $id, 'ver' => 'enviadas', 'parcela' => $c['conta_receber_id']])) ?>" title="Ver só esta parcela"><?= e($c['parcela_descricao'] ?: 'nº ' . $c['conta_receber_id']) ?></a>
-                            <?php if ($c['parcela_aluno']): ?><div class="small text-muted"><?= e($c['parcela_aluno']) ?></div><?php endif; ?>
+                            <?php if ($c['parcela_aluno']): ?><div class="fw-semibold"><?= e($c['parcela_aluno']) ?></div><?php endif; ?>
+                            <div class="small">
+                                <a href="?<?= e(http_build_query(['id' => $id, 'ver' => 'enviadas', 'parcela' => $c['conta_receber_id']])) ?>" title="Ver só esta parcela"><?= e($c['parcela_descricao'] ?: 'nº ' . $c['conta_receber_id']) ?></a>
+                                <?php if ($c['parcela_cpf']): ?><span class="text-muted">· CPF <?= e(cpfFormatado((string) $c['parcela_cpf'])) ?></span><?php endif; ?>
+                            </div>
+                        <?php else: ?>
+                            <span class="text-muted">-</span>
+                        <?php endif; ?>
+                    </td>
+                    <td class="small">
+                        <?php if ($c['nosso_numero']): ?>
+                            <div>Nosso nº <strong><?= e(formatarNossoNumeroItau((int) $c['nosso_numero'])) ?></strong></div>
+                            <?php if ($c['boleto']): ?>
+                                <div class="text-muted"><?= formatMoney($c['boleto']['valor']) ?> · vence <?= formatDate($c['boleto']['data_vencimento']) ?></div>
+                                <?php $situacoesBoleto = ['registrada' => ['success', 'No banco'], 'paga' => ['primary', 'Pago'], 'baixada' => ['secondary', 'Baixado'], 'erro' => ['danger', 'Não registrado'], 'pendente_envio' => ['warning', 'Enviando']];
+                                [$corBoleto, $rotuloBoleto] = $situacoesBoleto[$c['boleto']['status']] ?? ['secondary', $c['boleto']['status']]; ?>
+                                <span class="badge text-bg-<?= $corBoleto ?>"><?= e($rotuloBoleto) ?></span> <span class="text-muted">hoje no sistema</span>
+                            <?php endif; ?>
                         <?php else: ?>
                             <span class="text-muted">-</span>
                         <?php endif; ?>
@@ -172,7 +194,15 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
                     </td>
                 </tr>
                 <tr class="collapse" id="chamada-<?= (int) $c['id'] ?>">
-                    <td colspan="6" class="bg-body-tertiary">
+                    <td colspan="7" class="bg-body-tertiary">
+                        <?php if ($c['nosso_numero']): ?>
+                            <div class="small mb-2">
+                                <strong>Para achar no Itaú:</strong> nosso número <strong><?= e(formatarNossoNumeroItau((int) $c['nosso_numero'])) ?></strong>
+                                (busca no app/internet banking, área de cobrança)
+                                · ID do boleto na API: <code><?= e((string) idBoletoItau($conta, (int) $c['nosso_numero'])) ?></code>
+                                <?php if ($c['boleto'] && $c['boleto']['linha_digitavel']): ?>· linha digitável <code><?= e($c['boleto']['linha_digitavel']) ?></code><?php endif; ?>
+                            </div>
+                        <?php endif; ?>
                         <div class="small text-muted mb-2"><?= e($c['url']) ?><?= $c['correlation_id'] ? ' · correlationID ' . e($c['correlation_id']) : '' ?></div>
                         <div class="row g-3">
                             <div class="col-lg-6">

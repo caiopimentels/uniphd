@@ -68,6 +68,7 @@ if ($erros) {
 }
 
 $avisoBanco = '';
+$reemitir = false;
 if ($conta['boleto_no_banco']) {
     $depois = array_merge($conta, ['valor' => $valor, 'data_vencimento' => $vencimento, 'desconto_valor' => $descontoValor, 'desconto_ate' => $descontoAte]);
     $banco = alterarBoletoBancoItau($pdo, $conta, $depois);
@@ -82,6 +83,7 @@ if ($conta['boleto_no_banco']) {
         $avisoBanco = $banco['mensagem'];
     } elseif ($banco['havia_boleto']) {
         $avisoBanco = $banco['aguardando_aprovacao'] ? 'ok:' . AVISO_APROVACAO_ITAU : 'ok';
+        $reemitir = $banco['reemitir'];
     }
 }
 
@@ -109,6 +111,19 @@ if ($conta['descricao'] !== $descricao) {
 }
 registrarAtividade('contas_receber', 'edicao', 'Parcela alterada: ' . $descricao . ($mudancas ? ' (' . implode('; ', $mudancas) . ')' : ''));
 
+// Desconto mudou: o boleto antigo já foi baixado; emite o novo com a
+// parcela já salva (valor, vencimento e desconto novos).
+if ($reemitir) {
+    $novo = registrarCobrancaItau($pdo, $id, usuarioAtualId());
+    registrarAtividade('contas_receber', 'edicao', 'Boleto reemitido por mudança de desconto: ' . $descricao . ($novo['ok'] ? '' : ' (falhou: ' . $novo['mensagem'] . ')'));
+    $textoAprovacao = str_starts_with($avisoBanco, 'ok:') ? ' ' . substr($avisoBanco, 3) : '';
+    flash($novo['ok'] && $textoAprovacao === '' ? 'success' : 'warning', 'Parcela atualizada' . ($mudancas ? ': ' . implode('; ', $mudancas) : '') . '. '
+        . ($novo['ok']
+            ? 'Como o desconto mudou, o boleto antigo foi baixado e um novo foi emitido — o boleto e o Pix enviados antes ao aluno não valem mais; mande o novo.'
+            : 'O boleto antigo foi baixado, mas o novo não foi emitido: ' . $novo['mensagem'] . ' Clique no ícone do boleto para tentar de novo.')
+        . $textoAprovacao);
+    redirect($voltar);
+}
 if ($avisoBanco !== '' && !str_starts_with($avisoBanco, 'ok')) {
     flash('danger', $avisoBanco . ($mudancas ? ' Foi salvo só o que o banco aceitou: ' . implode('; ', $mudancas) . '.' : ' Nada foi alterado.'));
     redirect($voltar);

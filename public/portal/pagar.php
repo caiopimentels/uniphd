@@ -28,8 +28,16 @@ require __DIR__ . '/../../includes/portal_header.php';
 <div class="portal-acesso largo mt-2">
     <div class="portal-card text-center">
         <div class="text-muted"><?= e($parcela['descricao']) ?></div>
-        <div class="fs-2 fw-bold"><?= formatMoney($parcela['valor']) ?></div>
-        <div class="small text-muted">Vencimento <?= formatDate($parcela['data_vencimento']) ?></div>
+        <?php // Com boleto gerado, valem a data e o valor dele (parcela vencida ganha vencimento novo).
+        $exibida = $dados ? $dados['parcela'] : $parcela; ?>
+        <div class="fs-2 fw-bold"><?= formatMoney($exibida['valor']) ?></div>
+        <div class="small text-muted">Vencimento <?= formatDate($exibida['data_vencimento']) ?></div>
+        <?php if ($exibida['data_vencimento'] !== $parcela['data_vencimento']): ?>
+            <div class="small text-muted">
+                Parcela vencida em <?= formatDate($parcela['data_vencimento']) ?> — este boleto tem novo vencimento<?php if ((float) $exibida['valor'] > (float) $parcela['valor']): ?>
+                    e inclui <?= formatMoney((float) $exibida['valor'] - (float) $parcela['valor']) ?> de multa e juros pelo atraso<?php endif; ?>.
+            </div>
+        <?php endif; ?>
         <?php if ($dados && $dados['desconto'] && $dados['desconto']['data_limite'] >= date('Y-m-d')): ?>
             <div class="small text-success fw-semibold mt-1"><?= e($dados['desconto']['texto']) ?></div>
         <?php endif; ?>
