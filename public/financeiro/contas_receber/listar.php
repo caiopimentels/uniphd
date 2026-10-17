@@ -3,6 +3,8 @@ require_once __DIR__ . '/../../../includes/bootstrap.php';
 exigirVerFinanceiro();
 
 $pdo = getDB();
+// Repete, depois da página, a baixa no banco de boletos cancelados que falhou.
+agendarBaixaBoletosCancelados();
 
 // Lembra o último filtro usado nesta tela entre uma visita e outra — sem
 // isso, todo acesso pelo menu resetava pra "Pendentes" e perdia o período
@@ -133,7 +135,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBoleto(<?= (int) $c['id'] ?>)" title="Gerar / abrir boleto"><i class="bi bi-upc-scan"></i></button>
                         <?php endif; ?>
                         <?php if ($c['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $c), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $c['boleto_no_banco'] ? 'Boleto já registrado no banco — não pode alterar' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $c), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $c['boleto_no_banco'] ? 'Alterar (o boleto é alterado também no banco)' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
                         <?php endif; ?>
                         <?php if ($c['status'] === 'pendente' && usuarioPodeBaixarReceber()): ?>
                             <a href="/financeiro/contas_receber/baixar.php?id=<?= (int) $c['id'] ?>" class="btn btn-sm btn-outline-success" title="Dar baixa (receber)"><i class="bi bi-check-lg"></i></a>
@@ -151,9 +153,10 @@ require __DIR__ . '/../../../includes/layout_header.php';
                         <?php
                             // Excluir uma mensalidade some com ela de vez (inclusive do DRE);
                             // para deixar de cobrar mantendo o histórico, o caminho é cancelar a matrícula.
-                            $avisoExclusao = $c['matricula_id']
-                                ? 'Esta parcela foi gerada por uma matrícula. Excluir mesmo assim? Para parar de cobrar o aluno, prefira cancelar a matrícula.'
-                                : 'Excluir este lançamento?';
+                            $avisoExclusao = ($c['boleto_no_banco'] ? 'O boleto desta parcela será baixado (cancelado) no Itaú e a parcela fica como cancelada. ' : '')
+                                . ($c['matricula_id']
+                                    ? 'Esta parcela foi gerada por uma matrícula. Excluir mesmo assim? Para parar de cobrar o aluno, prefira cancelar a matrícula.'
+                                    : 'Excluir este lançamento?');
                         ?>
                         <?php if (usuarioPodeExcluirReceber()): ?>
                         <form action="/financeiro/contas_receber/excluir.php" method="post" class="d-inline" onsubmit="return confirm('<?= e($avisoExclusao) ?>');">

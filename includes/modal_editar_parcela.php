@@ -11,6 +11,10 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                <div id="ep-aviso-banco" class="alert alert-info small py-2 d-none">
+                    <i class="bi bi-bank"></i> Esta parcela tem boleto/Pix registrado no Itaú. Mudanças de <strong>valor, vencimento e desconto</strong>
+                    são enviadas ao banco ao salvar; o que o banco recusar não é alterado.
+                </div>
                 <input type="hidden" name="id" id="ep-id">
                 <input type="hidden" name="voltar" value="<?= e($voltarEdicaoParcela ?? 'lista') ?>">
                 <div class="row g-3">
@@ -65,16 +69,13 @@ const dataParcela = (iso) => iso ? iso.split('-').reverse().join('/') : '';
 
 function editarParcela(botao) {
     const p = JSON.parse(botao.dataset.parcela);
-    if (p.no_banco) {
-        alert('Esta parcela já tem boleto/Pix registrado no banco com o valor e o desconto atuais, por isso não pode ser alterada aqui.');
-        return;
-    }
     parcelaEmEdicao = p;
     document.getElementById('ep-id').value = p.id;
     document.getElementById('ep-descricao').value = p.descricao;
     document.getElementById('ep-valor').value = p.valor.toFixed(2).replace('.', ',');
     document.getElementById('ep-vencimento').value = p.vencimento;
     document.getElementById('ep-observacao').value = p.observacao;
+    document.getElementById('ep-aviso-banco').classList.toggle('d-none', !p.no_banco);
     const opcaoPadrao = document.getElementById('ep-opcao-padrao');
     opcaoPadrao.textContent = p.regra ? 'Regra da matrícula' : 'Sem desconto (padrão)';
     document.getElementById('ep-modo').value = p.desconto_valor === null ? 'padrao' : (p.desconto_valor > 0 ? 'personalizado' : 'nenhum');

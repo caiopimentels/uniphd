@@ -499,7 +499,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBoleto(<?= (int) $p['id'] ?>)" title="Gerar / abrir boleto"><i class="bi bi-upc-scan"></i></button>
                             <?php endif; ?>
                             <?php if ($p['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $p), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $p['boleto_no_banco'] ? 'Boleto já registrado no banco — não pode alterar' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $p), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $p['boleto_no_banco'] ? 'Alterar (o boleto é alterado também no banco)' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
                             <?php endif; ?>
                             <?php if ($p['status'] === 'pendente' && usuarioPodeBaixarReceber()): ?>
                                 <a href="/financeiro/contas_receber/baixar.php?id=<?= (int) $p['id'] ?>&voltar=aluno" class="btn btn-sm btn-outline-success" title="Dar baixa (receber)"><i class="bi bi-check-lg"></i></a>

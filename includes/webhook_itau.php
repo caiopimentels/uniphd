@@ -127,7 +127,7 @@ function chamarApiNotificacoesItau(PDO $pdo, array $conta, string $metodo, strin
         ]);
         if ($corpo !== null) {
             $cabecalhos[] = 'Content-Type: application/json';
-            curl_setopt($curl, CURLOPT_POSTFIELDS, json_encode($corpo, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            curl_setopt($curl, CURLOPT_POSTFIELDS, $corpo === [] ? '{}' : json_encode($corpo, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         }
         curl_setopt($curl, CURLOPT_HTTPHEADER, $cabecalhos);
         aplicarCertificadoItau($curl, $conta);

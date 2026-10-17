@@ -237,15 +237,9 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
     // ---- desconto por pontualidade (códigos do Itaú: 01 = valor fixo até a
     // data, 02 = percentual até a data)
     $pontualidade = descontoPontualidadeParcela($pdo, $parcela);
-    $desconto = ['codigo_tipo_desconto' => '00'];
+    $desconto = blocoDescontoItau($pontualidade);
     if ($pontualidade) {
-        $item = ['data_desconto' => $pontualidade['data_limite']];
-        if ($pontualidade['tipo'] === 'valor') {
-            $item['valor_desconto'] = number_format($pontualidade['desconto'], 2, '.', '');
-            $desconto = ['codigo_tipo_desconto' => '01', 'descontos' => [$item]];
-        } else {
-            $item['percentual_desconto'] = number_format($pontualidade['percentual'], 5, '.', '');
-            $desconto = ['codigo_tipo_desconto' => '02', 'descontos' => [$item]];
+        if ($pontualidade['tipo'] !== 'valor') {
             $avisos[] = 'Desconto percentual usa o código 02, que a documentação do Itaú descreve como "percentual (mensal)". Confirme no sandbox se ele é aplicado como percentual simples sobre o título.';
         }
         if ($pontualidade['data_limite'] < date('Y-m-d')) {
@@ -751,6 +745,10 @@ function operacoesChamadaBanco(): array
         'consulta_webhook_pix' => 'Consulta do aviso de Pix',
         'exclusao_webhook_pix' => 'Exclusão do aviso de Pix',
         'confirmacao_pix' => 'Confirmação de Pix recebido',
+        'baixa_boleto' => 'Baixa (cancelamento) do boleto',
+        'alteracao_valor' => 'Alteração de valor do boleto',
+        'alteracao_vencimento' => 'Alteração de vencimento do boleto',
+        'alteracao_desconto' => 'Alteração de desconto do boleto',
     ];
 }
 
@@ -1022,6 +1020,200 @@ function dadosBoletoParcela(PDO $pdo, int $contaReceberId): ?array
         // As pendências são do REGISTRO; depois de registrada não há o que cobrar.
         'pendencias' => $cobranca ? [] : $previa['pendencias'],
     ];
+}
+
+// Desconto por pontualidade no formato do Itaú: 00 = sem desconto,
+// 01 = valor fixo até a data, 02 = percentual até a data.
+function blocoDescontoItau(?array $pontualidade): array
+{
+    if (!$pontualidade) {
+        return ['codigo_tipo_desconto' => '00'];
+    }
+    $item = ['data_desconto' => $pontualidade['data_limite']];
+    if ($pontualidade['tipo'] === 'valor') {
+        $item['valor_desconto'] = number_format($pontualidade['desconto'], 2, '.', '');
+        return ['codigo_tipo_desconto' => '01', 'descontos' => [$item]];
+    }
+    $item['percentual_desconto'] = number_format($pontualidade['percentual'], 5, '.', '');
+    return ['codigo_tipo_desconto' => '02', 'descontos' => [$item]];
+}
+
+// ---------------------------------------------------------------------
+// Instruções sobre um boleto já registrado (Cobrança v2):
+// PATCH /boletos/{id_boleto}/{baixa|data_vencimento|valor_nominal|desconto}
+// id_boleto = agência (4) + conta (7) + DAC (1) + carteira (3) + nosso
+// número (8). O banco responde 204 quando aceita.
+// ---------------------------------------------------------------------
+
+function idBoletoItau(array $conta, int $nossoNumero): ?string
+{
+    $beneficiario = idBeneficiarioItau($conta);
+    $carteira = apenasDigitos((string) ($conta['itau_carteira'] ?? '')) ?: '109';
+    return $beneficiario ? $beneficiario . str_pad($carteira, 3, '0', STR_PAD_LEFT) . formatarNossoNumeroItau($nossoNumero) : null;
+}
+
+// Cobrança registrada (no banco e em aberto) da parcela, com a conta dela.
+function cobrancaRegistradaParcela(PDO $pdo, int $contaReceberId): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM cobrancas_bancarias WHERE conta_receber_id = ? AND status = 'registrada' ORDER BY id DESC LIMIT 1"
+    );
+    $stmt->execute([$contaReceberId]);
+    $cobranca = $stmt->fetch();
+    if (!$cobranca) {
+        return null;
+    }
+    $stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
+    $stmt->execute([$cobranca['conta_bancaria_id']]);
+    $cobranca['conta'] = $stmt->fetch() ?: null;
+    return $cobranca;
+}
+
+function instrucaoBoletoItau(PDO $pdo, array $cobranca, string $instrucao, array $corpo, string $operacao): array
+{
+    $conta = $cobranca['conta'];
+    $idBoleto = $conta ? idBoletoItau($conta, (int) $cobranca['nosso_numero']) : null;
+    if (!$idBoleto) {
+        return ['ok' => false, 'status' => 0, 'mensagem' => 'Confira agência, conta e dígito da conta bancária.', 'resposta' => null];
+    }
+    // As instruções ficam na Cobrança v2 (cash_management).
+    $base = ehApiCobrancaV2Itau($conta) ? rtrim($conta['api_url_base'], '/') : 'https://api.itau.com.br/cash_management/v2';
+    contextoChamadaBanco(['conta_receber_id' => (int) $cobranca['conta_receber_id']]);
+    $resultado = chamarApiNotificacoesItau($pdo, $conta, 'PATCH', '/boletos/' . $idBoleto . '/' . $instrucao, $corpo, $base, $operacao);
+    // 204 = feito. 200 com "Aguardando aprovação" = o banco guardou a
+    // instrução, mas ela só vale depois que alguém da empresa aprovar no
+    // Itaú (conforme a configuração da conta).
+    $texto = is_array($resultado['resposta']) ? json_encode($resultado['resposta'], JSON_UNESCAPED_UNICODE) : (string) $resultado['resposta'];
+    $resultado['aguardando_aprovacao'] = $resultado['ok'] && mb_stripos($texto, 'aguardando aprova') !== false;
+    return $resultado;
+}
+
+const AVISO_APROVACAO_ITAU = 'Atenção: o Itaú deixou a instrução aguardando aprovação — ela só vale depois de aprovada no internet banking/app do Itaú (área de cobrança).';
+
+/**
+ * Pede ao banco a baixa (cancelamento) do boleto da parcela. Sem boleto
+ * registrado não há o que fazer (ok). Aceito: a cobrança fica 'baixada'.
+ * Retorna ['ok' => bool, 'mensagem' => string, 'havia_boleto' => bool].
+ */
+function baixarBoletoBancoItau(PDO $pdo, int $contaReceberId): array
+{
+    $cobranca = cobrancaRegistradaParcela($pdo, $contaReceberId);
+    if (!$cobranca) {
+        return ['ok' => true, 'mensagem' => '', 'havia_boleto' => false];
+    }
+    $resultado = instrucaoBoletoItau($pdo, $cobranca, 'baixa', [], 'baixa_boleto');
+    if ($resultado['ok']) {
+        $pdo->prepare("UPDATE cobrancas_bancarias SET status = 'baixada', mensagem_erro = NULL WHERE id = ?")->execute([$cobranca['id']]);
+        return ['ok' => true, 'havia_boleto' => true,
+            'mensagem' => $resultado['aguardando_aprovacao'] ? 'Baixa enviada ao banco. ' . AVISO_APROVACAO_ITAU : 'Boleto baixado no banco.'];
+    }
+    $pdo->prepare('UPDATE cobrancas_bancarias SET mensagem_erro = ? WHERE id = ?')
+        ->execute([mb_strimwidth('Baixa: ' . $resultado['mensagem'], 0, 255, '…', 'UTF-8'), $cobranca['id']]);
+    return ['ok' => false, 'mensagem' => 'O banco não aceitou a baixa do boleto: ' . $resultado['mensagem'], 'havia_boleto' => true];
+}
+
+/**
+ * Leva ao boleto registrado as mudanças da parcela (valor, vencimento e
+ * desconto), uma instrução por vez, e para na primeira recusa. Valor e
+ * vencimento mudam o código de barras: a linha digitável guardada é
+ * recalculada (o cálculo do sistema é o mesmo do Itaú).
+ * Retorna ['ok' => bool, 'mensagem' => string, 'havia_boleto' => bool,
+ *          'aceito' => ['valor' => bool, 'vencimento' => bool, 'desconto' => bool]].
+ */
+function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
+{
+    $aceito = ['valor' => false, 'vencimento' => false, 'desconto' => false];
+    $cobranca = cobrancaRegistradaParcela($pdo, (int) $antes['id']);
+    if (!$cobranca) {
+        return ['ok' => true, 'mensagem' => '', 'havia_boleto' => false, 'aceito' => $aceito];
+    }
+    // Uma instrução por vez; na primeira recusa, para. O que já foi aceito
+    // vale (o banco já mudou) e o código de barras acompanha.
+    $instrucoes = [];
+    if (round((float) $antes['valor'], 2) !== round((float) $depois['valor'], 2)) {
+        $instrucoes['valor'] = ['valor_nominal', ['valor_titulo' => number_format((float) $depois['valor'], 2, '.', '')], 'alteracao_valor'];
+    }
+    if ($antes['data_vencimento'] !== $depois['data_vencimento']) {
+        $instrucoes['vencimento'] = ['data_vencimento', ['data_vencimento' => $depois['data_vencimento']], 'alteracao_vencimento'];
+    }
+    $descontoDepois = blocoDescontoItau(descontoPontualidadeParcela($pdo, $depois));
+    if (blocoDescontoItau(descontoPontualidadeParcela($pdo, $antes)) !== $descontoDepois) {
+        $instrucoes['desconto'] = ['desconto', $descontoDepois, 'alteracao_desconto'];
+    }
+
+    $recusa = null;
+    $aguardando = false;
+    foreach ($instrucoes as $campo => [$instrucao, $corpo, $operacao]) {
+        $r = instrucaoBoletoItau($pdo, $cobranca, $instrucao, $corpo, $operacao);
+        if (!$r['ok']) {
+            $recusa = "O banco não aceitou a mudança de {$campo}: " . $r['mensagem'];
+            break;
+        }
+        $aceito[$campo] = true;
+        $aguardando = $aguardando || $r['aguardando_aprovacao'];
+    }
+
+    if ($aceito['valor'] || $aceito['vencimento']) {
+        atualizarCodigoBoletoCobranca($pdo, $cobranca,
+            $aceito['vencimento'] ? $depois['data_vencimento'] : $antes['data_vencimento'],
+            (float) ($aceito['valor'] ? $depois['valor'] : $antes['valor']));
+    }
+    return ['ok' => $recusa === null, 'havia_boleto' => true, 'aceito' => $aceito, 'aguardando_aprovacao' => $aguardando,
+        'mensagem' => ($recusa ?? 'Boleto alterado também no banco.') . ($aguardando ? ' ' . AVISO_APROVACAO_ITAU : '')];
+}
+
+function atualizarCodigoBoletoCobranca(PDO $pdo, array $cobranca, string $vencimento, float $valor): void
+{
+    $conta = $cobranca['conta'];
+    $calculo = calcularBoletoItau($conta['agencia'], $conta['conta'], $conta['itau_carteira'], (int) $cobranca['nosso_numero'], $vencimento, $valor);
+    $pdo->prepare('UPDATE cobrancas_bancarias SET valor = ?, data_vencimento = ?, linha_digitavel = ?, codigo_barras = ? WHERE id = ?')
+        ->execute([$valor, $vencimento, apenasDigitos($calculo['linha_digitavel']), apenasDigitos($calculo['codigo_barras']), $cobranca['id']]);
+}
+
+/**
+ * Boletos de parcelas canceladas pelo sistema (matrícula cancelada, turma
+ * concluída, inscrição do portal vencida) recebem a baixa no banco. Roda
+ * ao fim da requisição que cancelou (agendarBaixaBoletosCancelados) e
+ * repete as que falharam, no máximo uma vez por hora cada.
+ */
+function baixarBoletosCanceladosNoBanco(PDO $pdo, int $limite = 20): void
+{
+    $stmt = $pdo->query(
+        "SELECT cb.conta_receber_id, cb.mensagem_erro, cr.descricao FROM cobrancas_bancarias cb JOIN contas_receber cr ON cr.id = cb.conta_receber_id
+         WHERE cb.status = 'registrada' AND cr.status = 'cancelado'
+           AND NOT (COALESCE(cb.mensagem_erro, '') LIKE 'Baixa:%' AND cb.atualizado_em > NOW() - INTERVAL 1 HOUR)
+         ORDER BY cb.id LIMIT " . max(1, $limite)
+    );
+    foreach ($stmt->fetchAll() as $linha) {
+        $resultado = baixarBoletoBancoItau($pdo, (int) $linha['conta_receber_id']);
+        // Avisa no sino só na primeira falha, não a cada nova tentativa.
+        if (!$resultado['ok'] && !str_starts_with((string) $linha['mensagem_erro'], 'Baixa:')) {
+            criarNotificacao($pdo, 'pagamento', 'Boleto cancelado não foi baixado no banco',
+                $linha['descricao'] . ' — ' . $resultado['mensagem'] . ' O sistema tenta de novo; se continuar, baixe no app do Itaú.',
+                '/contas_bancarias/auditoria.php?parcela=' . (int) $linha['conta_receber_id'], (int) $linha['conta_receber_id']);
+        }
+    }
+}
+
+// Agenda a baixa no banco para o fim da requisição (depois do commit e,
+// com PHP-FPM, depois de a resposta já ter ido para o navegador).
+function agendarBaixaBoletosCancelados(): void
+{
+    static $agendado = false;
+    if ($agendado) {
+        return;
+    }
+    $agendado = true;
+    register_shutdown_function(function () {
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
+        try {
+            baixarBoletosCanceladosNoBanco(getDB());
+        } catch (Throwable $e) {
+            error_log('[Baixa no banco] ' . $e->getMessage());
+        }
+    });
 }
 
 /**

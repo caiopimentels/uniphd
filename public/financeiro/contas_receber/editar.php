@@ -3,8 +3,9 @@ require_once __DIR__ . '/../../../includes/bootstrap.php';
 exigirPermissaoAcao('editar_financeiro_aluno', 'Seu perfil não pode alterar parcelas.');
 
 // Muda as condições de uma parcela em aberto (modal do lápis): descrição,
-// valor, vencimento, desconto até uma data e observação. Parcela com
-// boleto/Pix já no banco não muda aqui — o banco cobraria o valor antigo.
+// valor, vencimento, desconto até uma data e observação. Com boleto/Pix já
+// registrado, valor, vencimento e desconto vão antes para o banco; o que o
+// banco recusar não muda aqui (sistema e boleto ficam sempre iguais).
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirect('/financeiro/contas_receber/listar.php');
 }
@@ -23,10 +24,6 @@ $voltar = match (input('voltar')) {
 
 if (!$conta || $conta['status'] !== 'pendente') {
     flash('danger', 'Só parcelas em aberto podem ser alteradas.');
-    redirect($voltar);
-}
-if ($conta['boleto_no_banco']) {
-    flash('danger', 'Esta parcela já tem boleto/Pix registrado no banco, com o valor e o desconto antigos — por isso não pode ser alterada aqui.');
     redirect($voltar);
 }
 
@@ -62,9 +59,30 @@ if ($modoDesconto === 'personalizado') {
         $erros[] = 'O desconto vale até, no máximo, o dia do vencimento.';
     }
 }
+if ($conta['boleto_no_banco'] && $vencimento && $vencimento < date('Y-m-d') && $vencimento !== $conta['data_vencimento']) {
+    $erros[] = 'Com boleto no banco, o novo vencimento não pode ser no passado.';
+}
 if ($erros) {
     flash('danger', implode(' ', $erros));
     redirect($voltar);
+}
+
+$avisoBanco = '';
+if ($conta['boleto_no_banco']) {
+    $depois = array_merge($conta, ['valor' => $valor, 'data_vencimento' => $vencimento, 'desconto_valor' => $descontoValor, 'desconto_ate' => $descontoAte]);
+    $banco = alterarBoletoBancoItau($pdo, $conta, $depois);
+    if (!$banco['ok']) {
+        // O que o banco aceitou antes da recusa vale; o resto fica como era.
+        $valor = $banco['aceito']['valor'] ? $valor : (float) $conta['valor'];
+        $vencimento = $banco['aceito']['vencimento'] ? $vencimento : $conta['data_vencimento'];
+        if (!$banco['aceito']['desconto']) {
+            $descontoValor = $conta['desconto_valor'] === null ? null : (float) $conta['desconto_valor'];
+            $descontoAte = $conta['desconto_ate'];
+        }
+        $avisoBanco = $banco['mensagem'];
+    } elseif ($banco['havia_boleto']) {
+        $avisoBanco = $banco['aguardando_aprovacao'] ? 'ok:' . AVISO_APROVACAO_ITAU : 'ok';
+    }
 }
 
 $stmt = $pdo->prepare(
@@ -91,5 +109,11 @@ if ($conta['descricao'] !== $descricao) {
 }
 registrarAtividade('contas_receber', 'edicao', 'Parcela alterada: ' . $descricao . ($mudancas ? ' (' . implode('; ', $mudancas) . ')' : ''));
 
-flash('success', 'Parcela atualizada' . ($mudancas ? ': ' . implode('; ', $mudancas) : '') . '.');
+if ($avisoBanco !== '' && !str_starts_with($avisoBanco, 'ok')) {
+    flash('danger', $avisoBanco . ($mudancas ? ' Foi salvo só o que o banco aceitou: ' . implode('; ', $mudancas) . '.' : ' Nada foi alterado.'));
+    redirect($voltar);
+}
+flash(str_starts_with($avisoBanco, 'ok:') ? 'warning' : 'success', 'Parcela atualizada' . ($mudancas ? ': ' . implode('; ', $mudancas) : '') . '.'
+    . (str_starts_with($avisoBanco, 'ok') && $mudancas ? ' O boleto foi alterado também no banco.' : '')
+    . (str_starts_with($avisoBanco, 'ok:') ? ' ' . substr($avisoBanco, 3) : ''));
 redirect($voltar);

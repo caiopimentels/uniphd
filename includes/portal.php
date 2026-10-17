@@ -453,6 +453,7 @@ function expirarInscricoesPortal(PDO $pdo): int
         $atualiza->execute([$m['id']]);
         if ($atualiza->rowCount()) {
             $pdo->prepare("UPDATE contas_receber SET status = 'cancelado' WHERE matricula_id = ? AND status = 'pendente'")->execute([$m['id']]);
+            agendarBaixaBoletosCancelados();
             $expiradas++;
         }
         $pdo->commit();

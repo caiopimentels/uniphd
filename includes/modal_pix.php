@@ -120,20 +120,29 @@ function abrirBoleto(parcelaId, forcar) {
             + '<style>@keyframes g{to{transform:rotate(360deg)}}</style></body>');
         aba.document.close();
     }
-    prepararModalPix(parcelaId, 'boleto');
+    // Com a aba aberta, o "Gerando..." aparece nela e o modal fica fora do
+    // caminho; ele só abre aqui se der erro (ou se o navegador bloquear a aba).
+    parcelaPixAtual = parcelaId;
+    modoPixAtual = 'boleto';
+    if (!aba) prepararModalPix(parcelaId, 'boleto');
     gerarCobrancaPix(parcelaId, forcar)
         .then((d) => {
             const pronto = d.sucesso && !d.erro_geracao && (d.boleto_registrado || !d.pendencias.length);
             if (pronto && aba) {
                 aba.location.href = d.boleto_url;
-                bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-pix')).hide();
                 return;
             }
-            if (aba) aba.close();
+            if (aba) {
+                aba.close();
+                prepararModalPix(parcelaId, 'boleto');
+            }
             mostrarCobrancaPix(d);
         })
         .catch(() => {
-            if (aba) aba.close();
+            if (aba) {
+                aba.close();
+                prepararModalPix(parcelaId, 'boleto');
+            }
             falhaRedePix();
         });
 }

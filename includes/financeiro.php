@@ -194,6 +194,9 @@ function cancelarCobrancasFuturasMatricula(PDO $pdo, int $matriculaId, string $d
          WHERE matricula_id = ? AND status = 'pendente' AND data_vencimento >= ?"
     );
     $stmt->execute([$matriculaId, $dataCorte]);
+    if ($stmt->rowCount()) {
+        agendarBaixaBoletosCancelados();
+    }
     return $stmt->rowCount();
 }
 
