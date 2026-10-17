@@ -857,6 +857,7 @@ function operacoesChamadaBanco(): array
         'confirmacao_pix' => 'Confirmação de Pix recebido',
         'baixa_boleto' => 'Baixa (cancelamento) do boleto',
         'consulta_boleto' => 'Consulta do boleto no Itaú',
+        'emissao_certificado' => 'Emissão de certificado novo',
         'alteracao_valor' => 'Alteração de valor do boleto',
         'alteracao_vencimento' => 'Alteração de vencimento do boleto',
         'alteracao_desconto' => 'Alteração de desconto do boleto',

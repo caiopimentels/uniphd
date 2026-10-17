@@ -75,6 +75,7 @@ require_once __DIR__ . '/cripto.php';
 require_once __DIR__ . '/pix.php';
 require_once __DIR__ . '/boleto.php';
 require_once __DIR__ . '/cobranca_itau.php';
+require_once __DIR__ . '/certificado_itau.php';
 require_once __DIR__ . '/webhook_itau.php';
 require_once __DIR__ . '/portal.php';
 require_once __DIR__ . '/portal_site.php';

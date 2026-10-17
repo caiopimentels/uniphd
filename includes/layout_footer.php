@@ -225,5 +225,47 @@ function manterSessaoViva() {
         .catch(() => {});
 }
 </script>
+<?php
+// Administrador: avisa uma vez por sessão se a renovação automática do
+// certificado do Itaú falhou ou se o certificado venceu.
+if (usuarioLogado() && usuarioEhAdmin() && empty($_SESSION['aviso_certificado_mostrado'])):
+    $problemasCertificado = getDB()->query(
+        "SELECT id, apelido, api_certificado_validade, api_certificado_renovacao_erro FROM contas_bancarias
+         WHERE integracao = 'itau' AND ativo = 1 AND api_ambiente = 'producao' AND api_certificado_validade IS NOT NULL
+           AND (api_certificado_validade < CURDATE()
+                OR (api_certificado_renovacao_erro IS NOT NULL AND api_certificado_validade <= CURDATE() + INTERVAL 30 DAY))"
+    )->fetchAll();
+    $_SESSION['aviso_certificado_mostrado'] = true;
+    if ($problemasCertificado): ?>
+<div class="modal fade" id="modal-aviso-certificado" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-danger">
+            <div class="modal-header bg-danger-subtle">
+                <h5 class="modal-title"><i class="bi bi-shield-exclamation"></i> Certificado do Itaú</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <?php foreach ($problemasCertificado as $pc): $vencido = $pc['api_certificado_validade'] < date('Y-m-d'); ?>
+                    <div class="mb-3">
+                        <div class="fw-semibold"><?= e($pc['apelido']) ?> — <?= $vencido ? 'certificado VENCIDO em ' : 'vence em ' ?><?= formatDate($pc['api_certificado_validade']) ?></div>
+                        <?php if ($pc['api_certificado_renovacao_erro']): ?>
+                            <div class="small">Houve uma <strong>falha na renovação automática</strong>: <?= e($pc['api_certificado_renovacao_erro']) ?></div>
+                        <?php endif; ?>
+                        <div class="small text-muted mt-1">
+                            <?= $vencido ? 'Enquanto não instalar um novo, boletos e Pix não são gerados.' : 'O sistema tenta de novo todo dia.' ?>
+                            Para resolver: peça ao Itaú (implantação) o <strong>token temporário</strong> e use "Gerar certificado novo" na conta bancária.
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Depois</button>
+                <a href="/contas_bancarias/form.php?id=<?= (int) $problemasCertificado[0]['id'] ?>#certificado" class="btn btn-danger"><i class="bi bi-key"></i> Abrir a conta bancária</a>
+            </div>
+        </div>
+    </div>
+</div>
+<script>bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-aviso-certificado')).show();</script>
+<?php endif; endif; ?>
 </body>
 </html>

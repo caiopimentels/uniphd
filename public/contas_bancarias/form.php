@@ -410,8 +410,17 @@ if ($id) {
                     </span>
                 <?php endif; ?>
                 <span class="small text-muted">· envie os dois arquivos de novo para trocar.</span>
+                <?php if ($valor('api_certificado_renovacao_erro')): ?>
+                    <div class="small text-danger mt-1"><i class="bi bi-exclamation-triangle"></i> Renovação automática falhou<?= $valor('api_certificado_renovacao_em') ? ' em ' . formatDateTime($valor('api_certificado_renovacao_em')) : '' ?>: <?= e($valor('api_certificado_renovacao_erro')) ?></div>
+                <?php endif; ?>
             <?php else: ?>
                 <span class="small text-muted">Nenhum certificado instalado. Os arquivos ficam guardados fora da pasta pública do site.</span>
+            <?php endif; ?>
+            <?php if ($id && ($valor('api_ambiente') === 'producao')): ?>
+                <div class="mt-2" id="certificado">
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modal-gerar-certificado"><i class="bi bi-arrow-repeat"></i> Gerar certificado novo no Itaú</button>
+                    <span class="small text-muted ms-1">O certificado vale 1 ano; a partir de 30 dias antes o sistema tenta renovar sozinho todo dia.</span>
+                </div>
             <?php endif; ?>
         </div>
     </div>
@@ -462,4 +471,32 @@ atualizarBeneficiario();
 atualizarIntegracao();
 </script>
 
+<?php if ($id && ($valor('api_ambiente') === 'producao')): ?>
+<div class="modal fade" id="modal-gerar-certificado" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" method="post" action="/contas_bancarias/renovar_certificado.php" onsubmit="this.querySelectorAll('button[type=submit]').forEach((b) => { b.disabled = true; }); this.querySelector('.gerando').classList.remove('d-none');">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-arrow-repeat"></i> Gerar certificado novo no Itaú</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" name="id" value="<?= (int) $id ?>">
+                <input type="hidden" name="modo" value="automatico" id="modo-certificado">
+                <p class="small">O sistema gera a chave e o pedido (CSR), envia ao Itaú, instala o certificado novo e atualiza o <strong>client_secret</strong> que vem junto. Os arquivos antigos ficam guardados.</p>
+                <p class="small mb-2"><strong>Renovar com o access token:</strong> usa a credencial e o certificado atuais (o certificado precisa ainda estar válido). É o que o sistema tenta sozinho a partir de 30 dias antes.</p>
+                <details class="small">
+                    <summary>Usar o token temporário do Itaú (certificado já vencido ou o Itaú recusou)</summary>
+                    <textarea name="token_temporario" class="form-control font-monospace small mt-2" rows="4" placeholder="Cole aqui o token que a implantação do Itaú enviou por e-mail (vale 7 dias)"></textarea>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary mt-2" onclick="document.getElementById('modo-certificado').value = 'token';"><i class="bi bi-key"></i> Gerar com o token temporário</button>
+                </details>
+                <div class="gerando d-none mt-3 small"><span class="spinner-border spinner-border-sm"></span> Falando com o Itaú...</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-brand" onclick="document.getElementById('modo-certificado').value = 'automatico';"><i class="bi bi-arrow-repeat"></i> Renovar com o access token</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

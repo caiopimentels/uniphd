@@ -105,6 +105,13 @@ $menus = [
 </style>
 </head>
 <body>
+<?php
+// Vencimento e renovação do certificado do Itaú (no máximo a cada 12 h,
+// depois de a página ir para o navegador).
+if (usuarioLogado()) {
+    agendarVerificacaoCertificados();
+}
+?>
 
 <header class="topnav">
     <div class="topnav-inner">

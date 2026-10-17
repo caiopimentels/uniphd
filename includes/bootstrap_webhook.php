@@ -49,6 +49,7 @@ require_once __DIR__ . '/notificacoes.php';
 require_once __DIR__ . '/cripto.php';
 require_once __DIR__ . '/boleto.php';
 require_once __DIR__ . '/cobranca_itau.php';
+require_once __DIR__ . '/certificado_itau.php';
 require_once __DIR__ . '/webhook_itau.php';
 require_once __DIR__ . '/turmas.php';
 require_once __DIR__ . '/financeiro.php';
