@@ -1038,6 +1038,32 @@ function blocoDescontoItau(?array $pontualidade): array
     return ['codigo_tipo_desconto' => '02', 'descontos' => [$item]];
 }
 
+/**
+ * Formatos de corpo para PATCH /boletos/{id}/desconto, na ordem em que são
+ * tentados. A documentação do Itaú não traz o corpo desta instrução (só o
+ * objeto "desconto" do registro); o formato solto foi recusado com "Dados
+ * informados no corpo da requisição não condizem com a instrução".
+ */
+function corposDescontoItau(array $bloco): array
+{
+    // Valores no formato do registro (17 dígitos / 12 dígitos), como no POST.
+    $digitos = $bloco;
+    foreach ($digitos['descontos'] ?? [] as $i => $item) {
+        if (isset($item['valor_desconto'])) {
+            $digitos['descontos'][$i]['valor_desconto'] = str_pad(apenasDigitos(number_format((float) $item['valor_desconto'], 2, '.', '')), 17, '0', STR_PAD_LEFT);
+        }
+        if (isset($item['percentual_desconto'])) {
+            $digitos['descontos'][$i]['percentual_desconto'] = str_pad(apenasDigitos(number_format((float) $item['percentual_desconto'], 5, '.', '')), 12, '0', STR_PAD_LEFT);
+        }
+    }
+    return [
+        ['desconto' => $bloco],
+        ['data' => ['desconto' => $bloco]],
+        ['desconto' => $digitos],
+        $bloco,
+    ];
+}
+
 // ---------------------------------------------------------------------
 // Instruções sobre um boleto já registrado (Cobrança v2):
 // PATCH /boletos/{id_boleto}/{baixa|data_vencimento|valor_nominal|desconto}
@@ -1138,13 +1164,20 @@ function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
     }
     $descontoDepois = blocoDescontoItau(descontoPontualidadeParcela($pdo, $depois));
     if (blocoDescontoItau(descontoPontualidadeParcela($pdo, $antes)) !== $descontoDepois) {
-        $instrucoes['desconto'] = ['desconto', $descontoDepois, 'alteracao_desconto'];
+        $instrucoes['desconto'] = ['desconto', corposDescontoItau($descontoDepois), 'alteracao_desconto'];
     }
 
     $recusa = null;
     $aguardando = false;
-    foreach ($instrucoes as $campo => [$instrucao, $corpo, $operacao]) {
-        $r = instrucaoBoletoItau($pdo, $cobranca, $instrucao, $corpo, $operacao);
+    foreach ($instrucoes as $campo => [$instrucao, $corpos, $operacao]) {
+        // Uma instrução pode ter mais de um formato de corpo a tentar
+        // (desconto); 400 = recusado sem mudar nada, então tenta o próximo.
+        foreach (array_is_list($corpos) && $corpos && is_array($corpos[0]) ? $corpos : [$corpos] as $corpo) {
+            $r = instrucaoBoletoItau($pdo, $cobranca, $instrucao, $corpo, $operacao);
+            if ($r['ok'] || $r['status'] !== 400) {
+                break;
+            }
+        }
         if (!$r['ok']) {
             $recusa = "O banco não aceitou a mudança de {$campo}: " . $r['mensagem'];
             break;
