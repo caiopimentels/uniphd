@@ -350,7 +350,9 @@ require __DIR__ . '/../../includes/abas_configuracoes.php';
         </div>
         <div class="col-12"><div class="form-text mt-0">
             Copie as URLs da documentação do devportal do Itaú — mudam entre sandbox e produção.
-            O boleto + Pix é registrado em <code>&lt;URL base&gt;<?= e(ITAU_ENDPOINT_BOLETO_PIX) ?></code>.
+            Produção: API de Cobrança v2 <code>https://api.itau.com.br/cash_management/v2</code> (registra em <code>/boletos</code>)
+            ou Boleto com Pix <code>https://pix-pj.api.itau.com/recebimentos-pix/v1</code> (em <code><?= e(ITAU_ENDPOINT_BOLETO_PIX) ?></code>) —
+            use a que o Itaú liberou para a sua aplicação (o "Testar conexão" mostra as permissões).
         </div></div>
 
         <div class="col-md-4">

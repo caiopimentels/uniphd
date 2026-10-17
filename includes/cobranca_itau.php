@@ -338,6 +338,18 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
 // API cadastrada na conta.
 const ITAU_ENDPOINT_BOLETO_PIX = '/boletos-pix';
 
+// API de Cobrança v2 do Itaú (cash_management): registra boleto e bolecode
+// em <base>/boletos. A URL base da conta diz qual API a aplicação usa.
+function ehApiCobrancaV2Itau(array $conta): bool
+{
+    return str_contains((string) ($conta['api_url_base'] ?? ''), 'cash_management');
+}
+
+function endpointBoletoItau(array $conta): string
+{
+    return ehApiCobrancaV2Itau($conta) ? '/boletos' : ITAU_ENDPOINT_BOLETO_PIX;
+}
+
 // O firewall do Itaú (CloudFront) responde 403 "Request blocked" a
 // requisições sem User-Agent — e o cURL do PHP não manda um por padrão.
 const ITAU_USER_AGENT = 'UniPHD/1.0';
@@ -623,56 +635,77 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
     if (!$conta['api_url_base']) {
         return $falha('Falta a URL base da API na conta bancária.');
     }
-    // Token guardado ainda no prazo, mas recusado pelo banco (HTTP 401 —
-    // revogado, trocado no portal do Itaú...): pede um novo e tenta de novo
-    // uma vez. Com 401 o banco não processou nada, então repetir é seguro.
-    for ($tentativa = 1; $tentativa <= 2; $tentativa++) {
-        $token = obterTokenItau($pdo, $conta, $tentativa > 1);
-        if (!$token['ok']) {
-            return $falha('Não foi possível obter o token: ' . $token['mensagem']);
-        }
+    // Qual API do Itaú a aplicação usa, pela URL base da conta:
+    //  - Cobrança v2 (cash_management, escopo cash_management/emissaocobranca.write):
+    //    POST <base>/boletos, corpo dentro de "data" com codigo_canal_operacao;
+    //  - Boleto com Pix (recebimentos-pix, escopos cob.write/cobv.write):
+    //    POST <base>/boletos-pix, corpo solto.
+    $endpoint = endpointBoletoItau($conta);
+    $corpos = [$payload];
+    if (ehApiCobrancaV2Itau($conta)) {
+        $comCanal = ['codigo_canal_operacao' => 'API'] + $payload;
+        // Se o banco não entender o envelope (400 de corpo/parse), tenta uma
+        // vez sem ele — com 400 nada foi registrado, repetir não duplica.
+        $corpos = [['data' => $comCanal], $comCanal];
+    }
 
-        $curl = curl_init(rtrim($conta['api_url_base'], '/') . ITAU_ENDPOINT_BOLETO_PIX);
-        // Guarda os cabeçalhos da resposta: quando o portão do Itaú (AWS)
-        // recusa, o motivo vem em x-amzn-ErrorType, não no corpo.
-        $cabecalhosResposta = [];
-        $correlacao = correlacaoItau();
-        curl_setopt($curl, CURLOPT_HEADERFUNCTION, function ($c, $linha) use (&$cabecalhosResposta) {
-            if (str_contains($linha, ':')) {
-                [$nome, $valor] = explode(':', $linha, 2);
-                $cabecalhosResposta[strtolower(trim($nome))] = trim($valor);
+    foreach ($corpos as $indiceCorpo => $corpo) {
+        // Token guardado ainda no prazo, mas recusado pelo banco (HTTP 401 —
+        // revogado, trocado no portal do Itaú...): pede um novo e tenta de novo
+        // uma vez. Com 401 o banco não processou nada, então repetir é seguro.
+        for ($tentativa = 1; $tentativa <= 2; $tentativa++) {
+            $token = obterTokenItau($pdo, $conta, $tentativa > 1);
+            if (!$token['ok']) {
+                return $falha('Não foi possível obter o token: ' . $token['mensagem']);
             }
-            return strlen($linha);
-        });
-        curl_setopt_array($curl, [
-            CURLOPT_POST => true,
-            CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'Accept: application/json',
-                'Authorization: Bearer ' . $token['token'],
-                'x-itau-apikey: ' . $conta['api_client_id'],
-                'x-itau-correlationID: ' . $correlacao,
-            ],
-            CURLOPT_USERAGENT => ITAU_USER_AGENT,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 30,
-            CURLOPT_CONNECTTIMEOUT => 10,
-        ]);
-        aplicarCertificadoItau($curl, $conta);
 
-        $resposta = curl_exec($curl);
-        $erroCurl = curl_error($curl);
-        $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
-        curl_close($curl);
+            $curl = curl_init(rtrim($conta['api_url_base'], '/') . $endpoint);
+            // Guarda os cabeçalhos da resposta: quando o portão do Itaú (AWS)
+            // recusa, o motivo vem em x-amzn-ErrorType, não no corpo.
+            $cabecalhosResposta = [];
+            $correlacao = correlacaoItau();
+            curl_setopt($curl, CURLOPT_HEADERFUNCTION, function ($c, $linha) use (&$cabecalhosResposta) {
+                if (str_contains($linha, ':')) {
+                    [$nome, $valor] = explode(':', $linha, 2);
+                    $cabecalhosResposta[strtolower(trim($nome))] = trim($valor);
+                }
+                return strlen($linha);
+            });
+            curl_setopt_array($curl, [
+                CURLOPT_POST => true,
+                CURLOPT_POSTFIELDS => json_encode($corpo, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                CURLOPT_HTTPHEADER => [
+                    'Content-Type: application/json',
+                    'Accept: application/json',
+                    'Authorization: Bearer ' . $token['token'],
+                    'x-itau-apikey: ' . $conta['api_client_id'],
+                    'x-itau-correlationID: ' . $correlacao,
+                ],
+                CURLOPT_USERAGENT => ITAU_USER_AGENT,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 30,
+                CURLOPT_CONNECTTIMEOUT => 10,
+            ]);
+            aplicarCertificadoItau($curl, $conta);
 
-        if ($resposta === false) {
-            return $falha('Falha de conexão com o banco: ' . $erroCurl);
+            $resposta = curl_exec($curl);
+            $erroCurl = curl_error($curl);
+            $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+            curl_close($curl);
+
+            if ($resposta === false) {
+                return $falha('Falha de conexão com o banco: ' . $erroCurl);
+            }
+            if ($status !== 401) {
+                break;
+            }
         }
-        if ($status !== 401) {
+        $naoEntendeuCorpo = $status === 400 && preg_match('/parse|body|corpo da requisi/i', (string) $resposta);
+        if (!$naoEntendeuCorpo || $indiceCorpo === count($corpos) - 1) {
             break;
         }
     }
+    $payload = $corpo;
 
     $json = json_decode((string) $resposta, true);
     $ok = $status >= 200 && $status < 300;
@@ -688,7 +721,11 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
         ]);
         $mensagem .= ' — ' . implode(' · ', $detalhes);
         if ($status === 403) {
-            $mensagem .= '. A aplicação entrou, mas não tem acesso a esta API: a emissão de Boleto com Pix pede as permissões cob.write, cobv.write e payments/pix.read.';
+            $mensagem .= ehApiCobrancaV2Itau($conta)
+                ? '. A aplicação entrou, mas não tem acesso a esta API: a Cobrança v2 pede a permissão cash_management/emissaocobranca.write.'
+                : '. A aplicação entrou, mas não tem acesso a esta API: o Boleto com Pix (recebimentos-pix) pede as permissões cob.write e cobv.write.'
+                    . (str_contains((string) ($token['escopos'] ?? ''), 'cash_management/emissaocobranca.write')
+                        ? ' Sua aplicação tem a da Cobrança v2: troque a URL base da conta para https://api.itau.com.br/cash_management/v2.' : '');
         }
     }
     return [
