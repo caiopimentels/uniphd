@@ -4,17 +4,32 @@ require_once __DIR__ . '/../includes/bootstrap.php';
 // Ícone da aba do navegador: a logo das Configurações recortada em círculo,
 // com a mesma posição e zoom do círculo do topo do sistema (logo_pos_x,
 // logo_pos_y, logo_zoom). Desenha em 256 px e reduz para 64 px, para a borda
-// redonda sair lisa. Sem logo (ou sem GD), devolve 404 e o navegador usa o padrão.
+// redonda sair lisa. Sem logo, 404 (o navegador usa o padrão). Se o servidor
+// não tem a extensão GD do PHP (ou ela não lê o formato), manda a própria
+// logo, sem recorte — o cabeçalho X-Icone diz o motivo.
 $config = buscarConfiguracoes(getDB());
 $logo = (string) ($config['logo_sistema'] ?? '');
 $publico = realpath(__DIR__);
 $arquivo = $logo !== '' ? realpath($publico . '/' . ltrim(parse_url($logo, PHP_URL_PATH) ?? '', '/')) : false;
-if (!$arquivo || !str_starts_with($arquivo, $publico . DIRECTORY_SEPARATOR) || !is_file($arquivo) || !function_exists('imagecreatetruecolor')) {
+if (!$arquivo || !str_starts_with($arquivo, $publico . DIRECTORY_SEPARATOR) || !is_file($arquivo)) {
+    header('X-Icone: logo-nao-encontrada');
     http_response_code(404);
     exit;
 }
 
-$origem = match (@getimagesize($arquivo)['mime'] ?? '') {
+$mime = @getimagesize($arquivo)['mime'] ?? '';
+$enviarLogoOriginal = function (string $motivo) use ($arquivo, $mime): void {
+    header('X-Icone: ' . $motivo);
+    header('Content-Type: ' . ($mime ?: 'image/png'));
+    header('Cache-Control: public, max-age=86400');
+    readfile($arquivo);
+    exit;
+};
+if (!function_exists('imagecreatetruecolor')) {
+    $enviarLogoOriginal('sem-gd');
+}
+
+$origem = match ($mime) {
     'image/png' => @imagecreatefrompng($arquivo),
     'image/jpeg' => @imagecreatefromjpeg($arquivo),
     'image/webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($arquivo) : false,
@@ -22,8 +37,7 @@ $origem = match (@getimagesize($arquivo)['mime'] ?? '') {
     default => false,
 };
 if (!$origem) {
-    http_response_code(404);
-    exit;
+    $enviarLogoOriginal('formato-nao-lido');
 }
 
 $tamanho = 256;
