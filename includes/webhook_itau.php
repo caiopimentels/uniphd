@@ -96,7 +96,7 @@ function chamarApiNotificacoesItau(PDO $pdo, array $conta, string $metodo, strin
             'Accept: application/json',
             'Authorization: Bearer ' . $token['token'],
             'x-itau-apikey: ' . $conta['api_client_id'],
-            'x-itau-correlationID: ' . bin2hex(random_bytes(16)),
+            'x-itau-correlationID: ' . correlacaoItau(),
         ];
 
         $curl = curl_init(urlApiNotificacoesItau($conta) . $caminho);

@@ -321,7 +321,7 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
         'instrumento' => $instrumento,
         'pendencias' => $pendencias,
         'avisos' => $avisos,
-        'payload' => $payload,
+        'payload' => limparTextoItau($payload),
     ];
 }
 
@@ -548,8 +548,41 @@ const ITAU_EXEMPLO_SANDBOX = [
  * Retorna ['ok' => bool, 'status' => int, 'mensagem' => string,
  * 'requisicao' => array, 'resposta' => mixed].
  */
+/**
+ * Identificador de correlação exigido pelo Itaú em toda chamada: UUID v4
+ * com hífens (a especificação valida com regex 8-4-4-4-12).
+ */
+function correlacaoItau(): string
+{
+    $b = random_bytes(16);
+    $b[6] = chr((ord($b[6]) & 0x0f) | 0x40);
+    $b[8] = chr((ord($b[8]) & 0x3f) | 0x80);
+    return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($b), 4));
+}
+
+/**
+ * A API de Boleto com Pix recusa textos com caracteres especiais
+ * ([ : < > & ; ' " ` ( ) # * / | ü) e com as palavras http, javascript e
+ * alert. Limpa todos os textos do JSON (nomes, endereço...) antes do envio;
+ * datas e valores não têm esses caracteres e passam iguais.
+ */
+function limparTextoItau($valor)
+{
+    if (is_array($valor)) {
+        return array_map('limparTextoItau', $valor);
+    }
+    if (!is_string($valor)) {
+        return $valor;
+    }
+    $texto = str_replace(['ü', 'Ü'], ['u', 'U'], $valor);
+    $texto = preg_replace('/https?|javascript|alert/i', '', $texto);
+    $texto = preg_replace('~[\[\]:<>&;\'"`()#*/|,\\\\]~u', ' ', $texto);
+    return trim(preg_replace('/\s{2,}/u', ' ', $texto));
+}
+
 function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
 {
+    $payload = limparTextoItau($payload);
     $falha = fn (string $mensagem) => ['ok' => false, 'status' => 0, 'mensagem' => $mensagem, 'requisicao' => $payload, 'resposta' => null];
 
     if (!$conta['api_url_base']) {
@@ -573,7 +606,7 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
                 'Accept: application/json',
                 'Authorization: Bearer ' . $token['token'],
                 'x-itau-apikey: ' . $conta['api_client_id'],
-                'x-itau-correlationID: ' . bin2hex(random_bytes(16)),
+                'x-itau-correlationID: ' . correlacaoItau(),
             ],
             CURLOPT_USERAGENT => ITAU_USER_AGENT,
             CURLOPT_RETURNTRANSFER => true,
