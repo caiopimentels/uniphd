@@ -5,7 +5,7 @@
 // Acadêmico › Portal do aluno › Menu e rodapé.
 $pdo = getDB();
 $configPortal = buscarConfiguracoes($pdo);
-$nomePortal = $configPortal['portal_titulo'] ?: ($configPortal['nome_sistema'] ?? APP_NAME);
+$nomePortal = $configPortal['portal_titulo'] ?: nomeSistema();
 // Cores próprias do portal (Portal do aluno › Menu, rodapé e ajustes) ou,
 // sem elas, as do sistema.
 $corPortal = fn ($propria, $sistema, $padrao) => preg_match('/^#[0-9a-fA-F]{6}$/', (string) $propria) ? $propria
@@ -30,6 +30,7 @@ $enderecoAtual = $enderecoAtual === '/portal/' ? '/portal/index.php' : $endereco
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="<?= e(csrfToken()) ?>">
+    <?php if ($iconeAba = urlIconeAba()): ?><link rel="icon" type="image/png" href="<?= e($iconeAba) ?>"><?php endif; ?>
     <title><?= e($tituloPagina) ?> · <?= e($nomePortal) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">

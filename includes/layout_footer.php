@@ -1,5 +1,5 @@
     <div class="pagina-rodape">
-        <?= e(APP_NAME) ?> · <?= date('Y') ?>
+        <?= e(nomeSistema()) ?> · <?= date('Y') ?>
     </div>
 </main>
 <style>

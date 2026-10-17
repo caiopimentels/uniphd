@@ -74,10 +74,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             redirect('/configuracoes/form.php');
         }
 
-        $pasta = dirname(__DIR__) . '/assets/img';;
-
-        if (!is_dir($pasta)) {
-            mkdir($pasta, 0755, true);
+        // public/assets/img fica fora do git: no servidor precisa existir e
+        // ser gravável pelo usuário do Apache/PHP.
+        $pasta = dirname(__DIR__) . '/assets/img';
+        if ($problema = problemaPastaUpload($pasta)) {
+            flash('danger', 'Não foi possível salvar a logo. ' . $problema);
+            redirect('/configuracoes/form.php');
         }
 
         $nomeArquivo =

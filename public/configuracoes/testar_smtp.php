@@ -28,7 +28,7 @@ $configTeste = [
     'smtp_remetente_email' => trim($_POST['smtp_remetente_email'] ?? ''),
 ];
 
-$nomeSistema = trim($_POST['nome_sistema'] ?? '') ?: APP_NAME;
+$nomeSistema = trim($_POST['nome_sistema'] ?? '') ?: nomeSistema();
 
 $corpoHtml = '<p>Este é um e-mail de teste enviado pelo ' . e($nomeSistema) . '.</p><p>Se você recebeu esta mensagem, a configuração de SMTP está funcionando corretamente.</p>';
 

@@ -11,7 +11,7 @@ $stmt = $pdo->prepare(
 $stmt->execute();
 $configVisual = $stmt->fetch() ?: [];
 
-$pageTitle = $pageTitle ?? APP_NAME;
+$pageTitle = $pageTitle ?? nomeSistema();
 $logoSistema = $configVisual['logo_sistema'] ?? null;
 $corPrimaria = $configVisual['cor_primaria'] ?? '#16a34a';
 $corSecundaria = $configVisual['cor_secundaria'] ?? '#15803d';
@@ -28,9 +28,7 @@ if (!preg_match('/^#[0-9a-fA-F]{6}$/', $corSecundaria)) {
     $corSecundaria = '#15803d';
 }
 
-$nomeSistema = !empty($configVisual['nome_sistema'])
-    ? $configVisual['nome_sistema']
-    : APP_NAME;
+$nomeSistema = nomeSistema();
 
 $logoSistema = $configVisual['logo_sistema'] ?? null;
 
@@ -85,7 +83,8 @@ $menus = [
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="<?= e(csrfToken()) ?>">
-    <title><?= e($pageTitle) ?> - <?= e(APP_NAME) ?></title>
+    <title><?= e($pageTitle) ?> - <?= e($nomeSistema) ?></title>
+    <?php if ($iconeAba = urlIconeAba()): ?><link rel="icon" type="image/png" href="<?= e($iconeAba) ?>"><?php endif; ?>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -129,7 +128,7 @@ $menus = [
         </span>
 
 
-        <a class="topnav-marca" href="/index.php"><?= e(APP_NAME) ?></a>
+        <a class="topnav-marca" href="/index.php"><?= e($nomeSistema) ?></a>
 
         <button class="topnav-toggle" type="button" onclick="document.getElementById('menu-principal').classList.toggle('aberto')">
             <i class="bi bi-list"></i>

@@ -19,7 +19,7 @@ if ($destino === '') {
     exit;
 }
 
-$nomeSistema = $config['nome_sistema'] ?? APP_NAME;
+$nomeSistema = nomeSistema();
 $corpo = '<p><strong>Erro no sistema ' . e($nomeSistema) . '</strong> — simulado a pedido, para testar o aviso.</p>'
     . '<p><strong>Quando:</strong> ' . e(date('d/m/Y H:i:s')) . '</p>'
     . '<p><strong>Disparado por:</strong> ' . e(usuarioAtualNome()) . '</p>'

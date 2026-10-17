@@ -8,7 +8,7 @@ if (usuarioLogado()) {
 $pdo = getDB();
 $config = buscarConfiguracoes($pdo);
 $logoSistema = $config['logo_sistema'] ?? null;
-$nomeSistema = !empty($config['nome_sistema']) ? $config['nome_sistema'] : APP_NAME;
+$nomeSistema = nomeSistema();
 $logoPosX = (int) ($config['logo_pos_x'] ?? 50);
 $logoPosY = (int) ($config['logo_pos_y'] ?? 50);
 $logoZoom = (float) ($config['logo_zoom'] ?? 1);
@@ -66,7 +66,8 @@ if ($tokenValido && $_SERVER['REQUEST_METHOD'] === 'POST') {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="<?= e(csrfToken()) ?>">
-    <title>Redefinir senha - <?= e(APP_NAME) ?></title>
+    <?php if ($iconeAba = urlIconeAba()): ?><link rel="icon" type="image/png" href="<?= e($iconeAba) ?>"><?php endif; ?>
+    <title>Redefinir senha - <?= e($nomeSistema) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="preconnect" href="https://fonts.googleapis.com">

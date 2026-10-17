@@ -16,7 +16,7 @@ $turmas = $pdo->query(
     'SELECT t.id, t.nome, c.nome AS curso_nome FROM turmas t JOIN cursos c ON c.id = t.curso_id ORDER BY c.nome, t.nome'
 )->fetchAll();
 
-$nomeInstituicao = $config['nome_sistema'] ?? APP_NAME;
+$nomeInstituicao = nomeSistema();
 
 $pageTitle = 'Inadimplência';
 $pageBreadcrumb = 'Financeiro';

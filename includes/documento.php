@@ -95,7 +95,7 @@ function documentoInicio(PDO $pdo, string $titulo, string $voltar): array
 {
     $config = buscarConfiguracoes($pdo);
     $cor = preg_match('/^#[0-9a-fA-F]{6}$/', (string) $config['cor_primaria']) && strtolower($config['cor_primaria']) !== '#ffffff' ? $config['cor_primaria'] : '#071f4a';
-    $nome = $config['empresa_nome_fantasia'] ?: ($config['empresa_razao_social'] ?: ($config['nome_sistema'] ?? APP_NAME));
+    $nome = $config['empresa_nome_fantasia'] ?: ($config['empresa_razao_social'] ?: nomeSistema());
     $endereco = trim(implode(', ', array_filter([$config['empresa_logradouro'] ?? '', $config['empresa_numero'] ?? '', $config['empresa_bairro'] ?? ''])));
     $cidade = trim(($config['empresa_cidade'] ?? '') . (!empty($config['empresa_uf']) ? ' - ' . $config['empresa_uf'] : ''));
     ?>

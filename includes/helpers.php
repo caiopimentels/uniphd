@@ -130,6 +130,43 @@ function buscarConfiguracoes(PDO $pdo): array
     return $config;
 }
 
+/**
+ * Garante que a pasta de upload existe e o servidor (usuário do Apache/PHP)
+ * consegue gravar nela. Retorna null se está tudo certo, ou a mensagem com
+ * o comando para liberar a pasta no servidor.
+ */
+function problemaPastaUpload(string $pasta): ?string
+{
+    if (!is_dir($pasta)) {
+        @mkdir($pasta, 0775, true);
+    }
+    if (is_dir($pasta) && is_writable($pasta)) {
+        return null;
+    }
+    $usuario = function_exists('posix_getpwuid') && function_exists('posix_geteuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? 'www-data') : 'www-data';
+    return 'O servidor não tem permissão para gravar em ' . $pasta . '. No servidor, rode: sudo mkdir -p ' . $pasta
+        . ' && sudo chown -R ' . $usuario . ':' . $usuario . ' ' . dirname($pasta);
+}
+
+// Nome do sistema como está em Configurações (o APP_NAME do config.php é
+// só o valor de reserva, se a configuração estiver vazia).
+function nomeSistema(): string
+{
+    $nome = trim((string) (buscarConfiguracoes(getDB())['nome_sistema'] ?? ''));
+    return $nome !== '' ? $nome : (defined('APP_NAME') ? (string) APP_NAME : 'Sistema');
+}
+
+// Endereço do ícone da aba (favicon.php): muda junto com a logo e o ajuste
+// de posição/zoom, para o navegador não ficar com o ícone antigo.
+function urlIconeAba(): ?string
+{
+    $config = buscarConfiguracoes(getDB());
+    if (empty($config['logo_sistema'])) {
+        return null;
+    }
+    return '/favicon.php?v=' . substr(md5($config['logo_sistema'] . '|' . $config['logo_pos_x'] . '|' . $config['logo_pos_y'] . '|' . $config['logo_zoom']), 0, 10);
+}
+
 function formatPercent($value): string
 {
     return number_format((float) $value, 2, ',', '.') . '%';

@@ -658,7 +658,7 @@ function pastaUploadsPortal(): string
 {
     $pasta = BASE_PATH . '/public/uploads/portal';
     if (!is_dir($pasta)) {
-        mkdir($pasta, 0755, true);
+        @mkdir($pasta, 0775, true);
     }
     return $pasta;
 }
@@ -685,6 +685,9 @@ function salvarImagemPortal(array $arquivo, string $prefixo, int $maxMb = 5): ar
         return ['ok' => false, 'mensagem' => 'O arquivo precisa ser uma imagem JPG, PNG, WEBP ou GIF.', 'url' => null];
     }
     $nome = $prefixo . '-' . date('Ymd-His') . '-' . bin2hex(random_bytes(4)) . '.' . $tipos[$mime];
+    if ($problema = problemaPastaUpload(pastaUploadsPortal())) {
+        return ['ok' => false, 'mensagem' => 'Não foi possível gravar a imagem. ' . $problema, 'url' => null];
+    }
     if (!move_uploaded_file($arquivo['tmp_name'], pastaUploadsPortal() . '/' . $nome)) {
         return ['ok' => false, 'mensagem' => 'Não foi possível gravar a imagem no servidor.', 'url' => null];
     }
