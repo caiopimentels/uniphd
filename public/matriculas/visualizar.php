@@ -119,7 +119,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <?php foreach ($parcelas as $p): ?>
                         <?php $vencida = $p['status'] === 'pendente' && $p['data_vencimento'] < $hoje; ?>
                         <tr>
-                            <td><?= e($p['descricao']) ?></td>
+                            <td><a href="#" onclick="abrirHistoricoParcela(<?= (int) $p['id'] ?>); return false;" title="Ver o histórico desta parcela"><?= e($p['descricao']) ?></a> <i class="bi bi-clock-history text-muted small"></i></td>
                             <td class="<?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($p['data_vencimento']) ?></td>
                             <td class="text-end"><?= formatMoney($p['valor']) ?></td>
                             <td>
@@ -281,5 +281,6 @@ require __DIR__ . '/../../includes/layout_header.php';
 </div>
 
 <?php require __DIR__ . '/../../includes/modal_pix.php'; ?>
+<?php require __DIR__ . '/../../includes/modal_historico_parcela.php'; ?>
 <?php $voltarEdicaoParcela = 'matricula'; require __DIR__ . '/../../includes/modal_editar_parcela.php'; ?>
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

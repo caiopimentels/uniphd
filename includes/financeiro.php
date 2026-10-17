@@ -189,15 +189,18 @@ function filtroBuscaAlunoReceber(string $busca): array
 
 function cancelarCobrancasFuturasMatricula(PDO $pdo, int $matriculaId, string $dataCorte): int
 {
-    $stmt = $pdo->prepare(
-        "UPDATE contas_receber SET status = 'cancelado'
-         WHERE matricula_id = ? AND status = 'pendente' AND data_vencimento >= ?"
-    );
+    $stmt = $pdo->prepare("SELECT id FROM contas_receber WHERE matricula_id = ? AND status = 'pendente' AND data_vencimento >= ?");
     $stmt->execute([$matriculaId, $dataCorte]);
-    if ($stmt->rowCount()) {
-        agendarBaixaBoletosCancelados();
+    $ids = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    if (!$ids) {
+        return 0;
     }
-    return $stmt->rowCount();
+    $pdo->prepare("UPDATE contas_receber SET status = 'cancelado' WHERE id IN (" . implode(',', array_map('intval', $ids)) . ") AND status = 'pendente'")->execute();
+    foreach ($ids as $parcelaId) {
+        registrarHistoricoParcela($pdo, (int) $parcelaId, 'cancelamento', 'Cancelada junto com a matrícula');
+    }
+    agendarBaixaBoletosCancelados();
+    return count($ids);
 }
 
 /**
@@ -704,3 +707,132 @@ function validarAdministradorPresente(PDO $pdo, string $email, string $senha): a
     return ['ok' => true, 'id' => (int) $admin['id'], 'nome' => $admin['nome']];
 }
 
+
+// ---------------------------------------------------------------------
+// Histórico da parcela
+// ---------------------------------------------------------------------
+
+/**
+ * Grava um acontecimento no histórico da parcela (edição, baixa manual,
+ * estorno, cancelamento...). Quem fez sai da sessão: usuário do sistema,
+ * aluno no portal ou "Sistema". Nunca derruba a operação principal.
+ */
+function registrarHistoricoParcela(PDO $pdo, int $contaReceberId, string $tipo, string $descricao): void
+{
+    try {
+        $usuarioId = function_exists('usuarioLogado') && usuarioLogado() ? usuarioAtualId() : null;
+        $nome = $usuarioId ? usuarioAtualNome() : (function_exists('alunoLogado') && alunoLogado() ? 'Aluno pelo portal' : 'Sistema');
+        $pdo->prepare('INSERT INTO parcela_historico (conta_receber_id, usuario_id, usuario_nome, tipo, descricao) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$contaReceberId, $usuarioId, $nome, $tipo, mb_strimwidth($descricao, 0, 255, '…', 'UTF-8')]);
+    } catch (Throwable $e) {
+        error_log('[Histórico parcela] ' . $e->getMessage());
+    }
+}
+
+/**
+ * Linha do tempo da parcela, do lançamento ao pagamento: junta o histórico
+ * gravado, o que foi trocado com o banco (auditoria) e os avisos de
+ * pagamento recebidos. Cada item: ['quando', 'quem', 'titulo', 'detalhe',
+ * 'icone', 'cor'], em ordem cronológica.
+ */
+function historicoParcela(PDO $pdo, int $contaReceberId): array
+{
+    $stmt = $pdo->prepare(
+        'SELECT cr.*, u.nome AS lancado_por, m.id AS matricula FROM contas_receber cr
+         LEFT JOIN usuarios u ON u.id = cr.usuario_id LEFT JOIN matriculas m ON m.id = cr.matricula_id WHERE cr.id = ?'
+    );
+    $stmt->execute([$contaReceberId]);
+    $parcela = $stmt->fetch();
+    if (!$parcela) {
+        return [];
+    }
+    $itens = [];
+    // $ordem desempata o que aconteceu no mesmo segundo: lançamento, depois
+    // o banco (a instrução vai antes de salvar), depois o histórico, depois avisos.
+    $item = fn ($quando, $quem, $titulo, $detalhe, $icone, $cor, $ordem = 2) => compact('quando', 'quem', 'titulo', 'detalhe', 'icone', 'cor', 'ordem');
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM parcela_historico WHERE conta_receber_id = ? AND tipo = 'edicao'");
+    $stmt->execute([$contaReceberId]);
+    $foiAlterada = (int) $stmt->fetchColumn() > 0;
+    $itens[] = $item($parcela['criado_em'], $parcela['lancado_por'] ?: ($parcela['matricula'] ? 'Sistema' : '-'),
+        'Lançamento', trim(($parcela['matricula'] ? 'Gerada pela matrícula' : '')
+            . ($foiAlterada ? '' : ($parcela['matricula'] ? ' · ' : '') . formatMoney($parcela['valor']) . ' com vencimento em ' . formatDate($parcela['data_vencimento']))),
+        'bi-plus-circle', 'secondary', 0);
+
+    $estilos = [
+        'edicao' => ['Alteração', 'bi-pencil', 'warning'],
+        'baixa' => ['Baixa manual', 'bi-check-circle', 'success'],
+        'estorno' => ['Estorno da baixa', 'bi-arrow-counterclockwise', 'danger'],
+        'cancelamento' => ['Cancelamento', 'bi-x-circle', 'danger'],
+    ];
+    $stmt = $pdo->prepare('SELECT * FROM parcela_historico WHERE conta_receber_id = ? ORDER BY id');
+    $stmt->execute([$contaReceberId]);
+    $temBaixaManual = false;
+    foreach ($stmt->fetchAll() as $h) {
+        [$titulo, $icone, $cor] = $estilos[$h['tipo']] ?? [ucfirst($h['tipo']), 'bi-dot', 'secondary'];
+        $temBaixaManual = $temBaixaManual || $h['tipo'] === 'baixa';
+        $itens[] = $item($h['criado_em'], $h['usuario_nome'] ?: 'Sistema', $titulo, $h['descricao'], $icone, $cor);
+    }
+
+    // O que foi enviado ao banco (sem pedidos de token e consultas).
+    $rotulos = [
+        'registro_boleto' => ['Boleto + Pix gerado no Itaú', 'Itaú recusou gerar o boleto', 'bi-bank'],
+        'baixa_boleto' => ['Boleto baixado (cancelado) no Itaú', 'Itaú recusou a baixa do boleto', 'bi-bank'],
+        'alteracao_valor' => ['Valor do boleto alterado no Itaú', 'Itaú recusou mudar o valor', 'bi-bank'],
+        'alteracao_vencimento' => ['Vencimento do boleto alterado no Itaú', 'Itaú recusou mudar o vencimento', 'bi-bank'],
+        'alteracao_desconto' => ['Desconto do boleto alterado no Itaú', 'Itaú recusou mudar o desconto', 'bi-bank'],
+    ];
+    $stmt = $pdo->prepare(
+        "SELECT bc.*, u.nome AS usuario_nome, a.nome AS aluno_nome FROM banco_chamadas bc
+         LEFT JOIN usuarios u ON u.id = bc.usuario_id LEFT JOIN alunos a ON a.id = bc.aluno_id
+         WHERE bc.conta_receber_id = ? AND bc.operacao IN ('" . implode("','", array_keys($rotulos)) . "') ORDER BY bc.id"
+    );
+    $stmt->execute([$contaReceberId]);
+    foreach ($stmt->fetchAll() as $c) {
+        [$ok, $falha, $icone] = $rotulos[$c['operacao']];
+        $quem = $c['origem'] === 'portal' ? ($c['aluno_nome'] ?: 'Aluno') . ' (portal)' : ($c['origem'] === 'automatico' ? 'Sistema' : ($c['usuario_nome'] ?: '-'));
+        $numero = nossoNumeroDaChamadaBanco($c);
+        $corpo = json_decode((string) $c['requisicao'], true) ?: [];
+        $detalhe = $numero ? 'Nosso nº ' . formatarNossoNumeroItau($numero) : '';
+        if ($c['operacao'] === 'alteracao_valor' && isset($corpo['valor_titulo'])) {
+            $detalhe .= ' · novo valor ' . formatMoney((float) $corpo['valor_titulo']);
+        } elseif ($c['operacao'] === 'alteracao_vencimento' && isset($corpo['data_vencimento'])) {
+            $detalhe .= ' · novo vencimento ' . formatDate($corpo['data_vencimento']);
+        } elseif ($c['operacao'] === 'registro_boleto' && $c['sucesso']) {
+            $individual = ($corpo['data'] ?? $corpo)['dado_boleto']['dados_individuais_boleto'][0] ?? [];
+            $valorBoleto = $individual['valor_titulo'] ?? null;
+            if ($valorBoleto !== null) {
+                // Cobrança v2 manda o valor em 17 dígitos com 2 casas.
+                $valorBoleto = ctype_digit((string) $valorBoleto) ? (int) $valorBoleto / 100 : (float) $valorBoleto;
+                $detalhe .= ' · ' . formatMoney($valorBoleto) . (isset($individual['data_vencimento']) ? ' para ' . formatDate($individual['data_vencimento']) : '');
+            }
+        }
+        if (!$c['sucesso']) {
+            $detalhe .= ($detalhe ? ' · ' : '') . ($c['mensagem'] ?: 'HTTP ' . $c['status_http']);
+        } elseif (str_contains((string) $c['resposta'], 'Aguardando aprova')) {
+            $detalhe .= ' · aguardando aprovação no Itaú';
+        }
+        $itens[] = $item($c['criado_em'], $quem, $c['sucesso'] ? $ok : $falha, $detalhe, $icone, $c['sucesso'] ? 'primary' : 'danger', 1);
+    }
+
+    // Avisos de pagamento que o banco mandou.
+    $stmt = $pdo->prepare('SELECT * FROM webhook_eventos WHERE conta_receber_id = ? ORDER BY id');
+    $stmt->execute([$contaReceberId]);
+    foreach ($stmt->fetchAll() as $ev) {
+        $tipo = $ev['tipo_notificacao'] === 'PIX' ? 'Pix' : 'boleto' . ($ev['tipo_notificacao'] ? ' (' . strtolower(str_replace('_', ' ', $ev['tipo_notificacao'])) . ')' : '');
+        $pago = $ev['status'] === 'processado';
+        $itens[] = $item($ev['criado_em'], 'Itaú',
+            $pago ? 'Pago — aviso de ' . $tipo : 'Aviso de ' . $tipo . ' recebido',
+            trim(($ev['valor_pago'] !== null ? formatMoney($ev['valor_pago']) : '') . ($ev['data_pagamento'] ? ' em ' . formatDate($ev['data_pagamento']) : '') . ' · ' . $ev['mensagem'], ' ·'),
+            $pago ? 'bi-cash-coin' : 'bi-broadcast', $pago ? 'success' : 'secondary', 3);
+    }
+
+    // Baixa manual de antes do histórico existir.
+    if ($parcela['status'] === 'pago' && $parcela['baixa_origem'] === 'manual' && !$temBaixaManual) {
+        $itens[] = $item($parcela['data_recebimento'] . ' 12:00:00', '-', 'Baixa manual',
+            formatMoney($parcela['valor_recebido'] ?? $parcela['valor']) . ' recebido em ' . formatDate($parcela['data_recebimento']), 'bi-check-circle', 'success');
+    }
+
+    usort($itens, fn ($a, $b) => [(string) $a['quando'], $a['ordem']] <=> [(string) $b['quando'], $b['ordem']]);
+    return $itens;
+}

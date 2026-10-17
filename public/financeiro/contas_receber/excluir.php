@@ -40,6 +40,7 @@ if ((int) $stmt->fetchColumn() > 0) {
         redirect($voltar);
     }
     $pdo->prepare("UPDATE contas_receber SET status = 'cancelado' WHERE id = ?")->execute([$id]);
+    registrarHistoricoParcela($pdo, $id, 'cancelamento', 'Excluída pelo usuário' . ($baixa['havia_boleto'] ? ' — boleto baixado no banco' : '') . ' (fica como cancelada, porque já passou pelo banco)');
     registrarAtividade('contas_receber', 'exclusao', 'Conta a receber cancelada (boleto baixado no banco): ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
     $aguardando = str_contains($baixa['mensagem'], AVISO_APROVACAO_ITAU);
     flash($aguardando ? 'warning' : 'success', $baixa['havia_boleto']

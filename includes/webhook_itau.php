@@ -582,6 +582,10 @@ function baixarCobrancaPeloBanco(PDO $pdo, array $cobranca, ?float $valorPago, ?
 
     confirmarMatriculaPorPagamento($pdo, (int) $parcela['id']);
 
+    $stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
+    $stmt->execute([$cobranca['conta_bancaria_id']]);
+    registrarTarifaBanco($pdo, $stmt->fetch() ?: null, 'liquidacao', (int) $parcela['id'], (int) $cobranca['id'], $dataRecebimento);
+
     $descricao = 'Conta a receber recebida pelo banco (' . $tipo . '): ' . $parcela['descricao'] . ' - ' . formatMoney($valorRecebido);
     $usuarioId = function_exists('usuarioLogado') && usuarioLogado() ? usuarioAtualId() : null;
     registrarAtividadeUsuario($usuarioId, $autor, 'contas_receber', 'baixa', $descricao);

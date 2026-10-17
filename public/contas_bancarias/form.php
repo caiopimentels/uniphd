@@ -45,6 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'juros_percentual' => decimalInput('juros_percentual', 0),
         'multa_tipo' => array_key_exists(input('multa_tipo'), tiposMultaItau()) ? input('multa_tipo') : '03',
         'multa_percentual' => decimalInput('multa_percentual', 0),
+        'tarifa_emissao' => max(0, decimalInput('tarifa_emissao', 0)),
+        'tarifa_liquidacao' => max(0, decimalInput('tarifa_liquidacao', 0)),
+        'tarifa_baixa' => max(0, decimalInput('tarifa_baixa', 0)),
+        'tarifa_alteracao' => max(0, decimalInput('tarifa_alteracao', 0)),
         'api_ambiente' => input('api_ambiente') === 'producao' ? 'producao' : 'sandbox',
         'api_client_id' => input('api_client_id'),
         'api_url_token' => input('api_url_token'),
@@ -309,6 +313,27 @@ if ($id) {
         <div class="col-12 bloco-itau">
             <div class="form-text">Comum em mensalidade: multa de 2% e juros de 1% ao mês. Valem a partir do dia seguinte ao vencimento.</div>
         </div>
+    </div>
+</div>
+
+<div class="secao bloco-itau" style="max-width: 900px;">
+    <div class="secao-titulo"><i class="bi bi-receipt"></i> Tarifas do banco</div>
+    <p class="text-muted small mb-3">
+        Quanto o banco cobra de você em cada operação (veja no seu contrato ou pergunte ao gerente). O sistema anota cada tarifa quando a
+        operação acontece, para você ver o total na aba <strong>Tarifas</strong> e lançar como despesa. Deixe <strong>0</strong> no que o banco não cobra —
+        por exemplo, se a <strong>alteração</strong> de valor ou vencimento não paga tarifa.
+    </p>
+    <div class="row g-3">
+        <?php foreach (['tarifa_emissao' => 'Emissão (boleto gerado)', 'tarifa_liquidacao' => 'Liquidação (boleto pago)', 'tarifa_baixa' => 'Baixa (boleto cancelado)', 'tarifa_alteracao' => 'Alteração (por instrução)'] as $campo => $rotulo): ?>
+            <div class="col-md-3">
+                <label class="form-label"><?= e($rotulo) ?></label>
+                <div class="input-group">
+                    <span class="input-group-text">R$</span>
+                    <input type="text" name="<?= $campo ?>" class="form-control" value="<?= e(number_format((float) $valor($campo, 0), 2, ',', '')) ?>">
+                </div>
+            </div>
+        <?php endforeach; ?>
+        <div class="col-12"><div class="form-text">Alteração: cada mudança enviada ao banco (valor e vencimento contam separado) é uma instrução.</div></div>
     </div>
 </div>
 

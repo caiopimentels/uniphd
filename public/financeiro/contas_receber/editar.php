@@ -110,6 +110,9 @@ if ($conta['descricao'] !== $descricao) {
     $mudancas[] = 'descrição alterada';
 }
 registrarAtividade('contas_receber', 'edicao', 'Parcela alterada: ' . $descricao . ($mudancas ? ' (' . implode('; ', $mudancas) . ')' : ''));
+if ($mudancas) {
+    registrarHistoricoParcela($pdo, $id, 'edicao', ucfirst(implode('; ', $mudancas)) . ($reemitir ? ' — boleto baixado e emitido de novo' : ''));
+}
 
 // Desconto mudou: o boleto antigo já foi baixado; emite o novo com a
 // parcela já salva (valor, vencimento e desconto novos).

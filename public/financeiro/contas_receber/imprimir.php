@@ -13,7 +13,8 @@ $filtros = [
 $status = $filtros['status'];
 $dataInicio = $filtros['data_inicio'];
 $dataFim = $filtros['data_fim'];
-$agrupar = array_key_exists($_GET['agrupar'] ?? '', opcoesAgruparReceber()) ? $_GET['agrupar'] : '';
+$agrupar = (string) ($_GET['agrupar'] ?? '');
+$agrupar = array_key_exists($agrupar, opcoesAgruparReceber()) ? $agrupar : '';
 // Grupos abertos na tela: só eles saem com as parcelas; os fechados saem
 // só com o título e o subtotal (igual ao que se via ao imprimir).
 $abertos = array_map('strval', (array) ($_GET['abertos'] ?? []));
@@ -81,19 +82,21 @@ $labelTotal = match ($status) {
                 <th>Aluno/Categoria</th>
                 <th>Vencimento</th>
                 <th class="text-end">Valor</th>
+                <th>Pago em</th>
+                <th class="text-end">Valor pago</th>
                 <th>Status</th>
             </tr>
         </thead>
         <tbody>
         <?php if (!$contas): ?>
-            <tr><td colspan="5">Nenhuma conta encontrada.</td></tr>
+            <tr><td colspan="7">Nenhuma conta encontrada.</td></tr>
         <?php endif; ?>
         <?php foreach ($grupos as $grupo): $grupoAberto = !$agrupar || in_array($grupo['id'], $abertos, true); ?>
             <?php if ($agrupar): ?>
                 <tr class="linha-grupo">
                     <th colspan="3"><?= e($grupo['nome']) ?> <span class="grupo-qtd">· <?= count($grupo['contas']) ?> lançamento(s)</span></th>
                     <th class="text-end"><?= formatMoney($grupo['total']) ?></th>
-                    <th></th>
+                    <th colspan="3"></th>
                 </tr>
             <?php endif; ?>
             <?php if ($grupoAberto): foreach ($grupo['contas'] as $c): ?>
@@ -103,10 +106,9 @@ $labelTotal = match ($status) {
                 <td><?= formatDate($c['data_vencimento']) ?></td>
                 <td class="text-end">
                     <?= formatMoney($c['valor']) ?>
-                    <?php if ($c['status'] === 'pago' && $c['valor_recebido'] !== null && (float) $c['valor_recebido'] !== (float) $c['valor']): ?>
-                        <div class="small text-muted">recebido <?= formatMoney($c['valor_recebido']) ?></div>
-                    <?php endif; ?>
                 </td>
+                <td><?= $c['status'] === 'pago' && $c['data_recebimento'] ? formatDate($c['data_recebimento']) : '-' ?></td>
+                <td class="text-end"><?= $c['status'] === 'pago' ? formatMoney($c['valor_recebido'] ?? $c['valor']) : '-' ?></td>
                 <td><?= e(contaStatusLabel($c['status'])) ?></td>
             </tr>
             <?php endforeach; endif; ?>
@@ -117,7 +119,7 @@ $labelTotal = match ($status) {
             <tr>
                 <th colspan="3" class="text-end"><?= e($labelTotal) ?></th>
                 <th class="text-end"><?= formatMoney($totalExibido) ?></th>
-                <th></th>
+                <th colspan="3"></th>
             </tr>
         </tfoot>
         <?php endif; ?>

@@ -41,6 +41,7 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute([$id]);
 
+registrarHistoricoParcela($pdo, $id, 'estorno', 'Desfeita a baixa de ' . formatMoney($conta['valor_recebido'] ?? $conta['valor']) . ' recebido em ' . formatDate($conta['data_recebimento']) . ' — voltou a ficar em aberto');
 registrarAtividade('contas_receber', 'estorno', 'Baixa estornada: ' . $conta['descricao'] . ($conta['aluno_nome'] ? ' (' . $conta['aluno_nome'] . ')' : '')
     . ' - ' . formatMoney($conta['valor_recebido'] ?? $conta['valor']) . ' recebido em ' . formatDate($conta['data_recebimento']));
 

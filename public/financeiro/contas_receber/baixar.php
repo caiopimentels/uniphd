@@ -49,6 +49,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $_SESSION['recibo_disponivel'] = $id;
 
         $diferenca = round($valorRecebido - (float) $conta['valor'], 2);
+        $stmtForma = $pdo->prepare('SELECT nome FROM formas_pagamento WHERE id = ?');
+        $stmtForma->execute([$formaPagamentoId]);
+        $nomeForma = $stmtForma->fetchColumn();
+        registrarHistoricoParcela($pdo, $id, 'baixa', formatMoney($valorRecebido) . ' recebido em ' . formatDate($dataRecebimento)
+            . ($nomeForma ? ' · ' . $nomeForma : '')
+            . ($diferenca < 0 ? ' (desconto de ' . formatMoney(-$diferenca) . ')' : ($diferenca > 0 ? ' (acréscimo de ' . formatMoney($diferenca) . ')' : '')));
         registrarAtividade('contas_receber', 'baixa', 'Conta a receber recebida: ' . $conta['descricao'] . ' - ' . formatMoney($valorRecebido)
             . ($diferenca < 0 ? ' (desconto de ' . formatMoney(-$diferenca) . ')' : ($diferenca > 0 ? ' (acréscimo de ' . formatMoney($diferenca) . ')' : '')));
 

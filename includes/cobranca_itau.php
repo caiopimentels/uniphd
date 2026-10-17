@@ -852,6 +852,7 @@ function operacoesChamadaBanco(): array
         'exclusao_webhook_pix' => 'Exclusão do aviso de Pix',
         'confirmacao_pix' => 'Confirmação de Pix recebido',
         'baixa_boleto' => 'Baixa (cancelamento) do boleto',
+        'consulta_boleto' => 'Consulta do boleto no Itaú',
         'alteracao_valor' => 'Alteração de valor do boleto',
         'alteracao_vencimento' => 'Alteração de vencimento do boleto',
         'alteracao_desconto' => 'Alteração de desconto do boleto',
@@ -1154,6 +1155,31 @@ function blocoDescontoItau(?array $pontualidade): array
 }
 
 // ---------------------------------------------------------------------
+// Tarifas do banco: quanto a conta cobra por boleto emitido, pago (liquidado),
+// baixado ou alterado (configurado na conta bancária). Cada ocorrência fica
+// em banco_tarifas para virar despesa depois.
+// ---------------------------------------------------------------------
+
+function tiposTarifaBanco(): array
+{
+    return ['emissao' => 'Emissão de boleto', 'liquidacao' => 'Liquidação (boleto pago)', 'baixa' => 'Baixa (cancelamento)', 'alteracao' => 'Alteração de boleto'];
+}
+
+function registrarTarifaBanco(PDO $pdo, ?array $conta, string $tipo, ?int $contaReceberId, ?int $cobrancaId, ?string $data = null): void
+{
+    $valor = (float) ($conta['tarifa_' . $tipo] ?? 0);
+    if (!$conta || $valor <= 0) {
+        return;
+    }
+    try {
+        $pdo->prepare('INSERT INTO banco_tarifas (conta_bancaria_id, conta_receber_id, cobranca_id, tipo, valor, data) VALUES (?, ?, ?, ?, ?, ?)')
+            ->execute([$conta['id'], $contaReceberId, $cobrancaId, $tipo, $valor, $data ?? date('Y-m-d')]);
+    } catch (Throwable $e) {
+        error_log('[Tarifa banco] ' . $e->getMessage());
+    }
+}
+
+// ---------------------------------------------------------------------
 // Instruções sobre um boleto já registrado (Cobrança v2):
 // PATCH /boletos/{id_boleto}/{baixa|data_vencimento|valor_nominal|desconto}
 // id_boleto = agência (4) + conta (7) + DAC (1) + carteira (3) + nosso
@@ -1206,6 +1232,37 @@ function instrucaoBoletoItau(PDO $pdo, array $cobranca, string $instrucao, array
 const AVISO_APROVACAO_ITAU = 'Atenção: o Itaú deixou a instrução aguardando aprovação — ela só vale depois de aprovada no internet banking/app do Itaú (área de cobrança).';
 
 /**
+ * O que o Itaú tem registrado de um boleto (GET /boletos?id_beneficiario=
+ * &nosso_numero=&view=full): situação, valor, vencimento, baixa, pagamentos
+ * e o histórico de operações do próprio banco. Serve para conferir se uma
+ * instrução aceita (204) foi mesmo aplicada.
+ * Retorna ['ok' => bool, 'mensagem' => string, 'boleto' => ?array].
+ */
+function consultarBoletoItau(PDO $pdo, array $conta, int $nossoNumero, ?int $contaReceberId = null): array
+{
+    $idBeneficiario = idBeneficiarioItau($conta);
+    if (!$idBeneficiario) {
+        return ['ok' => false, 'mensagem' => 'Confira agência, conta e dígito da conta bancária.', 'boleto' => null];
+    }
+    $base = ehApiCobrancaV2Itau($conta) ? rtrim($conta['api_url_base'], '/') : 'https://api.itau.com.br/cash_management/v2';
+    if ($contaReceberId) {
+        contextoChamadaBanco(['conta_receber_id' => $contaReceberId]);
+    }
+    $r = chamarApiNotificacoesItau($pdo, $conta, 'GET', '/boletos?' . http_build_query([
+        'id_beneficiario' => $idBeneficiario,
+        'codigo_carteira' => apenasDigitos((string) ($conta['itau_carteira'] ?? '')) ?: '109',
+        'nosso_numero' => formatarNossoNumeroItau($nossoNumero),
+        'view' => 'full',
+    ]), null, $base, 'consulta_boleto');
+    if (!$r['ok']) {
+        return ['ok' => false, 'mensagem' => $r['mensagem'] . ($r['status'] === 403 ? ' (a aplicação pode não ter a permissão de consulta de boletos — peça ao Itaú)' : ''), 'boleto' => null];
+    }
+    $lista = is_array($r['resposta']) ? ($r['resposta']['data'] ?? []) : [];
+    $boleto = is_array($lista) && $lista ? (array_is_list($lista) ? $lista[0] : $lista) : null;
+    return ['ok' => true, 'mensagem' => $boleto ? '' : 'O Itaú não encontrou este boleto.', 'boleto' => $boleto];
+}
+
+/**
  * Pede ao banco a baixa (cancelamento) do boleto da parcela. Sem boleto
  * registrado não há o que fazer (ok). Aceito: a cobrança fica 'baixada'.
  * Retorna ['ok' => bool, 'mensagem' => string, 'havia_boleto' => bool].
@@ -1219,6 +1276,7 @@ function baixarBoletoBancoItau(PDO $pdo, int $contaReceberId): array
     $resultado = instrucaoBoletoItau($pdo, $cobranca, 'baixa', [], 'baixa_boleto');
     if ($resultado['ok']) {
         $pdo->prepare("UPDATE cobrancas_bancarias SET status = 'baixada', mensagem_erro = NULL WHERE id = ?")->execute([$cobranca['id']]);
+        registrarTarifaBanco($pdo, $cobranca['conta'], 'baixa', $contaReceberId, (int) $cobranca['id']);
         return ['ok' => true, 'havia_boleto' => true,
             'mensagem' => $resultado['aguardando_aprovacao'] ? 'Baixa enviada ao banco. ' . AVISO_APROVACAO_ITAU : 'Boleto baixado no banco.'];
     }
@@ -1275,6 +1333,7 @@ function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
         }
         $aceito[$campo] = true;
         $aguardando = $aguardando || $r['aguardando_aprovacao'];
+        registrarTarifaBanco($pdo, $cobranca['conta'], 'alteracao', (int) $antes['id'], (int) $cobranca['id']);
     }
 
     if ($aceito['valor'] || $aceito['vencimento']) {
@@ -1441,6 +1500,7 @@ function registrarCobrancaItau(PDO $pdo, int $contaReceberId, ?int $usuarioId, ?
         $codigoBarras ? apenasDigitos($codigoBarras) : null,
         $pix, $txid, $json($payload), $json($envio['resposta']), $cobrancaId,
     ]);
+    registrarTarifaBanco($pdo, $conta, 'emissao', $contaReceberId, $cobrancaId);
 
     return [
         'ok' => true,

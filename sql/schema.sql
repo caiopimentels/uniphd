@@ -316,6 +316,10 @@ CREATE TABLE contas_bancarias (
     juros_percentual DECIMAL(7,4) NOT NULL DEFAULT 0,
     multa_tipo CHAR(2) NOT NULL DEFAULT '03',
     multa_percentual DECIMAL(7,4) NOT NULL DEFAULT 0,
+    tarifa_emissao DECIMAL(10,2) NOT NULL DEFAULT 0,
+    tarifa_liquidacao DECIMAL(10,2) NOT NULL DEFAULT 0,
+    tarifa_baixa DECIMAL(10,2) NOT NULL DEFAULT 0,
+    tarifa_alteracao DECIMAL(10,2) NOT NULL DEFAULT 0,
     -- API do banco (OAuth 2.0 client credentials + certificado mTLS).
     -- Os campos *_cripto são cifrados pela aplicação (includes/cripto.php);
     -- os arquivos do certificado ficam em storage/, fora do public/.
@@ -677,6 +681,31 @@ CREATE TABLE webhook_eventos (
 -- enviado e o que o banco respondeu, quem pediu (usuário do sistema ou
 -- aluno no portal) e para qual parcela. Segredos vão mascarados.
 -- ----------------------------------------------------------------------
+CREATE TABLE parcela_historico (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conta_receber_id INT NOT NULL,
+    usuario_id INT DEFAULT NULL,
+    usuario_nome VARCHAR(150) DEFAULT NULL,
+    tipo VARCHAR(30) NOT NULL,
+    descricao VARCHAR(255) NOT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_parcela_historico (conta_receber_id, criado_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE banco_tarifas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conta_bancaria_id INT NOT NULL,
+    conta_receber_id INT DEFAULT NULL,
+    cobranca_id INT DEFAULT NULL,
+    tipo ENUM('emissao', 'liquidacao', 'baixa', 'alteracao') NOT NULL,
+    valor DECIMAL(10,2) NOT NULL,
+    data DATE NOT NULL,
+    conta_pagar_id INT DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_banco_tarifas_conta (conta_bancaria_id, data),
+    KEY idx_banco_tarifas_parcela (conta_receber_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE banco_chamadas (
     id INT AUTO_INCREMENT PRIMARY KEY,
     conta_bancaria_id INT DEFAULT NULL,

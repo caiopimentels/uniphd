@@ -452,7 +452,12 @@ function expirarInscricoesPortal(PDO $pdo): int
         );
         $atualiza->execute([$m['id']]);
         if ($atualiza->rowCount()) {
+            $abertas = $pdo->prepare("SELECT id FROM contas_receber WHERE matricula_id = ? AND status = 'pendente'");
+            $abertas->execute([$m['id']]);
             $pdo->prepare("UPDATE contas_receber SET status = 'cancelado' WHERE matricula_id = ? AND status = 'pendente'")->execute([$m['id']]);
+            foreach ($abertas->fetchAll(PDO::FETCH_COLUMN) as $parcelaId) {
+                registrarHistoricoParcela($pdo, (int) $parcelaId, 'cancelamento', 'Inscrição pelo portal expirou sem pagamento');
+            }
             agendarBaixaBoletosCancelados();
             $expiradas++;
         }

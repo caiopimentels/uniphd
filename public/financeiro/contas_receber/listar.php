@@ -90,10 +90,10 @@ require __DIR__ . '/../../../includes/layout_header.php';
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle" id="tabela-receber">
-            <thead><tr><th style="width: 36px;"><?php if ($temPendente): ?><input type="checkbox" class="form-check-input" id="lote-todos" title="Selecionar todas as pendentes"><?php endif; ?></th><th>Descrição</th><th>Aluno/Categoria</th><th>Vencimento</th><th class="text-end">Valor</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+            <thead><tr><th style="width: 36px;"><?php if ($temPendente): ?><input type="checkbox" class="form-check-input" id="lote-todos" title="Selecionar todas as pendentes"><?php endif; ?></th><th>Descrição</th><th>Aluno/Categoria</th><th>Vencimento</th><th class="text-end">Valor</th><th>Pago em</th><th class="text-end">Valor pago</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
             <tbody>
             <?php if (!$contas): ?>
-                <tr><td colspan="7" class="text-center text-muted py-4">Nenhuma conta encontrada.</td></tr>
+                <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma conta encontrada.</td></tr>
             <?php endif; ?>
             <?php $indiceGrupo = 0; foreach ($grupos as $grupo): $indiceGrupo++; $pendentesGrupo = array_filter($grupo['contas'], fn ($c) => $c['status'] === 'pendente'); ?>
                 <?php if ($agrupar): ?>
@@ -105,12 +105,12 @@ require __DIR__ . '/../../../includes/layout_header.php';
                             <?php if ($grupo['aluno_id']): ?><a href="/alunos/form.php?id=<?= (int) $grupo['aluno_id'] ?>&tab=financeiro" class="small fw-normal ms-2" onclick="event.stopPropagation();">ver aluno</a><?php endif; ?>
                         </th>
                         <th class="text-end"><?= formatMoney($grupo['total']) ?></th>
-                        <th colspan="2"></th>
+                        <th colspan="4"></th>
                     </tr>
                 <?php endif; ?>
             <?php foreach ($grupo['contas'] as $c): ?>
                 <?php $vencida = $c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d'); ?>
-                <tr <?= $agrupar ? 'data-linha-grupo="' . e($grupo['id']) . '" style="display:none"' : '' ?> <?= $c['aluno_id'] ? 'class="cursor-pointer" onclick="window.location=\'/alunos/form.php?id=' . (int) $c['aluno_id'] . '&tab=financeiro\'"' : '' ?>>
+                <tr <?= $agrupar ? 'data-linha-grupo="' . e($grupo['id']) . '" style="display:none"' : '' ?> class="cursor-pointer" onclick="abrirHistoricoParcela(<?= (int) $c['id'] ?>)" title="Clique para ver o histórico desta parcela">
                     <td onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $temPendente): ?>
                             <input type="checkbox" class="form-check-input lote-item" value="<?= (int) $c['id'] ?>" data-grupo="<?= $indiceGrupo ?>" data-valor="<?= e((string) $c['valor']) ?>">
@@ -124,10 +124,9 @@ require __DIR__ . '/../../../includes/layout_header.php';
                     <?php if ($c['status'] === 'pendente' && $c['desconto_valor'] !== null): ?>
                         <div class="small <?= (float) $c['desconto_valor'] > 0 ? 'text-success' : 'text-muted' ?>"><?= (float) $c['desconto_valor'] > 0 ? '− ' . formatMoney($c['desconto_valor']) . ' até ' . formatDate($c['desconto_ate'] ?: $c['data_vencimento']) : 'sem desconto' ?></div>
                     <?php endif; ?>
-                    <?php if ($c['status'] === 'pago' && $c['valor_recebido'] !== null && (float) $c['valor_recebido'] !== (float) $c['valor']): ?>
-                        <div class="small text-muted">recebido <?= formatMoney($c['valor_recebido']) ?></div>
-                    <?php endif; ?>
                 </td>
+                    <td><?= $c['status'] === 'pago' && $c['data_recebimento'] ? formatDate($c['data_recebimento']) : '-' ?></td>
+                    <td class="text-end"><?= $c['status'] === 'pago' ? '<span class="text-success fw-semibold">' . formatMoney($c['valor_recebido'] ?? $c['valor']) . '</span>' : '-' ?></td>
                     <td><span class="badge <?= contaStatusBadgeClass($c['status']) ?>"><?= contaStatusLabel($c['status']) ?></span></td>
                     <td class="text-end" onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $c['aluno_id']): ?>
@@ -170,7 +169,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
             <?php endforeach; ?>
             </tbody>
             <?php if ($contas): ?>
-            <tfoot><tr><th colspan="4" class="text-end"><?= e($labelTotal) ?></th><th class="text-end"><?= formatMoney($totalExibido) ?></th><th colspan="2"></th></tr></tfoot>
+            <tfoot><tr><th colspan="4" class="text-end"><?= e($labelTotal) ?></th><th class="text-end"><?= formatMoney($totalExibido) ?></th><th colspan="4"></th></tr></tfoot>
             <?php endif; ?>
         </table>
     </div>
@@ -290,5 +289,6 @@ function abrirBaixaLote() {
 </script>
 
 <?php require __DIR__ . '/../../../includes/modal_pix.php'; ?>
+<?php require __DIR__ . '/../../../includes/modal_historico_parcela.php'; ?>
 <?php $voltarEdicaoParcela = 'lista'; require __DIR__ . '/../../../includes/modal_editar_parcela.php'; ?>
 <?php require __DIR__ . '/../../../includes/layout_footer.php'; ?>
