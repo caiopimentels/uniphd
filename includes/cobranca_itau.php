@@ -355,6 +355,8 @@ function endpointBoletoItau(array $conta): string
  *  - etapa "simulacao" vira "validacao" (valida sem registrar);
  *  - valores (valor_*) só com números: 17 dígitos, 2 casas decimais
  *    (R$ 1,00 = "00000000000000100");
+ *  - percentuais (percentual_*) só com números: 12 dígitos, 5 casas
+ *    decimais (1% = "000000100000");
  *  - desconto_expresso obrigatório (false);
  *  - sem desconto, o bloco "desconto" não vai (lista vazia é recusada).
  */
@@ -373,6 +375,8 @@ function adaptarCorpoCobrancaV2Itau(array $payload): array
                 $dados[$chave] = $valores($valor);
             } elseif (is_string($chave) && str_starts_with($chave, 'valor_') && preg_match('/^\d+(\.\d{1,2})?$/', (string) $valor)) {
                 $dados[$chave] = str_pad((string) (int) round((float) $valor * 100), 17, '0', STR_PAD_LEFT);
+            } elseif (is_string($chave) && str_starts_with($chave, 'percentual_') && preg_match('/^\d+(\.\d{1,5})?$/', (string) $valor)) {
+                $dados[$chave] = str_pad((string) (int) round((float) $valor * 100000), 12, '0', STR_PAD_LEFT);
             }
         }
         return $dados;
