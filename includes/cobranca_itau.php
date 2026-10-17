@@ -185,7 +185,7 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
             $pendencias[] = 'A sequência de nosso número da conta passou de 8 dígitos.';
         }
         if ($instrumento === 'boleto_pix' && !$conta['chave_pix']) {
-            $avisos[] = 'A conta não tem chave Pix cadastrada. Confirme com o Itaú se o bolecode usa a chave do cadastro do beneficiário.';
+            $avisos[] = 'A conta não tem chave Pix cadastrada. Sem ela, o Itaú usa a chave do cadastro do beneficiário; se não houver, o boleto pode sair sem o QR Code do Pix.';
         }
     }
 
@@ -313,6 +313,11 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
             'desconto' => $desconto,
         ],
     ];
+    // Chave Pix da conta (opcional na API): vai em dados_qrcode.chave. Sem
+    // ela, o Itaú usa a chave do cadastro do beneficiário, se houver.
+    if ($instrumento === 'boleto_pix' && !empty($conta['chave_pix'])) {
+        $payload['dados_qrcode'] = ['chave' => trim($conta['chave_pix'])];
+    }
 
     return [
         'parcela' => $parcela,
@@ -462,7 +467,7 @@ function obterTokenItau(PDO $pdo, array $conta, bool $forcarNovo = false): array
     if (!$forcarNovo && $conta['api_token_expira_em'] && strtotime($conta['api_token_expira_em']) > time() + 60) {
         $tokenCache = descriptografar($conta['api_token_cripto']);
         if ($tokenCache) {
-            return ['ok' => true, 'token' => $tokenCache, 'mensagem' => 'Token reaproveitado do cache.'];
+            return ['ok' => true, 'token' => $tokenCache, 'escopos' => escoposTokenItau(['access_token' => $tokenCache]), 'mensagem' => 'Token reaproveitado do cache.'];
         }
     }
 
@@ -506,7 +511,10 @@ function obterTokenItau(PDO $pdo, array $conta, bool $forcarNovo = false): array
     $stmt = $pdo->prepare('UPDATE contas_bancarias SET api_token_cripto = ?, api_token_expira_em = ? WHERE id = ?');
     $stmt->execute([criptografar($json['access_token']), $expiraEm, $conta['id']]);
 
-    return ['ok' => true, 'token' => $json['access_token'], 'mensagem' => 'Token obtido, válido até ' . formatDateTime($expiraEm) . '.'];
+    $escopos = escoposTokenItau($json);
+    return ['ok' => true, 'token' => $json['access_token'], 'escopos' => $escopos,
+        'mensagem' => 'Token obtido, válido até ' . formatDateTime($expiraEm) . '.'
+            . ($escopos !== null ? ' Permissões (escopos) da aplicação: ' . ($escopos ?: 'nenhuma') . '.' : '')];
 }
 
 // Boleto de exemplo da documentação do Itaú. O sandbox não valida dados de
@@ -548,6 +556,33 @@ const ITAU_EXEMPLO_SANDBOX = [
  * Retorna ['ok' => bool, 'status' => int, 'mensagem' => string,
  * 'requisicao' => array, 'resposta' => mixed].
  */
+/**
+ * Escopos (permissões) liberados para a aplicação: vêm no campo "scope" da
+ * resposta do token ou, se não vierem, dentro do próprio token (JWT, parte
+ * do meio em base64). Só leitura, para diagnóstico — nada é validado aqui.
+ * Retorna o texto dos escopos, '' se o token não traz nenhum, ou null se
+ * não deu para ler.
+ */
+function escoposTokenItau(array $respostaToken): ?string
+{
+    if (isset($respostaToken['scope'])) {
+        return trim(is_array($respostaToken['scope']) ? implode(' ', $respostaToken['scope']) : (string) $respostaToken['scope']);
+    }
+    $partes = explode('.', (string) ($respostaToken['access_token'] ?? ''));
+    if (count($partes) !== 3) {
+        return null;
+    }
+    $dados = json_decode((string) base64_decode(strtr($partes[1], '-_', '+/')), true);
+    if (!is_array($dados)) {
+        return null;
+    }
+    $escopo = $dados['scope'] ?? $dados['scp'] ?? null;
+    if ($escopo === null) {
+        return '';
+    }
+    return trim(is_array($escopo) ? implode(' ', $escopo) : (string) $escopo);
+}
+
 /**
  * Identificador de correlação exigido pelo Itaú em toda chamada: UUID v4
  * com hífens (a especificação valida com regex 8-4-4-4-12).
@@ -598,6 +633,17 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
         }
 
         $curl = curl_init(rtrim($conta['api_url_base'], '/') . ITAU_ENDPOINT_BOLETO_PIX);
+        // Guarda os cabeçalhos da resposta: quando o portão do Itaú (AWS)
+        // recusa, o motivo vem em x-amzn-ErrorType, não no corpo.
+        $cabecalhosResposta = [];
+        $correlacao = correlacaoItau();
+        curl_setopt($curl, CURLOPT_HEADERFUNCTION, function ($c, $linha) use (&$cabecalhosResposta) {
+            if (str_contains($linha, ':')) {
+                [$nome, $valor] = explode(':', $linha, 2);
+                $cabecalhosResposta[strtolower(trim($nome))] = trim($valor);
+            }
+            return strlen($linha);
+        });
         curl_setopt_array($curl, [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -606,7 +652,7 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
                 'Accept: application/json',
                 'Authorization: Bearer ' . $token['token'],
                 'x-itau-apikey: ' . $conta['api_client_id'],
-                'x-itau-correlationID: ' . correlacaoItau(),
+                'x-itau-correlationID: ' . $correlacao,
             ],
             CURLOPT_USERAGENT => ITAU_USER_AGENT,
             CURLOPT_RETURNTRANSFER => true,
@@ -630,10 +676,25 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
 
     $json = json_decode((string) $resposta, true);
     $ok = $status >= 200 && $status < 300;
+    $mensagem = $ok ? "O banco aceitou (HTTP {$status})." : "O banco recusou (HTTP {$status}).";
+    if (!$ok) {
+        // Diagnóstico: tipo de erro do portão do Itaú, código da requisição
+        // (para chamado no banco), nosso correlationID e as permissões do token.
+        $detalhes = array_filter([
+            !empty($cabecalhosResposta['x-amzn-errortype']) ? 'tipo: ' . explode(':', $cabecalhosResposta['x-amzn-errortype'])[0] : null,
+            !empty($cabecalhosResposta['x-amzn-requestid']) ? 'requisição no banco: ' . $cabecalhosResposta['x-amzn-requestid'] : null,
+            'correlationID: ' . $correlacao,
+            ($token['escopos'] ?? null) !== null ? 'permissões do token: ' . ($token['escopos'] ?: 'nenhuma') : null,
+        ]);
+        $mensagem .= ' — ' . implode(' · ', $detalhes);
+        if ($status === 403) {
+            $mensagem .= '. A aplicação entrou, mas não tem acesso a esta API: a emissão de Boleto com Pix pede as permissões cob.write, cobv.write e payments/pix.read.';
+        }
+    }
     return [
         'ok' => $ok,
         'status' => $status,
-        'mensagem' => $ok ? "O banco aceitou (HTTP {$status})." : "O banco recusou (HTTP {$status}).",
+        'mensagem' => $mensagem,
         'requisicao' => $payload,
         'resposta' => $json ?? mb_substr(trim(strip_tags((string) $resposta)), 0, 500),
     ];
