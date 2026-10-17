@@ -130,7 +130,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                     <td class="text-end" onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $c['aluno_id']): ?>
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $c['id'] ?>)" title="Gerar / ver Pix (QR Code e copia e cola)"><i class="bi bi-qr-code"></i></button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $c['id'] ?>)" title="Gerar / ver boleto"><i class="bi bi-upc-scan"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBoleto(<?= (int) $c['id'] ?>)" title="Gerar / abrir boleto"><i class="bi bi-upc-scan"></i></button>
                         <?php endif; ?>
                         <?php if ($c['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $c), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $c['boleto_no_banco'] ? 'Boleto já registrado no banco — não pode alterar' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>

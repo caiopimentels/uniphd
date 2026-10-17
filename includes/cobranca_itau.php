@@ -746,6 +746,7 @@ function operacoesChamadaBanco(): array
         'cadastro_webhook' => 'Cadastro do webhook',
         'consulta_webhook' => 'Consulta do webhook',
         'exclusao_webhook' => 'Exclusão do webhook',
+        'consulta_pagamento' => 'Consulta de pagamento',
     ];
 }
 

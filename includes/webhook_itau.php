@@ -83,8 +83,11 @@ function gerarCredenciaisWebhook(PDO $pdo, int $contaId): array
  * Chamada autenticada (token OAuth + certificado) à API de notificações.
  * Retorna ['ok' => bool, 'status' => int, 'mensagem' => string, 'resposta' => mixed].
  */
-function chamarApiNotificacoesItau(PDO $pdo, array $conta, string $metodo, string $caminho, ?array $corpo = null): array
+function chamarApiNotificacoesItau(PDO $pdo, array $conta, string $metodo, string $caminho, ?array $corpo = null,
+    ?string $urlBase = null, ?string $operacao = null): array
 {
+    $urlBase ??= urlApiNotificacoesItau($conta);
+    $operacao ??= ['POST' => 'cadastro_webhook', 'DELETE' => 'exclusao_webhook'][$metodo] ?? 'consulta_webhook';
     // Token recusado (401) antes de vencer: pede um novo e repete uma vez.
     for ($tentativa = 1; $tentativa <= 2; $tentativa++) {
         $token = obterTokenItau($pdo, $conta, $tentativa > 1);
@@ -99,7 +102,7 @@ function chamarApiNotificacoesItau(PDO $pdo, array $conta, string $metodo, strin
             'x-itau-correlationID: ' . ($correlacao = correlacaoItau()),
         ];
 
-        $curl = curl_init(urlApiNotificacoesItau($conta) . $caminho);
+        $curl = curl_init($urlBase . $caminho);
         curl_setopt_array($curl, [
             CURLOPT_CUSTOMREQUEST => $metodo,
             CURLOPT_USERAGENT => ITAU_USER_AGENT,
@@ -119,8 +122,8 @@ function chamarApiNotificacoesItau(PDO $pdo, array $conta, string $metodo, strin
         $erroCurl = curl_error($curl);
         $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
         curl_close($curl);
-        registrarChamadaBanco($pdo, $conta, ['POST' => 'cadastro_webhook', 'DELETE' => 'exclusao_webhook'][$metodo] ?? 'consulta_webhook', $metodo,
-            urlApiNotificacoesItau($conta) . $caminho, $corpo, $resposta === false ? null : $status, $resposta === false ? null : $resposta,
+        registrarChamadaBanco($pdo, $conta, $operacao, $metodo,
+            $urlBase . $caminho, $corpo, $resposta === false ? null : $status, $resposta === false ? null : $resposta,
             $correlacao, (int) ((microtime(true) - $inicio) * 1000), $resposta === false ? 'Falha de conexão: ' . $erroCurl : '');
 
         if ($resposta === false) {
@@ -271,9 +274,17 @@ function cabecalhoAuthorization(): string
  */
 function campoNotificacao(array $dados, array $chaves)
 {
+    // O Itaú manda os nomes em camelCase ("numeroNossoNumero"); aqui eles
+    // estão em snake_case. Compara sem "_" e sem maiúsculas.
+    $normalizar = fn ($nome) => strtolower(str_replace('_', '', (string) $nome));
+    $porNome = [];
+    foreach ($dados as $nome => $valor) {
+        $porNome[$normalizar($nome)] ??= $valor;
+    }
     foreach ($chaves as $chave) {
-        if (array_key_exists($chave, $dados) && $dados[$chave] !== null && $dados[$chave] !== '' && !is_array($dados[$chave])) {
-            return $dados[$chave];
+        $valor = $porNome[$normalizar($chave)] ?? null;
+        if ($valor !== null && $valor !== '' && !is_array($valor)) {
+            return $valor;
         }
     }
     foreach ($dados as $valor) {
@@ -288,15 +299,18 @@ function campoNotificacao(array $dados, array $chaves)
 }
 
 /**
- * Um POST pode trazer um aviso só, uma lista, ou a lista dentro de "data".
+ * Um POST pode trazer um aviso só, uma lista, ou a lista dentro de
+ * "boletos" (formato do manual do Itaú) ou de "data".
  */
 function separarNotificacoes(array $corpo): array
 {
     if (array_is_list($corpo)) {
         return $corpo;
     }
-    if (isset($corpo['data']) && is_array($corpo['data'])) {
-        return array_is_list($corpo['data']) ? $corpo['data'] : [$corpo['data']];
+    foreach (['boletos', 'data'] as $envelope) {
+        if (isset($corpo[$envelope]) && is_array($corpo[$envelope])) {
+            return array_is_list($corpo[$envelope]) ? $corpo[$envelope] : [$corpo[$envelope]];
+        }
     }
     return [$corpo];
 }
@@ -373,6 +387,19 @@ function processarNotificacaoBoletoItau(PDO $pdo, array $conta, array $aviso, in
         return $resultado('nao_encontrado', 'Nenhuma cobrança com o nosso número ' . formatarNossoNumeroItau($nossoNumero) . '.');
     }
 
+    $baixa = baixarCobrancaPeloBanco($pdo, $cobranca, $valorPago, $dataPagamento, $tipo ?: 'webhook', 'Itaú (webhook)');
+    return $resultado($baixa['status'], $baixa['mensagem'], $cobranca);
+}
+
+/**
+ * Baixa a parcela de uma cobrança que o banco diz estar paga — usada pelo
+ * aviso do webhook e pela consulta manual de pagamento. Retorna
+ * ['status' => 'processado'|'ignorado', 'mensagem' => string].
+ */
+function baixarCobrancaPeloBanco(PDO $pdo, array $cobranca, ?float $valorPago, ?string $dataPagamento, string $tipo, string $autor): array
+{
+    $resultado = fn (string $status, string $mensagem) => ['status' => $status, 'mensagem' => $mensagem];
+
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare(
@@ -385,7 +412,7 @@ function processarNotificacaoBoletoItau(PDO $pdo, array $conta, array $aviso, in
 
         if ($parcela['status'] === 'pago') {
             $pdo->commit();
-            return $resultado('ignorado', 'Parcela já estava baixada' . ($tipo ? " ({$tipo} registrado)" : '') . '.', $cobranca);
+            return $resultado('ignorado', 'Parcela já estava baixada' . ($tipo ? " ({$tipo} registrado)" : '') . '.');
         }
 
         $link = $parcela['aluno_id'] ? '/alunos/form.php?id=' . (int) $parcela['aluno_id'] . '&tab=financeiro' : '/financeiro/contas_receber/listar.php';
@@ -394,7 +421,7 @@ function processarNotificacaoBoletoItau(PDO $pdo, array $conta, array $aviso, in
             $pdo->commit();
             criarNotificacao($pdo, 'pagamento', 'Boleto pago de parcela cancelada',
                 ($parcela['aluno_nome'] ?: $parcela['descricao']) . ' pagou ' . formatMoney($valorPago ?? $cobranca['valor']) . '. Verifique a devolução ou reative a parcela.', $link, (int) $parcela['id']);
-            return $resultado('ignorado', 'Pagamento de parcela cancelada — não baixada; avisado no sino.', $cobranca);
+            return $resultado('ignorado', 'Pagamento de parcela cancelada — não baixada; avisado no sino.');
         }
 
         $valorRecebido = $valorPago ?? (float) $cobranca['valor'];
@@ -410,13 +437,78 @@ function processarNotificacaoBoletoItau(PDO $pdo, array $conta, array $aviso, in
 
     confirmarMatriculaPorPagamento($pdo, (int) $parcela['id']);
 
-    $descricao = 'Conta a receber recebida pelo banco (' . ($tipo ?: 'webhook') . '): ' . $parcela['descricao'] . ' - ' . formatMoney($valorRecebido);
-    registrarAtividadeUsuario(null, 'Itaú (webhook)', 'contas_receber', 'baixa', $descricao);
+    $descricao = 'Conta a receber recebida pelo banco (' . $tipo . '): ' . $parcela['descricao'] . ' - ' . formatMoney($valorRecebido);
+    $usuarioId = function_exists('usuarioLogado') && usuarioLogado() ? usuarioAtualId() : null;
+    registrarAtividadeUsuario($usuarioId, $autor, 'contas_receber', 'baixa', $descricao);
     criarNotificacao($pdo, 'pagamento', 'Pagamento recebido',
         ($parcela['aluno_nome'] ?: $parcela['descricao']) . ' · ' . formatMoney($valorRecebido), $link, (int) $parcela['id']);
 
     return $resultado('processado', 'Parcela baixada: ' . formatMoney($valorRecebido) . ' em ' . formatDate($dataRecebimento)
-        . ($valorPago === null ? ' (aviso sem valor pago — usado o valor da cobrança)' : '') . '.', $cobranca);
+        . ($valorPago === null ? ' (aviso sem valor pago — usado o valor da cobrança)' : '') . '.');
+}
+
+/**
+ * Consulta manual: pergunta ao Itaú se o boleto da parcela foi pago, sem
+ * esperar o webhook. Usa as movimentações da carteira ("francesa") da
+ * Cobrança v2 — GET /francesas/{agência+conta+DAC}/movimentacoes?data=…
+ * &nosso_numero=… — dia a dia, de hoje até a emissão (no máximo 31 dias).
+ * Achou a liquidação: baixa a parcela como o webhook faria.
+ * Retorna ['ok' => bool, 'pago' => bool, 'mensagem' => string].
+ */
+function consultarPagamentoItau(PDO $pdo, int $contaReceberId): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM cobrancas_bancarias WHERE conta_receber_id = ? AND status IN ('registrada', 'paga') ORDER BY id DESC LIMIT 1"
+    );
+    $stmt->execute([$contaReceberId]);
+    $cobranca = $stmt->fetch();
+    if (!$cobranca) {
+        return ['ok' => false, 'pago' => false, 'mensagem' => 'Esta parcela não tem boleto registrado no banco.'];
+    }
+    $stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
+    $stmt->execute([$cobranca['conta_bancaria_id']]);
+    $conta = $stmt->fetch();
+    $idFrancesa = $conta ? idBeneficiarioItau($conta) : null;
+    if (!$idFrancesa) {
+        return ['ok' => false, 'pago' => false, 'mensagem' => 'Confira agência, conta e dígito da conta bancária.'];
+    }
+    $stmt = $pdo->prepare('SELECT status FROM contas_receber WHERE id = ?');
+    $stmt->execute([$contaReceberId]);
+    if ($stmt->fetchColumn() === 'pago') {
+        return ['ok' => true, 'pago' => true, 'mensagem' => 'Esta parcela já está baixada.'];
+    }
+    contextoChamadaBanco(['conta_receber_id' => $contaReceberId]);
+
+    // As movimentações ficam na API de Cobrança v2 (cash_management).
+    $urlBase = ehApiCobrancaV2Itau($conta) ? rtrim($conta['api_url_base'], '/') : 'https://api.itau.com.br/cash_management/v2';
+    $nossoNumero = (int) $cobranca['nosso_numero'];
+    $dia = new DateTimeImmutable('today');
+    $inicio = max(new DateTimeImmutable(substr($cobranca['criado_em'], 0, 10)), $dia->modify('-31 days'));
+    $consultados = 0;
+
+    for (; $dia >= $inicio; $dia = $dia->modify('-1 day')) {
+        $consultados++;
+        $resposta = chamarApiNotificacoesItau($pdo, $conta, 'GET', '/francesas/' . $idFrancesa . '/movimentacoes?' . http_build_query([
+            'data' => $dia->format('Y-m-d'), 'nosso_numero' => formatarNossoNumeroItau($nossoNumero),
+        ]), null, $urlBase, 'consulta_pagamento');
+        if (!$resposta['ok'] && $resposta['status'] !== 404) {
+            return ['ok' => false, 'pago' => false, 'mensagem' => $resposta['mensagem']];
+        }
+        foreach ((is_array($resposta['resposta']) ? ($resposta['resposta']['data'] ?? []) : []) as $mov) {
+            $numero = (int) substr(apenasDigitos((string) ($mov['nosso_numero'] ?? '')), -8);
+            $liquidacao = str_starts_with(strtolower((string) ($mov['tipo_movimentacao'] ?? '')), 'liquida');
+            if ($numero !== $nossoNumero || !$liquidacao) {
+                continue;
+            }
+            $valor = valorNotificacao($mov['valor_liquido_lancado'] ?? null) ?: valorNotificacao($mov['valor_titulo'] ?? null);
+            $data = dataNotificacao($mov['data_movimentacao'] ?? null) ?? $dia->format('Y-m-d');
+            $baixa = baixarCobrancaPeloBanco($pdo, $cobranca, $valor, $data, 'consulta manual', usuarioLogado() ? ($_SESSION['user_nome'] ?? 'Usuário') : 'Consulta ao banco');
+            return ['ok' => true, 'pago' => true, 'mensagem' => 'O banco confirma o pagamento. ' . $baixa['mensagem']];
+        }
+    }
+
+    return ['ok' => true, 'pago' => false, 'mensagem' => "O banco ainda não mostra pagamento deste boleto (consultados {$consultados} dia(s)). "
+        . 'O Itaú costuma lançar o pagamento nas movimentações até o dia útil seguinte — tente de novo mais tarde.'];
 }
 
 /**
