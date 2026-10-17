@@ -350,6 +350,36 @@ function endpointBoletoItau(array $conta): string
     return ehApiCobrancaV2Itau($conta) ? '/boletos' : ITAU_ENDPOINT_BOLETO_PIX;
 }
 
+/**
+ * Ajusta o corpo ao que a Cobrança v2 valida (respostas de erro do banco):
+ *  - etapa "simulacao" vira "validacao" (valida sem registrar);
+ *  - valores (valor_*) só com números: 17 dígitos, 2 casas decimais
+ *    (R$ 1,00 = "00000000000000100");
+ *  - desconto_expresso obrigatório (false);
+ *  - sem desconto, o bloco "desconto" não vai (lista vazia é recusada).
+ */
+function adaptarCorpoCobrancaV2Itau(array $payload): array
+{
+    if (($payload['etapa_processo_boleto'] ?? '') === 'simulacao') {
+        $payload['etapa_processo_boleto'] = 'validacao';
+    }
+    $payload['dado_boleto']['desconto_expresso'] = false;
+    if (($payload['dado_boleto']['desconto']['codigo_tipo_desconto'] ?? '00') === '00' || empty($payload['dado_boleto']['desconto']['descontos'])) {
+        unset($payload['dado_boleto']['desconto']);
+    }
+    $valores = function ($dados) use (&$valores) {
+        foreach ($dados as $chave => $valor) {
+            if (is_array($valor)) {
+                $dados[$chave] = $valores($valor);
+            } elseif (is_string($chave) && str_starts_with($chave, 'valor_') && preg_match('/^\d+(\.\d{1,2})?$/', (string) $valor)) {
+                $dados[$chave] = str_pad((string) (int) round((float) $valor * 100), 17, '0', STR_PAD_LEFT);
+            }
+        }
+        return $dados;
+    };
+    return $valores($payload);
+}
+
 // O firewall do Itaú (CloudFront) responde 403 "Request blocked" a
 // requisições sem User-Agent — e o cURL do PHP não manda um por padrão.
 const ITAU_USER_AGENT = 'UniPHD/1.0';
@@ -643,7 +673,7 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
     $endpoint = endpointBoletoItau($conta);
     $corpos = [$payload];
     if (ehApiCobrancaV2Itau($conta)) {
-        $comCanal = ['codigo_canal_operacao' => 'API'] + $payload;
+        $comCanal = ['codigo_canal_operacao' => 'API'] + adaptarCorpoCobrancaV2Itau($payload);
         // Se o banco não entender o envelope (400 de corpo/parse), tenta uma
         // vez sem ele — com 400 nada foi registrado, repetir não duplica.
         $corpos = [['data' => $comCanal], $comCanal];
