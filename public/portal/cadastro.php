@@ -56,6 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->commit();
 
             registrarAtividadeUsuario(null, 'Portal: ' . $d['nome'], 'alunos', 'criacao', 'Aluno se cadastrou pelo portal: ' . $d['nome']);
+            registrarHistoricoAluno($pdo, $alunoId, 'cadastro', 'Cadastrou-se pelo portal');
             entrarComoAluno($pdo, ['id' => $alunoId, 'nome' => $d['nome']]);
             flash('success', 'Conta criada! Bem-vindo(a), ' . explode(' ', $d['nome'])[0] . '.');
             redirect($voltar);

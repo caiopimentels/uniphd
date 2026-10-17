@@ -35,6 +35,7 @@ $pdo->prepare("UPDATE matriculas SET status = 'ativa', segura_vaga = 0, lista_es
 $pdo->commit();
 avisarMinimoTurma($pdo, (int) $matricula['turma_id']);
 
+registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'confirmacao', 'Turma ' . $matricula['turma_nome'] . ' — inscrição do portal confirmada manualmente', (int) $matricula["id"]);
 registrarAtividade('matriculas', 'matricula', 'Inscrição do portal confirmada manualmente: ' . $matricula['aluno_nome'] . ' na turma ' . $matricula['turma_nome']);
 flash('success', $matricula['aluno_nome'] . ': matrícula confirmada. O aluno já está ativo na turma.');
 redirect(input('voltar') === 'turma' ? '/turmas/visualizar.php?id=' . (int) $matricula['turma_id'] : '/matriculas/visualizar.php?id=' . $id);

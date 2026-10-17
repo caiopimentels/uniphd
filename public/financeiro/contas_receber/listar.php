@@ -55,6 +55,7 @@ $labelTotal = match ($status) {
     'pendente' => 'Total pendente',
     'pago' => 'Total recebido',
     'cancelado' => 'Total cancelado',
+    'excluido' => 'Total excluído',
     default => 'Total geral',
 };
 
@@ -80,7 +81,8 @@ require __DIR__ . '/../../../includes/layout_header.php';
             <option value="pendente" <?= $status === 'pendente' ? 'selected' : '' ?>>Pendentes</option>
             <option value="pago" <?= $status === 'pago' ? 'selected' : '' ?>>Recebidas</option>
             <option value="cancelado" <?= $status === 'cancelado' ? 'selected' : '' ?>>Canceladas</option>
-            <option value="">Todas</option>
+            <option value="" <?= $status === '' ? 'selected' : '' ?>>Todas</option>
+            <option value="excluido" <?= $status === 'excluido' ? 'selected' : '' ?>>Excluídas</option>
         </select>
         <div class="input-group filtro-busca">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -93,9 +95,6 @@ require __DIR__ . '/../../../includes/layout_header.php';
             <?php endforeach; ?>
         </select>
     </form>
-    <?php if ($contas): ?>
-        <span class="ms-auto filtro-chip"><?= e($labelTotal) ?>: <?= formatMoney($totalExibido) ?></span>
-    <?php endif; ?>
 </div>
 
 <button type="button" class="btn btn-outline-secondary btn-sm btn-acoes nao-imprimir" onclick="alternarLateral()">
@@ -136,17 +135,17 @@ require __DIR__ . '/../../../includes/layout_header.php';
                     </td>
                     <td><?= e($c['descricao']) ?></td>
                     <td><?= e($c['aluno_nome'] ?: $c['categoria_nome'] ?: '-') ?></td>
-                    <td class="<?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($c['data_vencimento']) ?></td>
-                    <td class="text-end">
+                    <td class="text-nowrap <?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($c['data_vencimento']) ?></td>
+                    <td class="text-end text-nowrap">
                     <?= formatMoney($c['valor']) ?>
                     <?php if ($c['status'] === 'pendente' && $c['desconto_valor'] !== null): ?>
                         <div class="small <?= (float) $c['desconto_valor'] > 0 ? 'text-success' : 'text-muted' ?>"><?= (float) $c['desconto_valor'] > 0 ? '− ' . formatMoney($c['desconto_valor']) . ' até ' . formatDate($c['desconto_ate'] ?: $c['data_vencimento']) : 'sem desconto' ?></div>
                     <?php endif; ?>
                 </td>
-                    <td><?= $c['status'] === 'pago' && $c['data_recebimento'] ? formatDate($c['data_recebimento']) : '-' ?></td>
-                    <td class="text-end"><?= $c['status'] === 'pago' ? '<span class="text-success fw-semibold">' . formatMoney($c['valor_recebido'] ?? $c['valor']) . '</span>' : '-' ?></td>
+                    <td class="text-nowrap"><?= $c['status'] === 'pago' && $c['data_recebimento'] ? formatDate($c['data_recebimento']) : '-' ?></td>
+                    <td class="text-end text-nowrap"><?= $c['status'] === 'pago' ? '<span class="text-success fw-semibold">' . formatMoney($c['valor_recebido'] ?? $c['valor']) . '</span>' : '-' ?></td>
                     <td><span class="badge <?= contaStatusBadgeClass($c['status']) ?>"><?= contaStatusLabel($c['status']) ?></span></td>
-                    <td class="text-end" onclick="event.stopPropagation();">
+                    <td class="text-end text-nowrap" onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $c['aluno_id']): ?>
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $c['id'] ?>)" title="Gerar / ver Pix (QR Code e copia e cola)"><i class="bi bi-qr-code"></i></button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBoleto(<?= (int) $c['id'] ?>)" title="Gerar / abrir boleto"><i class="bi bi-upc-scan"></i></button>
@@ -165,21 +164,26 @@ require __DIR__ . '/../../../includes/layout_header.php';
                                     <button type="submit" class="btn btn-sm btn-outline-warning" title="Estornar baixa (lançada errado)"><i class="bi bi-arrow-counterclockwise"></i></button>
                                 </form>
                             <?php elseif ($c['status'] === 'pago' && $c['pago_pelo_banco']): ?>
-                                <span class="btn btn-sm btn-outline-primary" style="cursor: default;" title="Pago por boleto/Pix pelo banco — não pode ser estornado"><i class="bi bi-bank"></i></span>
+                                <span class="btn btn-sm acao-inativa" title="Pago por boleto/Pix pelo banco — não pode ser estornado"><i class="bi bi-bank"></i></span>
                             <?php endif; ?>
                         <?php
                             // Excluir uma mensalidade some com ela de vez (inclusive do DRE);
                             // para deixar de cobrar mantendo o histórico, o caminho é cancelar a matrícula.
-                            $avisoExclusao = ($c['boleto_no_banco'] ? 'O boleto desta parcela será baixado (cancelado) no Itaú e a parcela fica como cancelada. ' : '')
+                            $avisoExclusao = ($c['boleto_no_banco'] ? 'O boleto desta parcela será baixado (cancelado) no Itaú. ' : '')
+                                . ($c['passou_pelo_banco'] ? 'Como ela já passou pelo banco, fica guardada no filtro "Excluídas". ' : '')
                                 . ($c['matricula_id']
                                     ? 'Esta parcela foi gerada por uma matrícula. Excluir mesmo assim? Para parar de cobrar o aluno, prefira cancelar a matrícula.'
                                     : 'Excluir este lançamento?');
                         ?>
                         <?php if (usuarioPodeExcluirReceber()): ?>
+                            <?php if (($c['status'] === 'pago' && $c['pago_pelo_banco']) || $c['excluido_em']): ?>
+                                <span class="btn btn-sm acao-inativa" title="<?= $c['excluido_em'] ? 'Já excluída' : 'Pago pelo banco — não pode ser excluído' ?>"><i class="bi bi-trash"></i></span>
+                            <?php else: ?>
                         <form action="/financeiro/contas_receber/excluir.php" method="post" class="d-inline" onsubmit="return confirm('<?= e($avisoExclusao) ?>');">
                             <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
                             <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir lançamento"><i class="bi bi-trash"></i></button>
                         </form>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </td>
                 </tr>

@@ -37,6 +37,7 @@ $stmt->execute([$nome, $cpf ?: null, $telefone ?: null, $email ?: null]);
 $id = (int) $pdo->lastInsertId();
 
 registrarAtividade('alunos', 'criacao', 'Aluno cadastrado (cadastro rápido): ' . $nome);
+registrarHistoricoAluno($pdo, $id, 'cadastro', 'Aluno cadastrado no sistema (cadastro rápido)');
 
 responderJson([
     'sucesso' => true,

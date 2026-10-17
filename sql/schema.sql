@@ -594,6 +594,7 @@ CREATE TABLE contas_receber (
     -- Quem deu a baixa: 'manual' (tela; pode estornar) ou 'banco' (boleto/Pix pelo Itaú; não pode).
     baixa_origem ENUM('manual', 'banco') DEFAULT NULL,
     status ENUM('pendente', 'pago', 'cancelado') NOT NULL DEFAULT 'pendente',
+    excluido_em DATETIME DEFAULT NULL,
     observacao VARCHAR(255) DEFAULT NULL,
     usuario_id INT DEFAULT NULL,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -681,6 +682,19 @@ CREATE TABLE webhook_eventos (
 -- enviado e o que o banco respondeu, quem pediu (usuário do sistema ou
 -- aluno no portal) e para qual parcela. Segredos vão mascarados.
 -- ----------------------------------------------------------------------
+CREATE TABLE aluno_historico (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    aluno_id INT NOT NULL,
+    matricula_id INT DEFAULT NULL,
+    usuario_id INT DEFAULT NULL,
+    quem VARCHAR(150) NOT NULL,
+    tipo VARCHAR(30) NOT NULL,
+    descricao VARCHAR(255) NOT NULL,
+    ip VARCHAR(45) DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_aluno_historico (aluno_id, criado_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE parcela_historico (
     id INT AUTO_INCREMENT PRIMARY KEY,
     conta_receber_id INT NOT NULL,

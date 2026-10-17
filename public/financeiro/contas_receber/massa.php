@@ -72,7 +72,7 @@ if ($acao === 'excluir') {
         $aguardando = $aguardando || $r['aguardando'];
     }
     if ($excluidas || $canceladas) {
-        flash($aguardando ? 'warning' : 'success', "{$excluidas} excluída(s)" . ($canceladas ? ", {$canceladas} cancelada(s) com baixa do boleto no banco" : '') . '.'
+        flash($aguardando ? 'warning' : 'success', ($excluidas + $canceladas) . ' parcela(s) excluída(s)' . ($canceladas ? " — {$canceladas} já tinham passado pelo banco e ficam no filtro \"Excluídas\"" : '') . '.'
             . ($aguardando ? ' ' . AVISO_APROVACAO_ITAU : ''));
     }
     if ($falhas) {

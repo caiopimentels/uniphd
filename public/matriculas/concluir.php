@@ -26,6 +26,7 @@ if (!$matricula || $matricula['status'] !== 'ativa') {
 $stmt = $pdo->prepare("UPDATE matriculas SET status = 'concluida' WHERE id = ?");
 $stmt->execute([$id]);
 
+registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'conclusao', 'Turma ' . $matricula['turma_nome'], (int) $matricula["id"]);
 registrarAtividade('matriculas', 'conclusao', 'Matrícula concluída: ' . $matricula['aluno_nome'] . ' na turma ' . $matricula['turma_nome']);
 
 flash('success', 'Matrícula marcada como concluída.');

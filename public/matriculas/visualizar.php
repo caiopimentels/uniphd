@@ -41,7 +41,7 @@ if ($podeVerFinanceiro) {
         'SELECT cr.*, fp.nome AS forma_pagamento_nome, ' . SQL_BAIXA_PELO_BANCO . ' AS pago_pelo_banco, ' . SQL_BOLETO_NO_BANCO . ' AS boleto_no_banco
          FROM contas_receber cr
          LEFT JOIN formas_pagamento fp ON fp.id = cr.forma_pagamento_id
-         WHERE cr.matricula_id = ?
+         WHERE cr.matricula_id = ? AND cr.excluido_em IS NULL
          ORDER BY cr.data_vencimento, cr.id'
     );
     $stmt->execute([$id]);
@@ -87,7 +87,8 @@ require __DIR__ . '/../../includes/layout_header.php';
             <div class="row g-3">
                 <div class="col-md-6"><div class="kpi-rotulo">Aluno</div><div><a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>"><?= e($matricula['aluno_nome']) ?></a><?= $matricula['aluno_cpf'] ? ' · ' . e($matricula['aluno_cpf']) : '' ?></div></div>
                 <div class="col-md-6"><div class="kpi-rotulo">Turma</div><div><a href="/turmas/visualizar.php?id=<?= (int) $matricula['turma_id'] ?>"><?= e($matricula['curso_nome']) ?> · <?= e($matricula['turma_nome']) ?></a></div></div>
-                <div class="col-md-3"><div class="kpi-rotulo">Data da matrícula</div><div><?= formatDate($matricula['data_matricula']) ?></div></div>
+                <div class="col-md-3"><div class="kpi-rotulo">Data da matrícula</div><div><?= formatDate($matricula['data_matricula']) ?></div>
+                    <div class="small text-muted">lançada em <?= formatDateTime($matricula['criado_em']) ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Período da turma</div><div><?= e(periodoTurma($matricula)) ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Mensalidade</div><div><?= formatMoney($mensalidadeFinal) ?><?php if ((float) $matricula['desconto_percentual'] > 0): ?> <span class="small text-muted">(<?= formatMoney($matricula['valor_mensalidade']) ?> − <?= formatPercent($matricula['desconto_percentual']) ?>)</span><?php endif; ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Mensalidades</div><div><?= (int) $matricula['num_parcelas'] ?>× a partir de <?= formatDate($matricula['primeiro_vencimento']) ?></div></div>
@@ -157,7 +158,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                     <button type="submit" class="btn btn-sm btn-outline-warning" title="Estornar baixa (lançada errado)"><i class="bi bi-arrow-counterclockwise"></i></button>
                                 </form>
                             <?php elseif ($p['status'] === 'pago' && $p['pago_pelo_banco']): ?>
-                                <span class="btn btn-sm btn-outline-primary" style="cursor: default;" title="Pago por boleto/Pix pelo banco — não pode ser estornado"><i class="bi bi-bank"></i></span>
+                                <span class="btn btn-sm acao-inativa" title="Pago por boleto/Pix pelo banco — não pode ser estornado"><i class="bi bi-bank"></i></span>
                             <?php endif; ?>
                             </td>
                         </tr>

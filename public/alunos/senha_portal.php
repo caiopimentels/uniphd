@@ -39,6 +39,7 @@ $pdo->prepare('UPDATE alunos SET senha_hash = ?, senha_provisoria = 1 WHERE id =
 // Links de convite/troca ainda abertos deixam de valer (a senha agora é esta).
 $pdo->prepare('UPDATE aluno_tokens_senha SET usado_em = NOW() WHERE aluno_id = ? AND usado_em IS NULL')->execute([$id]);
 registrarAtividade('alunos', 'edicao', 'Senha provisória do portal criada para ' . $aluno['nome']);
+registrarHistoricoAluno($pdo, $id, 'senha', 'Senha provisória do portal criada');
 
 $cpf = apenasDigitos((string) $aluno['cpf']);
 $_SESSION['senha_provisoria_criada'] = [

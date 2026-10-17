@@ -15,6 +15,7 @@ if ($registro && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare('UPDATE aluno_tokens_senha SET usado_em = NOW() WHERE aluno_id = ? AND usado_em IS NULL')->execute([$registro['id']]);
         $pdo->commit();
         registrarAtividadeUsuario(null, 'Portal: ' . $registro['nome'], 'alunos', 'edicao', 'Aluno ' . ($registro['tipo'] === 'convite' ? 'criou' : 'trocou') . ' a senha do portal');
+        registrarHistoricoAluno($pdo, (int) $registro['id'], 'senha', ($registro['tipo'] === 'convite' ? 'Criou' : 'Trocou') . ' a senha do portal pelo link do e-mail');
         entrarComoAluno($pdo, $registro);
         flash('success', 'Senha salva! Você já está dentro do portal.');
         redirect('/portal/index.php');

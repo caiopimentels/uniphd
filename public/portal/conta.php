@@ -43,6 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && input('acao') === 'senha') {
         $pdo->commit();
         $_SESSION['portal_aluno_nome'] = $novo['nome'];
         registrarAtividadeUsuario(null, 'Portal: ' . $novo['nome'], 'alunos', 'edicao', 'Aluno atualizou os próprios dados pelo portal');
+        registrarHistoricoAluno($pdo, (int) $aluno['id'], 'edicao', 'Atualizou os próprios dados pelo portal');
         flash('success', 'Dados atualizados.');
         redirect($voltar ?? '/portal/conta.php');
     }

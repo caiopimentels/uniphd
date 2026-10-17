@@ -20,6 +20,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$erro) {
         salvarSenhaAluno($pdo, alunoAtualId(), $senha);
         registrarAtividadeUsuario(null, 'Portal: ' . alunoAtualNome(), 'alunos', 'edicao', 'Aluno trocou a senha provisória do portal');
+        registrarHistoricoAluno($pdo, alunoAtualId(), 'senha', 'Trocou a senha provisória do portal');
         flash('success', 'Senha trocada! Agora é só usar o portal.');
         redirect('/portal/index.php');
     }

@@ -49,6 +49,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$podeEditarAluno) {
     if ($ativo !== (int) $aluno['ativo']) {
         $pdo->prepare('UPDATE alunos SET ativo = ? WHERE id = ?')->execute([$ativo, $id]);
         registrarAtividade('alunos', 'edicao', 'Aluno ' . ($ativo ? 'ativado' : 'desativado') . ': ' . $aluno['nome']);
+        registrarHistoricoAluno($pdo, $id, 'situacao', $ativo ? 'Aluno ativado' : 'Aluno desativado');
     }
     flash('success', $ativo ? 'Aluno ativo.' : 'Aluno desativado.');
     redirect('/alunos/form.php?id=' . $id);
@@ -156,6 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->commit();
 
         registrarAtividade('alunos', $operacaoAuditoria, ($operacaoAuditoria === 'criacao' ? 'Aluno cadastrado: ' : 'Aluno editado: ') . $nome);
+        registrarHistoricoAluno($pdo, $id, $operacaoAuditoria === 'criacao' ? 'cadastro' : 'edicao', $operacaoAuditoria === 'criacao' ? 'Aluno cadastrado no sistema' : 'Dados do cadastro alterados');
 
         flash('success', 'Aluno salvo com sucesso.');
         redirect('/alunos/form.php?id=' . $id);
@@ -177,11 +179,12 @@ $resumo = null;
 if ($id) {
     $stmt = $pdo->prepare(
         "SELECT m.*, t.nome AS turma_nome, t.data_inicio, t.data_termino, t.minimo_alunos, t.duracao_unidade, c.nome AS curso_nome,
-                ce.codigo AS certificado_codigo
+                ce.codigo AS certificado_codigo, u.nome AS matriculado_por
          FROM matriculas m
          JOIN turmas t ON t.id = m.turma_id
          JOIN cursos c ON c.id = t.curso_id
          LEFT JOIN certificados ce ON ce.matricula_id = m.id
+         LEFT JOIN usuarios u ON u.id = m.usuario_id
          WHERE m.aluno_id = ?
          ORDER BY m.status = 'ativa' DESC, t.data_inicio DESC"
     );
@@ -195,7 +198,7 @@ if ($id) {
             "SELECT cr.*, fp.nome AS forma_pagamento_nome, " . SQL_BAIXA_PELO_BANCO . " AS pago_pelo_banco, " . SQL_BOLETO_NO_BANCO . " AS boleto_no_banco
              FROM contas_receber cr
              LEFT JOIN formas_pagamento fp ON fp.id = cr.forma_pagamento_id
-             WHERE cr.aluno_id = ?
+             WHERE cr.aluno_id = ? AND cr.excluido_em IS NULL
              ORDER BY cr.data_vencimento, cr.id"
         );
         $stmt->execute([$id]);
@@ -357,6 +360,34 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <?php endif; ?>
             </div>
         </div>
+
+        <?php $historicoAluno = historicoAluno($pdo, (int) $id, 200); ?>
+        <div class="secao">
+            <div class="secao-titulo"><i class="bi bi-clock-history"></i> Histórico do aluno</div>
+            <?php if (!$historicoAluno): ?>
+                <p class="text-muted mb-0">Nada registrado ainda.</p>
+            <?php else: ?>
+                <ul class="list-unstyled mb-0">
+                    <?php foreach ($historicoAluno as $i => $h): ?>
+                        <li class="d-flex gap-2 py-2 border-bottom <?= $i >= 10 ? 'd-none historico-aluno-mais' : '' ?>">
+                            <i class="bi <?= e($h['icone']) ?> text-<?= e($h['cor']) ?>"></i>
+                            <div class="flex-grow-1 lh-sm">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <strong><?= e($h['titulo']) ?></strong>
+                                    <span class="small text-muted text-nowrap"><?= formatDateTime($h['quando']) ?></span>
+                                </div>
+                                <div class="small text-muted"><?= $h['detalhe'] !== '' ? e($h['detalhe']) . ' · ' : '' ?>por <?= e($h['quem']) ?></div>
+                            </div>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php if (count($historicoAluno) > 10): ?>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="document.querySelectorAll('.historico-aluno-mais').forEach((li) => li.classList.remove('d-none')); this.remove();">
+                        Ver tudo (<?= count($historicoAluno) ?>)
+                    </button>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
         <?php endif; ?>
 </div>
 
@@ -410,7 +441,12 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <?= formatMoney(valorMensalidadeComDesconto((float) $m['valor_mensalidade'], (float) $m['desconto_percentual'])) ?>
                             <?php if ((float) $m['desconto_percentual'] > 0): ?><div class="small text-muted"><?= formatPercent($m['desconto_percentual']) ?> de desconto</div><?php endif; ?>
                         </td>
-                        <td><?= formatDate($m['data_matricula']) ?></td>
+                        <td>
+                            <?= formatDate($m['data_matricula']) ?>
+                            <div class="small text-muted text-nowrap" title="Quando foi lançada no sistema">
+                                <?= formatDateTime($m['criado_em']) ?> · <?= $m['origem'] === 'portal' ? '<i class="bi bi-globe2"></i> pelo portal' : 'por ' . e($m['matriculado_por'] ?: '-') ?>
+                            </div>
+                        </td>
                         <td><span class="badge <?= matriculaStatusBadgeClass($m['status']) ?>"><?= matriculaStatusLabel($m['status']) ?></span></td>
                         <td onclick="event.stopPropagation();">
                             <?php if ($m['status'] === 'concluida'): ?>
@@ -512,7 +548,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                     <button type="submit" class="btn btn-sm btn-outline-warning" title="Estornar baixa (lançada errado)"><i class="bi bi-arrow-counterclockwise"></i></button>
                                 </form>
                             <?php elseif ($p['status'] === 'pago' && $p['pago_pelo_banco']): ?>
-                                <span class="btn btn-sm btn-outline-primary" style="cursor: default;" title="Pago por boleto/Pix pelo banco — não pode ser estornado"><i class="bi bi-bank"></i></span>
+                                <span class="btn btn-sm acao-inativa" title="Pago por boleto/Pix pelo banco — não pode ser estornado"><i class="bi bi-bank"></i></span>
                             <?php endif; ?>
                         </td>
                     </tr>

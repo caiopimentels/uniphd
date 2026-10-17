@@ -44,6 +44,7 @@ $pdo->prepare("UPDATE matriculas SET status = 'ativa' WHERE id = ?")->execute([$
 $pdo->commit();
 avisarMinimoTurma($pdo, (int) $matricula['turma_id']);
 
+registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'reativacao', 'Turma ' . $matricula['turma_nome'] . ' — voltou a ficar ativo', (int) $matricula["id"]);
 registrarAtividade('matriculas', 'edicao', 'Matrícula reativada (estava concluída): ' . $matricula['aluno_nome'] . ' na turma ' . $matricula['turma_nome']);
 flash('success', $matricula['aluno_nome'] . ' voltou a ficar ativo na turma.');
 redirect($voltar);

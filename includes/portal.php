@@ -91,6 +91,7 @@ function entrarComoAluno(PDO $pdo, array $aluno): void
     $stmt->execute([$aluno['id']]);
     $_SESSION['portal_trocar_senha'] = (bool) $stmt->fetchColumn();
     $pdo->prepare('UPDATE alunos SET portal_ultimo_acesso = NOW() WHERE id = ?')->execute([$aluno['id']]);
+    registrarHistoricoAluno($pdo, (int) $aluno['id'], 'acesso', 'Entrou no portal do aluno');
 }
 
 /**
@@ -170,7 +171,11 @@ function enviarLinkSenhaAluno(PDO $pdo, array $aluno, string $tipo): array
         . '<p>Ou copie e cole no navegador:<br>' . e($link) . '</p>'
         . '<p>Para entrar, use seu CPF e a senha que você criar.' . ($tipo === 'redefinir' ? ' Se você não pediu isso, ignore este e-mail.' : '') . '</p>';
 
-    return enviarEmail($config, $aluno['email'], $aluno['nome'], ($tipo === 'convite' ? 'Seu acesso ao ' : 'Senha do ') . $nomePortal, $corpo);
+    $envio = enviarEmail($config, $aluno['email'], $aluno['nome'], ($tipo === 'convite' ? 'Seu acesso ao ' : 'Senha do ') . $nomePortal, $corpo);
+    if ($envio['sucesso'] ?? false) {
+        registrarHistoricoAluno($pdo, (int) $aluno['id'], 'senha', ($tipo === 'convite' ? 'Convite para criar a senha do portal' : 'Link para trocar a senha do portal') . ' enviado para ' . $aluno['email']);
+    }
+    return $envio;
 }
 
 // Token de link de senha ainda válido → linha do token + dados do aluno.
@@ -419,6 +424,7 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
     }
 
     registrarAtividadeUsuario(null, 'Portal: ' . $aluno['nome'], 'matriculas', 'matricula', 'Inscrição pelo portal na turma ' . $turma['nome'] . ($pendente ? ' (aguardando pagamento)' : ''));
+    registrarHistoricoAluno($pdo, $alunoId, 'inscricao', 'Turma ' . $turma['nome'] . ($pendente ? ' — aguardando pagamento' : ''), $matriculaId);
     criarNotificacao($pdo, 'matricula', 'Nova inscrição pelo portal', $aluno['nome'] . ' · ' . $turma['curso_nome'] . ' — ' . $turma['nome'], '/matriculas/visualizar.php?id=' . $matriculaId, $matriculaId);
 
     return [
@@ -438,7 +444,7 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
 function expirarInscricoesPortal(PDO $pdo): int
 {
     $stmt = $pdo->query(
-        "SELECT m.id, m.turma_id, a.nome AS aluno_nome, t.nome AS turma_nome
+        "SELECT m.id, m.turma_id, m.aluno_id, a.nome AS aluno_nome, t.nome AS turma_nome
          FROM matriculas m JOIN alunos a ON a.id = m.aluno_id JOIN turmas t ON t.id = m.turma_id
          WHERE m.status = 'pendente' AND m.lista_espera = 0 AND m.pagamento_ate < NOW()"
     );
@@ -464,6 +470,7 @@ function expirarInscricoesPortal(PDO $pdo): int
         $pdo->commit();
         if ($atualiza->rowCount()) {
             registrarAtividadeUsuario(null, 'Portal', 'matriculas', 'cancelamento', 'Inscrição expirada sem pagamento: ' . $m['aluno_nome'] . ' — ' . $m['turma_nome']);
+            registrarHistoricoAluno($pdo, (int) $m['aluno_id'], 'cancelamento', 'Turma ' . $m['turma_nome'] . ' — inscrição do portal expirou sem pagamento', (int) $m['id']);
         }
     }
     return $expiradas;
@@ -514,6 +521,7 @@ function confirmarMatriculaPorPagamento(PDO $pdo, int $contaReceberId): ?string
     avisarMinimoTurma($pdo, (int) $matricula['turma_id']);
 
     registrarAtividadeUsuario(null, 'Portal', 'matriculas', 'matricula', 'Matrícula confirmada pelo pagamento: ' . $matricula['aluno_nome'] . ' — ' . $matricula['turma_nome']);
+    registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'confirmacao', 'Turma ' . $matricula['turma_nome'] . ' — confirmada pelo pagamento', (int) $matricula['id']);
     criarNotificacao($pdo, 'matricula', 'Matrícula confirmada', $matricula['aluno_nome'] . ' pagou e entrou na turma ' . $matricula['turma_nome'] . '.',
         '/matriculas/visualizar.php?id=' . $matricula['id'], (int) $matricula['id']);
     return 'confirmada';
@@ -714,4 +722,94 @@ function copiarImagemPortal(string $url): string
     }
     $novo = '/uploads/portal/copia-' . date('Ymd-His') . '-' . bin2hex(random_bytes(4)) . '.' . pathinfo($url, PATHINFO_EXTENSION);
     return @copy(BASE_PATH . '/public' . $url, BASE_PATH . '/public' . $novo) ? $novo : $url;
+}
+
+// ---------------------------------------------------------------------
+// Histórico do aluno (aba Dados gerais › Acesso ao portal)
+// ---------------------------------------------------------------------
+
+/**
+ * Grava um acontecimento do aluno. Quem fez sai da sessão: usuário do
+ * sistema, o próprio aluno no portal ou "Sistema". Nunca derruba a
+ * operação principal.
+ */
+function registrarHistoricoAluno(PDO $pdo, int $alunoId, string $tipo, string $descricao, ?int $matriculaId = null): void
+{
+    try {
+        $usuarioId = function_exists('usuarioLogado') && usuarioLogado() ? usuarioAtualId() : null;
+        if ($usuarioId) {
+            $quem = usuarioAtualNome();
+        } elseif (alunoLogado() && alunoAtualId() === $alunoId) {
+            $quem = 'O próprio aluno (portal)';
+        } else {
+            $quem = 'Sistema';
+        }
+        $pdo->prepare('INSERT INTO aluno_historico (aluno_id, matricula_id, usuario_id, quem, tipo, descricao, ip) VALUES (?, ?, ?, ?, ?, ?, ?)')
+            ->execute([$alunoId, $matriculaId, $usuarioId, $quem, $tipo, mb_strimwidth($descricao, 0, 255, '…', 'UTF-8'), substr((string) ($_SERVER['REMOTE_ADDR'] ?? ''), 0, 45) ?: null]);
+    } catch (Throwable $e) {
+        error_log('[Histórico aluno] ' . $e->getMessage());
+    }
+}
+
+/**
+ * Linha do tempo do aluno, mais recente primeiro: o histórico gravado mais
+ * o cadastro e as matrículas antigas (de antes do histórico existir).
+ * Cada item: ['quando', 'quem', 'titulo', 'detalhe', 'icone', 'cor'].
+ */
+function historicoAluno(PDO $pdo, int $alunoId, int $limite = 200): array
+{
+    $estilos = [
+        'cadastro' => ['Cadastro', 'bi-person-plus', 'secondary'],
+        'edicao' => ['Cadastro alterado', 'bi-pencil', 'secondary'],
+        'situacao' => ['Situação do aluno', 'bi-toggle-on', 'secondary'],
+        'acesso' => ['Entrou no portal', 'bi-box-arrow-in-right', 'primary'],
+        'senha' => ['Senha do portal', 'bi-key', 'secondary'],
+        'inscricao' => ['Inscrição pelo portal', 'bi-globe2', 'primary'],
+        'matricula' => ['Matrícula', 'bi-mortarboard', 'success'],
+        'confirmacao' => ['Matrícula confirmada', 'bi-check-circle', 'success'],
+        'cancelamento' => ['Matrícula cancelada', 'bi-x-circle', 'danger'],
+        'conclusao' => ['Matrícula concluída', 'bi-award', 'success'],
+        'reativacao' => ['Matrícula reativada', 'bi-arrow-counterclockwise', 'warning'],
+        'exclusao' => ['Matrícula excluída', 'bi-trash', 'danger'],
+    ];
+    $item = fn ($quando, $quem, $titulo, $detalhe, $icone, $cor) => compact('quando', 'quem', 'titulo', 'detalhe', 'icone', 'cor');
+    $itens = [];
+
+    $stmt = $pdo->prepare('SELECT * FROM aluno_historico WHERE aluno_id = ? ORDER BY id DESC LIMIT ' . max(1, $limite));
+    $stmt->execute([$alunoId]);
+    $matriculasNoHistorico = [];
+    $temCadastro = false;
+    foreach ($stmt->fetchAll() as $h) {
+        [$titulo, $icone, $cor] = $estilos[$h['tipo']] ?? [ucfirst($h['tipo']), 'bi-dot', 'secondary'];
+        if (in_array($h['tipo'], ['matricula', 'inscricao'], true) && $h['matricula_id']) {
+            $matriculasNoHistorico[(int) $h['matricula_id']] = true;
+        }
+        $temCadastro = $temCadastro || $h['tipo'] === 'cadastro';
+        $itens[] = $item($h['criado_em'], $h['quem'], $titulo, $h['descricao'], $icone, $cor);
+    }
+
+    // De antes do histórico: cadastro e matrículas (a tabela já guarda quando,
+    // por onde e quem).
+    $stmt = $pdo->prepare('SELECT criado_em FROM alunos WHERE id = ?');
+    $stmt->execute([$alunoId]);
+    $criado = $stmt->fetchColumn();
+    if ($criado && !$temCadastro) {
+        $itens[] = $item($criado, '-', 'Cadastro', 'Aluno cadastrado', 'bi-person-plus', 'secondary');
+    }
+    $stmt = $pdo->prepare(
+        'SELECT m.id, m.criado_em, m.origem, t.nome AS turma_nome, u.nome AS usuario_nome FROM matriculas m
+         JOIN turmas t ON t.id = m.turma_id LEFT JOIN usuarios u ON u.id = m.usuario_id WHERE m.aluno_id = ?'
+    );
+    $stmt->execute([$alunoId]);
+    foreach ($stmt->fetchAll() as $m) {
+        if (isset($matriculasNoHistorico[(int) $m['id']])) {
+            continue;
+        }
+        $portal = $m['origem'] === 'portal';
+        $itens[] = $item($m['criado_em'], $portal ? 'O próprio aluno (portal)' : ($m['usuario_nome'] ?: '-'),
+            $portal ? 'Inscrição pelo portal' : 'Matrícula', 'Turma ' . $m['turma_nome'], $portal ? 'bi-globe2' : 'bi-mortarboard', $portal ? 'primary' : 'success');
+    }
+
+    usort($itens, fn ($a, $b) => strcmp((string) $b['quando'], (string) $a['quando']));
+    return array_slice($itens, 0, $limite);
 }

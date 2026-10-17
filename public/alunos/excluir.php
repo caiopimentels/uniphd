@@ -17,6 +17,7 @@ $stmt->execute([$id]);
 $aluno = $stmt->fetch();
 if ($aluno) {
     registrarAtividade('alunos', 'edicao', 'Aluno ' . ($aluno['ativo'] ? 'ativado' : 'desativado') . ': ' . $aluno['nome']);
+    registrarHistoricoAluno($pdo, $id, 'situacao', $aluno['ativo'] ? 'Aluno ativado' : 'Aluno desativado');
 }
 
 flash('success', 'Situação do aluno atualizada.');

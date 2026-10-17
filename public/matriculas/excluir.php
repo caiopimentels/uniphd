@@ -49,6 +49,7 @@ $stmt = $pdo->prepare('DELETE FROM matriculas WHERE id = ?');
 $stmt->execute([$id]);
 $pdo->commit();
 
+registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'exclusao', 'Turma ' . $matricula['turma_nome'], null);
 registrarAtividade('matriculas', 'exclusao', 'Matrícula excluída: ' . $matricula['aluno_nome'] . ' na turma ' . $matricula['turma_nome']);
 
 flash('success', $matricula['aluno_nome'] . ' foi excluído da turma (matrícula e parcelas apagadas).');

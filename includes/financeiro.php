@@ -572,11 +572,16 @@ function resultadoTurmas(PDO $pdo, array $filtros = []): array
  */
 function buscarContasReceber(PDO $pdo, array $filtros): array
 {
-    $where = '1=1';
     $params = [];
-    if (in_array($filtros['status'] ?? '', ['pendente', 'pago', 'cancelado'], true)) {
-        $where .= ' AND cr.status = ?';
-        $params[] = $filtros['status'];
+    // Excluídas (já tinham passado pelo banco) só aparecem no filtro delas.
+    if (($filtros['status'] ?? '') === 'excluido') {
+        $where = 'cr.excluido_em IS NOT NULL';
+    } else {
+        $where = 'cr.excluido_em IS NULL';
+        if (in_array($filtros['status'] ?? '', ['pendente', 'pago', 'cancelado'], true)) {
+            $where .= ' AND cr.status = ?';
+            $params[] = $filtros['status'];
+        }
     }
     if (($filtros['data_inicio'] ?? '') !== '') {
         $where .= ' AND cr.data_vencimento >= ?';
@@ -593,7 +598,8 @@ function buscarContasReceber(PDO $pdo, array $filtros): array
     }
     $stmt = $pdo->prepare(
         "SELECT cr.*, a.nome AS aluno_nome, c.nome AS categoria_nome, c.chave AS categoria_chave,
-                t.nome AS turma_nome, cu.nome AS curso_nome, " . SQL_BAIXA_PELO_BANCO . " AS pago_pelo_banco, " . SQL_BOLETO_NO_BANCO . " AS boleto_no_banco
+                t.nome AS turma_nome, cu.nome AS curso_nome, " . SQL_BAIXA_PELO_BANCO . " AS pago_pelo_banco, " . SQL_BOLETO_NO_BANCO . " AS boleto_no_banco,
+                EXISTS (SELECT 1 FROM cobrancas_bancarias cbx WHERE cbx.conta_receber_id = cr.id) AS passou_pelo_banco
          FROM contas_receber cr
          LEFT JOIN alunos a ON a.id = cr.aluno_id
          LEFT JOIN categorias_financeiras c ON c.id = cr.categoria_id
@@ -861,26 +867,30 @@ function excluirParcelaReceber(PDO $pdo, int $id): array
         return ['ok' => true, 'mensagem' => 'Lançamento excluído.', 'resultado' => 'excluida', 'aguardando' => false];
     }
 
-    if ($conta['status'] === 'pago') {
+    if ($conta['status'] === 'pago' && ($conta['baixa_origem'] ?? '') === 'banco') {
         return ['ok' => false, 'mensagem' => $conta['descricao'] . ': já foi paga pelo banco e não pode ser excluída.', 'resultado' => null, 'aguardando' => false];
     }
-    if ($conta['status'] === 'cancelado') {
-        return ['ok' => true, 'mensagem' => $conta['descricao'] . ' já estava cancelada.', 'resultado' => 'cancelada', 'aguardando' => false];
+    if ($conta['excluido_em']) {
+        return ['ok' => true, 'mensagem' => $conta['descricao'] . ' já estava excluída.', 'resultado' => 'cancelada', 'aguardando' => false];
     }
-    $baixa = baixarBoletoBancoItau($pdo, $id);
-    if (!$baixa['ok']) {
-        return ['ok' => false, 'mensagem' => $conta['descricao'] . ': ' . $baixa['mensagem'] . ' A parcela não foi excluída.', 'resultado' => null, 'aguardando' => false];
+    $baixa = ['ok' => true, 'havia_boleto' => false, 'mensagem' => ''];
+    if ($conta['status'] === 'pendente') {
+        $baixa = baixarBoletoBancoItau($pdo, $id);
+        if (!$baixa['ok']) {
+            return ['ok' => false, 'mensagem' => $conta['descricao'] . ': ' . $baixa['mensagem'] . ' A parcela não foi excluída.', 'resultado' => null, 'aguardando' => false];
+        }
     }
-    $pdo->prepare("UPDATE contas_receber SET status = 'cancelado' WHERE id = ?")->execute([$id]);
-    registrarHistoricoParcela($pdo, $id, 'cancelamento', 'Excluída pelo usuário' . ($baixa['havia_boleto'] ? ' — boleto baixado no banco' : '') . ' (fica como cancelada, porque já passou pelo banco)');
-    registrarAtividade('contas_receber', 'exclusao', 'Conta a receber cancelada (boleto baixado no banco): ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
+    // Já passou pelo banco: não apaga (o histórico do boleto fica); some das
+    // telas e vai para o filtro "Excluídas".
+    $pdo->prepare("UPDATE contas_receber SET status = 'cancelado', excluido_em = NOW() WHERE id = ?")->execute([$id]);
+    registrarHistoricoParcela($pdo, $id, 'cancelamento', 'Excluída pelo usuário' . ($baixa['havia_boleto'] ? ' — boleto baixado no banco' : '') . ' (fica no filtro "Excluídas", porque já passou pelo banco)');
+    registrarAtividade('contas_receber', 'exclusao', 'Conta a receber excluída (já tinha passado pelo banco): ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
     $aguardando = str_contains($baixa['mensagem'], AVISO_APROVACAO_ITAU);
     return [
         'ok' => true,
         'resultado' => 'cancelada',
         'aguardando' => $aguardando,
-        'mensagem' => $baixa['havia_boleto']
-            ? ($aguardando ? 'Parcela cancelada. ' . $baixa['mensagem'] : 'Boleto baixado no banco e parcela cancelada (fica no histórico como cancelada).')
-            : 'Parcela cancelada (fica no histórico como cancelada, porque já passou pelo banco).',
+        'mensagem' => ($baixa['havia_boleto'] ? ($aguardando ? $baixa['mensagem'] . ' ' : 'Boleto baixado no banco. ') : '')
+            . 'Parcela excluída — como já passou pelo banco, ela fica guardada no filtro "Excluídas".',
     ];
 }

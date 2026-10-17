@@ -206,6 +206,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->commit();
                 avisarMinimoTurma($pdo, (int) $turma['id']);
 
+                registrarHistoricoAluno($pdo, (int) $aluno['id'], 'matricula', 'Turma ' . $turma['nome'] . ($autorizacaoInadimplente ? ' (inadimplente, autorizado por ' . $autorizacaoInadimplente . ')' : ''), isset($matriculaId) ? (int) $matriculaId : null);
                 registrarAtividade('matriculas', 'matricula', 'Aluno ' . $aluno['nome'] . ' matriculado na turma ' . $turma['nome']
                     . ($autorizacaoInadimplente ? ' (inadimplente: ' . formatMoney($atrasoAluno) . ' em atraso — autorizado por ' . $autorizacaoInadimplente . ')' : ''));
 

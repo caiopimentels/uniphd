@@ -33,6 +33,7 @@ $parcelasCanceladas = cancelarCobrancasFuturasMatricula($pdo, $id, $matricula['s
 
 $pdo->commit();
 
+registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'cancelamento', 'Turma ' . $matricula['turma_nome'], (int) $matricula["id"]);
 registrarAtividade(
     'matriculas', 'cancelamento',
     'Matrícula cancelada: ' . $matricula['aluno_nome'] . ' na turma ' . $matricula['turma_nome'] . " ({$parcelasCanceladas} parcela(s) futura(s) cancelada(s))"
