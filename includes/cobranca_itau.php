@@ -341,7 +341,7 @@ function pastaCertificadosConta(int $contaId): string
 {
     $pasta = caminhoStorage('certificados/conta_' . $contaId);
     if (!is_dir($pasta)) {
-        mkdir($pasta, 0700, true);
+        @mkdir($pasta, 0700, true);
     }
     return $pasta;
 }
@@ -376,13 +376,19 @@ function salvarCertificadoApi(int $contaId, string $certificadoTmp, string $chav
         return ['ok' => false, 'mensagem' => 'Este certificado venceu em ' . formatDate($validade) . '.'];
     }
 
+    // Confere a gravação: sem isso a conta ficava "instalada" no banco sem
+    // os arquivos existirem (pasta storage/ sem permissão no servidor).
     $pasta = pastaCertificadosConta($contaId);
+    if ($problema = problemaPastaUpload($pasta)) {
+        return ['ok' => false, 'mensagem' => 'Não foi possível guardar o certificado. ' . $problema];
+    }
     $caminhoCertificado = $pasta . '/certificado.crt';
     $caminhoChave = $pasta . '/chave.key';
-    file_put_contents($caminhoCertificado, $certificadoPem);
-    file_put_contents($caminhoChave, $chavePem);
-    chmod($caminhoCertificado, 0600);
-    chmod($caminhoChave, 0600);
+    if (@file_put_contents($caminhoCertificado, $certificadoPem) === false || @file_put_contents($caminhoChave, $chavePem) === false) {
+        return ['ok' => false, 'mensagem' => 'Não foi possível gravar os arquivos do certificado em ' . $pasta . '. Confira a permissão da pasta storage/ no servidor.'];
+    }
+    @chmod($caminhoCertificado, 0600);
+    @chmod($caminhoChave, 0600);
 
     return ['ok' => true, 'mensagem' => '', 'validade' => $validade, 'certificado' => $caminhoCertificado, 'chave' => $caminhoChave];
 }
@@ -415,7 +421,12 @@ function pendenciasApiConta(array $conta): array
     // O sandbox do Itaú autentica só com client_id/secret; o certificado
     // (mTLS) é exigência de produção.
     if ($conta['api_ambiente'] === 'producao' && !temCertificadoApi($conta)) {
-        $faltando[] = 'certificado e chave (obrigatórios em produção)';
+        // Marcado como instalado, mas os arquivos não estão no servidor
+        // (gravação falhou ou a pasta storage/ foi trocada).
+        $faltando[] = $conta['api_certificado_arquivo']
+            ? 'certificado e chave — os arquivos não foram encontrados no servidor em ' . dirname($conta['api_certificado_arquivo'])
+                . '; confira a permissão da pasta storage/ e envie os dois arquivos de novo'
+            : 'certificado e chave (obrigatórios em produção)';
     }
     return $faltando;
 }

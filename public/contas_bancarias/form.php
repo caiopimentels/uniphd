@@ -367,7 +367,10 @@ require __DIR__ . '/../../includes/abas_configuracoes.php';
                    placeholder="<?= $valor('api_chave_senha_cripto') ? '•••••••• salva' : 'Se a chave tiver senha' ?>">
         </div>
         <div class="col-12">
-            <?php if ($valor('api_certificado_arquivo')): ?>
+            <?php if ($valor('api_certificado_arquivo') && (!is_file($valor('api_certificado_arquivo')) || !is_file((string) $valor('api_chave_arquivo')))): ?>
+                <span class="badge text-bg-danger"><i class="bi bi-exclamation-triangle"></i> Arquivos do certificado não encontrados no servidor</span>
+                <span class="small text-muted">Confira a permissão da pasta <code>storage/</code> e envie os dois arquivos de novo.</span>
+            <?php elseif ($valor('api_certificado_arquivo')): ?>
                 <span class="badge text-bg-success"><i class="bi bi-patch-check"></i> Certificado instalado</span>
                 <?php if ($valor('api_certificado_validade')): ?>
                     <span class="small <?= $valor('api_certificado_validade') <= date('Y-m-d', strtotime('+30 days')) ? 'text-danger fw-semibold' : 'text-muted' ?>">
