@@ -201,7 +201,11 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
                                 (busca no app/internet banking, área de cobrança)
                                 · ID do boleto na API: <code><?= e((string) idBoletoItau($conta, (int) $c['nosso_numero'])) ?></code>
                                 <?php if ($c['boleto'] && $c['boleto']['linha_digitavel']): ?>· linha digitável <code><?= e($c['boleto']['linha_digitavel']) ?></code><?php endif; ?>
+                                <?php if ($c['conta_receber_id']): ?>
+                                    <button type="button" class="btn btn-sm btn-outline-primary ms-2" onclick="consultarBoletoNoItau(<?= (int) $c['conta_receber_id'] ?>, this, 'consulta-itau-<?= (int) $c['id'] ?>')"><i class="bi bi-search"></i> Consultar no Itaú agora</button>
+                                <?php endif; ?>
                             </div>
+                            <div id="consulta-itau-<?= (int) $c['id'] ?>" class="mb-2"></div>
                         <?php endif; ?>
                         <div class="small text-muted mb-2"><?= e($c['url']) ?><?= $c['correlation_id'] ? ' · correlationID ' . e($c['correlation_id']) : '' ?></div>
                         <div class="row g-3">
@@ -231,4 +235,17 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
 </div>
 <?php endif; ?>
 
+<script>
+// Mostra o que o Itaú tem registrado do(s) boleto(s) da parcela.
+function consultarBoletoNoItau(parcela, botao, alvoId) {
+    const alvo = document.getElementById(alvoId);
+    botao.disabled = true;
+    alvo.innerHTML = '<div class="py-2"><span class="spinner-border spinner-border-sm text-secondary"></span> Consultando o Itaú...</div>';
+    fetch('/financeiro/contas_receber/consultar_itau.php?id=' + encodeURIComponent(parcela), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then((r) => r.text())
+        .then((html) => { alvo.innerHTML = html; })
+        .catch(() => { alvo.innerHTML = '<div class="alert alert-danger mb-0">Não foi possível consultar o Itaú.</div>'; })
+        .finally(() => { botao.disabled = false; });
+}
+</script>
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

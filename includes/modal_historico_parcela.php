@@ -24,15 +24,4 @@ function abrirHistoricoParcela(id) {
         .catch(() => { corpo.innerHTML = '<div class="alert alert-danger mb-0">Não foi possível carregar o histórico.</div>'; });
 }
 
-// Mostra o que o Itaú tem registrado do(s) boleto(s) da parcela.
-function consultarBoletoNoItau(id, botao) {
-    const alvo = document.getElementById('consulta-itau-' + id);
-    botao.disabled = true;
-    alvo.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-secondary"></div> Consultando o Itaú...</div>';
-    fetch('/financeiro/contas_receber/consultar_itau.php?id=' + encodeURIComponent(id), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
-        .then((r) => r.text())
-        .then((html) => { alvo.innerHTML = html; })
-        .catch(() => { alvo.innerHTML = '<div class="alert alert-danger mb-0">Não foi possível consultar o Itaú.</div>'; })
-        .finally(() => { botao.disabled = false; });
-}
 </script>

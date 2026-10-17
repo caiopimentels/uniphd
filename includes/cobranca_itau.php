@@ -1238,21 +1238,23 @@ const AVISO_APROVACAO_ITAU = 'Atenção: o Itaú deixou a instrução aguardando
  * instrução aceita (204) foi mesmo aplicada.
  * Retorna ['ok' => bool, 'mensagem' => string, 'boleto' => ?array].
  */
+// Consulta de boletos fica em outra API do Itaú (boletoscash), com os
+// escopos boletoscash-boletos-consulta_titulo / boletoscash-boleto.read.
+const ITAU_URL_CONSULTA_BOLETO = 'https://secure.api.cloud.itau.com.br/boletoscash/v2';
+
 function consultarBoletoItau(PDO $pdo, array $conta, int $nossoNumero, ?int $contaReceberId = null): array
 {
     $idBeneficiario = idBeneficiarioItau($conta);
     if (!$idBeneficiario) {
         return ['ok' => false, 'mensagem' => 'Confira agência, conta e dígito da conta bancária.', 'boleto' => null];
     }
-    $base = ehApiCobrancaV2Itau($conta) ? rtrim($conta['api_url_base'], '/') : 'https://api.itau.com.br/cash_management/v2';
+    $base = $conta['api_ambiente'] === 'producao' ? ITAU_URL_CONSULTA_BOLETO : rtrim((string) $conta['api_url_base'], '/');
     if ($contaReceberId) {
         contextoChamadaBanco(['conta_receber_id' => $contaReceberId]);
     }
     $r = chamarApiNotificacoesItau($pdo, $conta, 'GET', '/boletos?' . http_build_query([
         'id_beneficiario' => $idBeneficiario,
-        'codigo_carteira' => apenasDigitos((string) ($conta['itau_carteira'] ?? '')) ?: '109',
         'nosso_numero' => formatarNossoNumeroItau($nossoNumero),
-        'view' => 'full',
     ]), null, $base, 'consulta_boleto');
     if (!$r['ok']) {
         return ['ok' => false, 'mensagem' => $r['mensagem'] . ($r['status'] === 403 ? ' (a aplicação pode não ter a permissão de consulta de boletos — peça ao Itaú)' : ''), 'boleto' => null];

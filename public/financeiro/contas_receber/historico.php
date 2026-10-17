@@ -33,27 +33,15 @@ $itens = historicoParcela($pdo, $id);
 </div>
 <ul class="list-unstyled mb-0 historico-parcela">
     <?php foreach ($itens as $h): ?>
-        <li class="d-flex gap-3 pb-3">
-            <div class="text-<?= e($h['cor']) ?> fs-5"><i class="bi <?= e($h['icone']) ?>"></i></div>
-            <div class="flex-grow-1">
-                <div class="d-flex flex-wrap justify-content-between gap-2">
+        <li class="d-flex gap-2 py-2 border-bottom">
+            <i class="bi <?= e($h['icone']) ?> text-<?= e($h['cor']) ?>"></i>
+            <div class="flex-grow-1 lh-sm">
+                <div class="d-flex justify-content-between gap-2">
                     <strong><?= e($h['titulo']) ?></strong>
                     <span class="small text-muted text-nowrap"><?= formatDateTime($h['quando']) ?></span>
                 </div>
-                <?php if ($h['detalhe'] !== ''): ?><div class="small"><?= e($h['detalhe']) ?></div><?php endif; ?>
-                <div class="small text-muted">por <?= e($h['quem']) ?></div>
+                <div class="small text-muted"><?= $h['detalhe'] !== '' ? e($h['detalhe']) . ' · ' : '' ?>por <?= e($h['quem']) ?></div>
             </div>
         </li>
     <?php endforeach; ?>
 </ul>
-<?php if ($parcela['aluno_id']): ?>
-    <a href="/alunos/form.php?id=<?= (int) $parcela['aluno_id'] ?>&tab=financeiro" class="btn btn-sm btn-outline-secondary mt-2"><i class="bi bi-person"></i> Abrir o financeiro do aluno</a>
-<?php endif; ?>
-<a href="/contas_bancarias/auditoria.php?parcela=<?= (int) $id ?>" class="btn btn-sm btn-outline-secondary mt-2"><i class="bi bi-journal-code"></i> Detalhes técnicos (auditoria do banco)</a>
-<?php
-$stmtBoletos = $pdo->prepare("SELECT COUNT(*) FROM cobrancas_bancarias WHERE conta_receber_id = ? AND status IN ('registrada', 'paga', 'baixada')");
-$stmtBoletos->execute([$id]);
-if ((int) $stmtBoletos->fetchColumn() > 0): ?>
-    <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="consultarBoletoNoItau(<?= (int) $id ?>, this)"><i class="bi bi-search"></i> Consultar no Itaú</button>
-    <div id="consulta-itau-<?= (int) $id ?>" class="mt-3"></div>
-<?php endif; ?>

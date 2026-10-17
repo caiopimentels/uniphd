@@ -147,7 +147,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                                     <button type="submit" class="btn btn-sm btn-outline-warning" title="Estornar baixa (lançada errado)"><i class="bi bi-arrow-counterclockwise"></i></button>
                                 </form>
                             <?php elseif ($c['status'] === 'pago' && $c['pago_pelo_banco']): ?>
-                                <span class="text-muted small" title="Pago por boleto/Pix pelo banco — não pode ser estornado"><i class="bi bi-bank"></i></span>
+                                <span class="btn btn-sm btn-outline-primary" style="cursor: default;" title="Pago por boleto/Pix pelo banco — não pode ser estornado"><i class="bi bi-bank"></i></span>
                             <?php endif; ?>
                         <?php
                             // Excluir uma mensalidade some com ela de vez (inclusive do DRE);
