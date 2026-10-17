@@ -21,6 +21,10 @@ const ITAU_URL_NOTIFICACOES = [
 
 const ITAU_TIPOS_NOTIFICACAO = ['BAIXA_OPERACIONAL', 'BAIXA_EFETIVA'];
 
+// Scope que o Itaú pede ao nosso endpoint de token ao avisar um pagamento
+// (o mesmo do exemplo da documentação).
+const ITAU_WEBHOOK_SCOPE = 'boletos-notificacao';
+
 // Validade do token que o sistema entrega ao Itaú.
 const WEBHOOK_TOKEN_SEGUNDOS = 3600;
 
@@ -153,15 +157,25 @@ function cadastrarWebhookItau(PDO $pdo, array $conta, array $urls, float $valorM
         return ['ok' => false, 'status' => 0, 'mensagem' => 'Gere as credenciais do webhook antes de cadastrar.', 'resposta' => null];
     }
 
-    $corpo = [
-        'id_beneficiario' => idBeneficiarioItau($conta),
+    $idBeneficiario = idBeneficiarioItau($conta);
+    if ($idBeneficiario === null) {
+        return ['ok' => false, 'status' => 0, 'mensagem' => 'Confira agência, conta e dígito da conta bancária: o Itaú identifica o beneficiário por eles (4 + 7 + 1 dígitos).', 'resposta' => null];
+    }
+
+    // Formato do exemplo de cadastro com sucesso da coleção oficial do
+    // Itaú (boletos v3 › notificacoes_boletos): tudo dentro de "data", com
+    // o id do beneficiário numérico e o scope que o banco pede ao nosso
+    // endpoint de token (token.php aceita qualquer scope).
+    $corpo = ['data' => [
+        'id_beneficiario' => (int) $idBeneficiario,
         'webhook_url' => $urls['webhook'],
         'webhook_client_id' => $conta['webhook_client_id'],
         'webhook_client_secret' => $clientSecret,
         'webhook_oauth_url' => $urls['token'],
+        'webhook_oauth_scope' => ITAU_WEBHOOK_SCOPE,
         'valor_minimo' => round($valorMinimo, 2),
         'tipos_notificacoes' => ITAU_TIPOS_NOTIFICACAO,
-    ];
+    ]];
 
     $resultado = chamarApiNotificacoesItau($pdo, $conta, 'POST', '/notificacoes_boletos', $corpo);
     if ($resultado['ok']) {
