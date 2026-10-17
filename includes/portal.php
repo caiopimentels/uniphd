@@ -577,7 +577,7 @@ function garantirCobrancaParcelaPortal(PDO $pdo, array $parcela): array
         if (!(int) $stmt->fetchColumn()) {
             criarNotificacao($pdo, 'pagamento', 'Boleto do portal não foi gerado',
                 $aluno['nome'] . ' · ' . $parcela['descricao'] . ': ' . mb_strimwidth($resultado['mensagem'], 0, 150, '…', 'UTF-8'),
-                '/financeiro/cobranca_previa.php?id=' . (int) $parcela['id'], (int) $parcela['id']);
+                '/contas_bancarias/auditoria.php?parcela=' . (int) $parcela['id'], (int) $parcela['id']);
         }
         return ['ok' => false, 'mensagem' => 'Não conseguimos gerar o pagamento agora. A secretaria já foi avisada — tente novamente mais tarde.'];
     }

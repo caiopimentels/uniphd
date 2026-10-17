@@ -495,8 +495,8 @@ require __DIR__ . '/../../includes/layout_header.php';
                         </td>
                         <td class="text-end">
                             <?php if ($p['status'] === 'pendente'): ?>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $p['id'] ?>)" title="Pix (QR Code e copia e cola)"><i class="bi bi-qr-code"></i></button>
-                                <a href="/financeiro/boleto.php?id=<?= (int) $p['id'] ?>" target="_blank" rel="noopener" class="btn btn-sm btn-outline-secondary" title="Abrir boleto"><i class="bi bi-upc-scan"></i></a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $p['id'] ?>)" title="Gerar / ver Pix (QR Code e copia e cola)"><i class="bi bi-qr-code"></i></button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $p['id'] ?>)" title="Gerar / ver boleto"><i class="bi bi-upc-scan"></i></button>
                             <?php endif; ?>
                             <?php if ($p['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $p), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $p['boleto_no_banco'] ? 'Boleto já registrado no banco — não pode alterar' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>

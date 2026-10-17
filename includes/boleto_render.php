@@ -108,9 +108,6 @@ $cpfPagador = $aluno['cpf'] ?? '';
 
 <div class="barra">
     <button type="button" class="principal" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir / salvar PDF</button>
-    <?php if (usuarioPodeVerFinanceiro()): ?>
-        <a href="/financeiro/cobranca_previa.php?id=<?= (int) $parcela['id'] ?>"><i class="bi bi-braces"></i> Dados enviados ao banco</a>
-    <?php endif; ?>
     <a href="javascript:window.close()">Fechar</a>
 </div>
 

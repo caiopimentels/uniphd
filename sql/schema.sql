@@ -669,6 +669,34 @@ CREATE TABLE webhook_eventos (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------------------
+-- Auditoria das chamadas do sistema ao banco (emissão/validação de
+-- boleto, cadastro e consulta do webhook, pedido de token): o que foi
+-- enviado e o que o banco respondeu, quem pediu (usuário do sistema ou
+-- aluno no portal) e para qual parcela. Segredos vão mascarados.
+-- ----------------------------------------------------------------------
+CREATE TABLE banco_chamadas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    conta_bancaria_id INT DEFAULT NULL,
+    operacao VARCHAR(40) NOT NULL,
+    conta_receber_id INT DEFAULT NULL,
+    usuario_id INT DEFAULT NULL,
+    aluno_id INT DEFAULT NULL,
+    origem ENUM('sistema', 'portal', 'automatico') NOT NULL DEFAULT 'sistema',
+    metodo VARCHAR(10) NOT NULL,
+    url VARCHAR(255) NOT NULL,
+    status_http SMALLINT DEFAULT NULL,
+    sucesso TINYINT(1) NOT NULL DEFAULT 0,
+    correlation_id VARCHAR(40) DEFAULT NULL,
+    requisicao MEDIUMTEXT DEFAULT NULL,
+    resposta MEDIUMTEXT DEFAULT NULL,
+    mensagem VARCHAR(255) DEFAULT NULL,
+    duracao_ms INT DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_banco_chamadas_conta (conta_bancaria_id, criado_em),
+    KEY idx_banco_chamadas_parcela (conta_receber_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------
 -- Registro bruto de TODA chamada recebida nas URLs de webhook (inclusive
 -- as recusadas e os pedidos de token): cabeçalhos, corpo exatamente como
 -- chegou e o que o sistema respondeu. É a auditoria do que o banco mandou —

@@ -538,10 +538,14 @@ function obterTokenItau(PDO $pdo, array $conta, bool $forcarNovo = false): array
     ]);
     aplicarCertificadoItau($curl, $conta);
 
+    $inicio = microtime(true);
     $resposta = curl_exec($curl);
     $erroCurl = curl_error($curl);
     $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
     curl_close($curl);
+    registrarChamadaBanco($pdo, $conta, 'token', 'POST', $conta['api_url_token'], ['grant_type' => 'client_credentials', 'client_id' => $conta['api_client_id']],
+        $resposta === false ? null : $status, $resposta === false ? null : $resposta, null, (int) ((microtime(true) - $inicio) * 1000),
+        $resposta === false ? 'Falha de conexão: ' . $erroCurl : '');
 
     if ($resposta === false) {
         return ['ok' => false, 'token' => null, 'mensagem' => 'Falha de conexão com o banco: ' . $erroCurl];
@@ -602,6 +606,149 @@ const ITAU_EXEMPLO_SANDBOX = [
  * Retorna ['ok' => bool, 'status' => int, 'mensagem' => string,
  * 'requisicao' => array, 'resposta' => mixed].
  */
+/* ---------------- Auditoria das chamadas ao banco ---------------- */
+
+/**
+ * Contexto da próxima chamada ao banco (para a auditoria saber a parcela).
+ * Sem argumento, só devolve o atual.
+ */
+function contextoChamadaBanco(?array $novo = null): array
+{
+    static $contexto = [];
+    if ($novo !== null) {
+        $contexto = $novo;
+    }
+    return $contexto;
+}
+
+// Esconde segredos e encurta o que é grande demais para ler (imagem do QR).
+function mascararParaAuditoria($dados)
+{
+    if (!is_array($dados)) {
+        return $dados;
+    }
+    foreach ($dados as $chave => $valor) {
+        $nome = strtolower((string) $chave);
+        if (is_array($valor)) {
+            $dados[$chave] = mascararParaAuditoria($valor);
+        } elseif (preg_match('/secret|senha|password|access_token|refresh_token/', $nome)) {
+            $dados[$chave] = '***';
+        } elseif ($nome === 'base64' && is_string($valor) && strlen($valor) > 200) {
+            $dados[$chave] = '[imagem do QR Code — ' . strlen($valor) . ' caracteres]';
+        }
+    }
+    return $dados;
+}
+
+/**
+ * Grava uma chamada do sistema ao banco: o que foi enviado, o que voltou,
+ * quem pediu (usuário do sistema, aluno no portal ou rotina automática) e a
+ * parcela (contextoChamadaBanco). Nunca derruba a operação: falhou, só loga.
+ */
+function registrarChamadaBanco(PDO $pdo, array $conta, string $operacao, string $metodo, string $url, $requisicao,
+    ?int $status, $resposta, ?string $correlacao, int $duracaoMs, string $mensagem = ''): void
+{
+    try {
+        $usuarioId = function_exists('usuarioLogado') && usuarioLogado() ? usuarioAtualId() : null;
+        $alunoId = !$usuarioId && function_exists('alunoLogado') && alunoLogado() ? alunoAtualId() : null;
+        $paraTexto = function ($valor) {
+            if ($valor === null) {
+                return null;
+            }
+            if (is_string($valor)) {
+                $json = json_decode($valor, true);
+                $valor = is_array($json) ? $json : $valor;
+            }
+            return is_array($valor) ? json_encode(mascararParaAuditoria($valor), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : mb_substr($valor, 0, 20000);
+        };
+        $stmt = $pdo->prepare(
+            'INSERT INTO banco_chamadas (conta_bancaria_id, operacao, conta_receber_id, usuario_id, aluno_id, origem, metodo, url, status_http, sucesso,
+                                         correlation_id, requisicao, resposta, mensagem, duracao_ms)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->execute([
+            $conta['id'] ?? null, $operacao, contextoChamadaBanco()['conta_receber_id'] ?? null, $usuarioId, $alunoId,
+            $usuarioId ? 'sistema' : ($alunoId ? 'portal' : 'automatico'), $metodo, mb_substr($url, 0, 255), $status,
+            $status !== null && $status >= 200 && $status < 300 ? 1 : 0, $correlacao, $paraTexto($requisicao), $paraTexto($resposta),
+            $mensagem !== '' ? mb_strimwidth($mensagem, 0, 255, '…', 'UTF-8') : null, $duracaoMs,
+        ]);
+    } catch (Throwable $e) {
+        error_log('[Auditoria do banco] não gravou a chamada: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Chamadas ao banco de uma conta, para a aba Auditoria. $filtros:
+ * data_inicio, data_fim, quem ('u:<id>', 'portal', 'automatico'),
+ * operacao, resultado ('ok' / 'erro'), parcela (id da conta a receber).
+ * Retorna ['itens', 'total', 'pagina', 'total_paginas'].
+ */
+function buscarChamadasBanco(PDO $pdo, int $contaId, array $filtros, int $pagina = 1, int $porPagina = 50): array
+{
+    $condicoes = ['bc.conta_bancaria_id = ?'];
+    $parametros = [$contaId];
+    if (!empty($filtros['data_inicio'])) {
+        $condicoes[] = 'bc.criado_em >= ?';
+        $parametros[] = $filtros['data_inicio'] . ' 00:00:00';
+    }
+    if (!empty($filtros['data_fim'])) {
+        $condicoes[] = 'bc.criado_em <= ?';
+        $parametros[] = $filtros['data_fim'] . ' 23:59:59';
+    }
+    $quem = (string) ($filtros['quem'] ?? '');
+    if (str_starts_with($quem, 'u:')) {
+        $condicoes[] = 'bc.usuario_id = ?';
+        $parametros[] = (int) substr($quem, 2);
+    } elseif (in_array($quem, ['portal', 'automatico'], true)) {
+        $condicoes[] = 'bc.origem = ?';
+        $parametros[] = $quem;
+    }
+    if (!empty($filtros['operacao'])) {
+        $condicoes[] = 'bc.operacao = ?';
+        $parametros[] = $filtros['operacao'];
+    }
+    if (($filtros['resultado'] ?? '') === 'ok') {
+        $condicoes[] = 'bc.sucesso = 1';
+    } elseif (($filtros['resultado'] ?? '') === 'erro') {
+        $condicoes[] = 'bc.sucesso = 0';
+    }
+    if (!empty($filtros['parcela'])) {
+        $condicoes[] = 'bc.conta_receber_id = ?';
+        $parametros[] = (int) $filtros['parcela'];
+    }
+    $where = 'WHERE ' . implode(' AND ', $condicoes);
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM banco_chamadas bc {$where}");
+    $stmt->execute($parametros);
+    $total = (int) $stmt->fetchColumn();
+    $pagina = max(1, $pagina);
+    $offset = ($pagina - 1) * $porPagina;
+    $stmt = $pdo->prepare(
+        "SELECT bc.*, u.nome AS usuario_nome, a.nome AS aluno_nome, cr.descricao AS parcela_descricao, ca.nome AS parcela_aluno
+         FROM banco_chamadas bc
+         LEFT JOIN usuarios u ON u.id = bc.usuario_id
+         LEFT JOIN alunos a ON a.id = bc.aluno_id
+         LEFT JOIN contas_receber cr ON cr.id = bc.conta_receber_id
+         LEFT JOIN alunos ca ON ca.id = cr.aluno_id
+         {$where} ORDER BY bc.id DESC LIMIT {$porPagina} OFFSET {$offset}"
+    );
+    $stmt->execute($parametros);
+    return ['itens' => $stmt->fetchAll(), 'total' => $total, 'pagina' => $pagina, 'total_paginas' => max(1, (int) ceil($total / $porPagina))];
+}
+
+// Rótulos das operações na tela de auditoria.
+function operacoesChamadaBanco(): array
+{
+    return [
+        'registro_boleto' => 'Emissão de boleto + Pix',
+        'validacao_boleto' => 'Validação de boleto (sem registrar)',
+        'token' => 'Pedido de token',
+        'cadastro_webhook' => 'Cadastro do webhook',
+        'consulta_webhook' => 'Consulta do webhook',
+        'exclusao_webhook' => 'Exclusão do webhook',
+    ];
+}
+
 /**
  * Escopos (permissões) liberados para a aplicação: vêm no campo "scope" da
  * resposta do token ou, se não vierem, dentro do próprio token (JWT, parte
@@ -722,10 +869,15 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
             ]);
             aplicarCertificadoItau($curl, $conta);
 
+            $inicio = microtime(true);
             $resposta = curl_exec($curl);
             $erroCurl = curl_error($curl);
             $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
             curl_close($curl);
+            $etapa = $corpo['data']['etapa_processo_boleto'] ?? $corpo['etapa_processo_boleto'] ?? '';
+            registrarChamadaBanco($pdo, $conta, in_array($etapa, ['validacao', 'simulacao'], true) ? 'validacao_boleto' : 'registro_boleto', 'POST',
+                rtrim($conta['api_url_base'], '/') . $endpoint, $corpo, $resposta === false ? null : $status, $resposta === false ? null : $resposta,
+                $correlacao, (int) ((microtime(true) - $inicio) * 1000), $resposta === false ? 'Falha de conexão: ' . $erroCurl : '');
 
             if ($resposta === false) {
                 return $falha('Falha de conexão com o banco: ' . $erroCurl);
@@ -778,6 +930,7 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
  */
 function simularCobrancaItau(PDO $pdo, int $contaReceberId): array
 {
+    contextoChamadaBanco(['conta_receber_id' => $contaReceberId]);
     $previa = previaCobrancaItau($pdo, $contaReceberId);
     $falha = fn (string $mensagem) => ['ok' => false, 'status' => 0, 'mensagem' => $mensagem, 'requisicao' => $previa['payload'] ?? null, 'resposta' => null];
 
@@ -880,6 +1033,7 @@ function dadosBoletoParcela(PDO $pdo, int $contaReceberId): ?array
  */
 function registrarCobrancaItau(PDO $pdo, int $contaReceberId, ?int $usuarioId, ?string $dataLimitePagamento = null): array
 {
+    contextoChamadaBanco(['conta_receber_id' => $contaReceberId]);
     $previa = previaCobrancaItau($pdo, $contaReceberId);
     if (!$previa['parcela']) {
         return ['ok' => false, 'mensagem' => 'Parcela não encontrada.', 'cobranca_id' => null];
@@ -898,6 +1052,10 @@ function registrarCobrancaItau(PDO $pdo, int $contaReceberId, ?int $usuarioId, ?
     if (!$token['ok']) {
         return ['ok' => false, 'mensagem' => 'Não foi possível obter o token: ' . $token['mensagem'], 'cobranca_id' => null];
     }
+    // Relê a conta com o token recém-guardado, para o envio reaproveitá-lo.
+    $stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
+    $stmt->execute([$conta['id']]);
+    $conta = $stmt->fetch() ?: $conta;
 
     $pdo->beginTransaction();
     try {

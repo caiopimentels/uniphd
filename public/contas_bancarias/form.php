@@ -188,6 +188,11 @@ $pageAction = '<a href="/contas_bancarias/listar.php" class="btn btn-outline-sec
 require __DIR__ . '/../../includes/layout_header.php';
 $abaAtiva = 'contas';
 require __DIR__ . '/../../includes/abas_configuracoes.php';
+if ($id) {
+    $contaAbaId = $id;
+    $contaAba = 'dados';
+    require __DIR__ . '/../../includes/abas_conta_bancaria.php';
+}
 ?>
 
 <?php if ($erros): ?>

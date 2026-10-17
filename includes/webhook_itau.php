@@ -96,7 +96,7 @@ function chamarApiNotificacoesItau(PDO $pdo, array $conta, string $metodo, strin
             'Accept: application/json',
             'Authorization: Bearer ' . $token['token'],
             'x-itau-apikey: ' . $conta['api_client_id'],
-            'x-itau-correlationID: ' . correlacaoItau(),
+            'x-itau-correlationID: ' . ($correlacao = correlacaoItau()),
         ];
 
         $curl = curl_init(urlApiNotificacoesItau($conta) . $caminho);
@@ -114,10 +114,14 @@ function chamarApiNotificacoesItau(PDO $pdo, array $conta, string $metodo, strin
         curl_setopt($curl, CURLOPT_HTTPHEADER, $cabecalhos);
         aplicarCertificadoItau($curl, $conta);
 
+        $inicio = microtime(true);
         $resposta = curl_exec($curl);
         $erroCurl = curl_error($curl);
         $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
         curl_close($curl);
+        registrarChamadaBanco($pdo, $conta, ['POST' => 'cadastro_webhook', 'DELETE' => 'exclusao_webhook'][$metodo] ?? 'consulta_webhook', $metodo,
+            urlApiNotificacoesItau($conta) . $caminho, $corpo, $resposta === false ? null : $status, $resposta === false ? null : $resposta,
+            $correlacao, (int) ((microtime(true) - $inicio) * 1000), $resposta === false ? 'Falha de conexão: ' . $erroCurl : '');
 
         if ($resposta === false) {
             return ['ok' => false, 'status' => 0, 'mensagem' => 'Falha de conexão com o banco: ' . $erroCurl, 'resposta' => null];
@@ -434,6 +438,10 @@ function buscarRequisicoesWebhook(PDO $pdo, array $filtros, int $pagina = 1, int
     if (!empty($filtros['endpoint'])) {
         $condicoes[] = 'wr.endpoint = ?';
         $parametros[] = $filtros['endpoint'];
+    }
+    if (!empty($filtros['conta_bancaria_id'])) {
+        $condicoes[] = 'wr.conta_bancaria_id = ?';
+        $parametros[] = (int) $filtros['conta_bancaria_id'];
     }
     if (($filtros['resultado'] ?? '') === 'ok') {
         $condicoes[] = 'wr.status_http BETWEEN 200 AND 299';
