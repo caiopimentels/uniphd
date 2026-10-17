@@ -30,8 +30,25 @@ $contas = buscarContasReceber($pdo, $_SESSION['filtro_contas_receber']);
 $totalExibido = array_sum(array_map('valorExibidoReceber', $contas));
 $grupos = agruparContasReceber($contas, $agrupar);
 
-// Seleção para baixa em lote só para quem pode dar baixa.
-$temPendente = usuarioPodeBaixarReceber() && array_filter($contas, fn ($c) => $c['status'] === 'pendente');
+// Parcelas em aberto podem ser marcadas para as ações do painel lateral.
+$temPendente = (bool) array_filter($contas, fn ($c) => $c['status'] === 'pendente');
+
+// Painel lateral: ações sobre as marcadas (conforme o perfil) e totais da lista.
+$acoesMassa = array_values(array_filter([
+    usuarioPodeBaixarReceber() ? ['Dar baixa nas selecionadas', 'bi-check2-all', '', '', '', '', 'abrirBaixaLote()'] : null,
+    ['Gerar boleto + Pix das selecionadas', 'bi-upc-scan', '', '', '', '', "acaoLoteReceber('gerar_boletos', 'Gerar boleto + Pix no Itaú para {n} parcela(s)? As que já têm boleto ficam como estão.')"],
+    usuarioPodeExcluirReceber() ? ['Excluir selecionadas', 'bi-trash3', '', '', '', 'text-danger', "acaoLoteReceber('excluir', 'Excluir {n} parcela(s)? As que têm boleto no Itaú recebem a baixa no banco e ficam como canceladas; as pagas pelo banco não saem.')"] : null,
+]));
+$hoje = date('Y-m-d');
+$pendentesLista = array_filter($contas, fn ($c) => $c['status'] === 'pendente');
+$vencidasLista = array_filter($pendentesLista, fn ($c) => $c['data_vencimento'] < $hoje);
+$pagasLista = array_filter($contas, fn ($c) => $c['status'] === 'pago');
+$informacoes = [
+    ['Lançamentos na lista', count($contas), ''],
+    ['Em aberto', count($pendentesLista) . ' · ' . formatMoney(array_sum(array_column($pendentesLista, 'valor'))), ''],
+    ['Vencidas', count($vencidasLista) . ' · ' . formatMoney(array_sum(array_column($vencidasLista, 'valor'))), $vencidasLista ? 'estoque-baixo' : ''],
+    ['Recebidas', count($pagasLista) . ' · ' . formatMoney(array_sum(array_map(fn ($c) => (float) ($c['valor_recebido'] ?? $c['valor']), $pagasLista))), ''],
+];
 $formasPagamento = $pdo->query('SELECT id, nome FROM formas_pagamento WHERE ativo = 1 ORDER BY nome')->fetchAll();
 
 $labelTotal = match ($status) {
@@ -81,11 +98,12 @@ require __DIR__ . '/../../../includes/layout_header.php';
     <?php endif; ?>
 </div>
 
-<div class="alert alert-light border d-none align-items-center gap-3 py-2 nao-imprimir" id="barra-lote">
-    <span><strong id="lote-qtd">0</strong> parcela(s) selecionada(s) · <strong id="lote-total">R$ 0,00</strong></span>
-    <button type="button" class="btn btn-sm btn-brand ms-auto" onclick="abrirBaixaLote()"><i class="bi bi-check2-all"></i> Baixar selecionadas</button>
-    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="limparLote()">Limpar seleção</button>
-</div>
+<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes nao-imprimir" onclick="alternarLateral()">
+    <i class="bi bi-list-ul"></i> Ações e totais
+</button>
+
+<div class="pedidos-layout">
+<div class="pedidos-conteudo">
 
 <div class="card">
     <div class="table-responsive">
@@ -175,6 +193,10 @@ require __DIR__ . '/../../../includes/layout_header.php';
     </div>
 </div>
 
+</div><!-- /pedidos-conteudo -->
+<?php require __DIR__ . '/../../../includes/painel_lateral.php'; ?>
+</div><!-- /pedidos-layout -->
+
 <div class="modal fade" id="modal-baixa-lote" tabindex="-1">
     <div class="modal-dialog">
         <form class="modal-content" action="/financeiro/contas_receber/baixar_lote.php" method="post" id="form-baixa-lote">
@@ -256,10 +278,8 @@ const itensLote = [...document.querySelectorAll('.lote-item')];
 const moedaLote = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 function atualizarLote() {
     const marcados = itensLote.filter((c) => c.checked);
-    document.getElementById('barra-lote').classList.toggle('d-none', !marcados.length);
-    document.getElementById('barra-lote').classList.toggle('d-flex', marcados.length > 0);
-    document.getElementById('lote-qtd').textContent = marcados.length;
-    document.getElementById('lote-total').textContent = moedaLote(marcados.reduce((s, c) => s + parseFloat(c.dataset.valor), 0));
+    const info = document.getElementById('info-selecionadas');
+    if (info) info.textContent = marcados.length + (marcados.length ? ' · ' + moedaLote(marcados.reduce((s, c) => s + parseFloat(c.dataset.valor), 0)) : '');
     const todos = document.getElementById('lote-todos');
     if (todos) {
         todos.checked = marcados.length === itensLote.length && marcados.length > 0;
@@ -281,12 +301,31 @@ document.querySelectorAll('.lote-grupo').forEach((g) => g.addEventListener('chan
 function limparLote() { itensLote.forEach((c) => { c.checked = false; }); atualizarLote(); }
 function abrirBaixaLote() {
     const marcados = itensLote.filter((c) => c.checked);
-    if (!marcados.length) return;
+    if (!marcados.length) { alert('Marque ao menos uma parcela em aberto na lista.'); return; }
     document.getElementById('lote-titulo').textContent = marcados.length;
     document.getElementById('lote-ids').innerHTML = marcados.map((c) => '<input type="hidden" name="ids[]" value="' + c.value + '">').join('');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-baixa-lote')).show();
 }
+// Ações do painel lateral que vão direto ao servidor (gerar boletos, excluir).
+function acaoLoteReceber(acao, pergunta) {
+    const marcados = itensLote.filter((c) => c.checked);
+    if (!marcados.length) { alert('Marque ao menos uma parcela em aberto na lista.'); return; }
+    if (!confirm(pergunta.replace('{n}', marcados.length))) return;
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = '/financeiro/contas_receber/massa.php';
+    [['acao', acao], ['voltar', window.location.pathname + window.location.search], ...marcados.map((c) => ['ids[]', c.value])].forEach(([nome, valor]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = nome;
+        input.value = valor;
+        form.appendChild(input);
+    });
+    document.body.appendChild(form);
+    form.submit();
+}
 </script>
+<script src="/assets/js/selecao-massa.js"></script>
 
 <?php require __DIR__ . '/../../../includes/modal_pix.php'; ?>
 <?php require __DIR__ . '/../../../includes/modal_historico_parcela.php'; ?>

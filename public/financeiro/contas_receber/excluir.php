@@ -24,35 +24,6 @@ $voltar = match (input('voltar')) {
     default => null,
 } ?? '/financeiro/contas_receber/listar.php';
 
-// Parcela que já passou pelo banco não some: o histórico do boleto fica.
-// Se o boleto está registrado, o banco recebe a baixa antes (sem a baixa,
-// nada muda aqui) e a parcela fica como cancelada.
-$stmt = $pdo->prepare('SELECT COUNT(*) FROM cobrancas_bancarias WHERE conta_receber_id = ?');
-$stmt->execute([$id]);
-if ((int) $stmt->fetchColumn() > 0) {
-    if ($conta['status'] === 'pago') {
-        flash('danger', 'Esta parcela já foi paga pelo banco e não pode ser excluída.');
-        redirect($voltar);
-    }
-    $baixa = baixarBoletoBancoItau($pdo, $id);
-    if (!$baixa['ok']) {
-        flash('danger', $baixa['mensagem'] . ' A parcela não foi excluída.');
-        redirect($voltar);
-    }
-    $pdo->prepare("UPDATE contas_receber SET status = 'cancelado' WHERE id = ?")->execute([$id]);
-    registrarHistoricoParcela($pdo, $id, 'cancelamento', 'Excluída pelo usuário' . ($baixa['havia_boleto'] ? ' — boleto baixado no banco' : '') . ' (fica como cancelada, porque já passou pelo banco)');
-    registrarAtividade('contas_receber', 'exclusao', 'Conta a receber cancelada (boleto baixado no banco): ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
-    $aguardando = str_contains($baixa['mensagem'], AVISO_APROVACAO_ITAU);
-    flash($aguardando ? 'warning' : 'success', $baixa['havia_boleto']
-        ? ($aguardando ? 'Parcela cancelada. ' . $baixa['mensagem'] : 'Boleto baixado no banco e parcela cancelada (fica no histórico como cancelada).')
-        : 'Parcela cancelada (fica no histórico como cancelada, porque já passou pelo banco).');
-    redirect($voltar);
-}
-
-$stmt = $pdo->prepare('DELETE FROM contas_receber WHERE id = ?');
-$stmt->execute([$id]);
-
-registrarAtividade('contas_receber', 'exclusao', 'Conta a receber excluída: ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
-
-flash('success', 'Lançamento excluído.');
+$resultado = excluirParcelaReceber($pdo, $id);
+flash(!$resultado['ok'] ? 'danger' : ($resultado['aguardando'] ? 'warning' : 'success'), $resultado['mensagem']);
 redirect($voltar);

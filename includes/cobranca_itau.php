@@ -827,6 +827,10 @@ function nossoNumeroDaChamadaBanco(array $chamada): ?int
     if (preg_match('~/boletos/(\d{23,})(?:/|$)~', (string) $chamada['url'], $m)) {
         return (int) substr($m[1], 15);
     }
+    // Consultas: GET /boletos?...&nosso_numero=...
+    if (preg_match('~[?&]nosso_numero=(\d+)~', (string) $chamada['url'], $m)) {
+        return (int) $m[1] ?: null;
+    }
     if (in_array($chamada['operacao'], ['registro_boleto', 'validacao_boleto'], true) && $chamada['requisicao']) {
         $corpo = json_decode($chamada['requisicao'], true);
         $corpo = $corpo['data'] ?? $corpo;
@@ -1254,6 +1258,7 @@ function consultarBoletoItau(PDO $pdo, array $conta, int $nossoNumero, ?int $con
     }
     $r = chamarApiNotificacoesItau($pdo, $conta, 'GET', '/boletos?' . http_build_query([
         'id_beneficiario' => $idBeneficiario,
+        'codigo_carteira' => apenasDigitos((string) ($conta['itau_carteira'] ?? '')) ?: '109',
         'nosso_numero' => formatarNossoNumeroItau($nossoNumero),
     ]), null, $base, 'consulta_boleto');
     if (!$r['ok']) {

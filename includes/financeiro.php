@@ -836,3 +836,51 @@ function historicoParcela(PDO $pdo, int $contaReceberId): array
     usort($itens, fn ($a, $b) => [(string) $a['quando'], $a['ordem']] <=> [(string) $b['quando'], $b['ordem']]);
     return $itens;
 }
+
+/**
+ * Exclui uma parcela a receber. Se ela já passou pelo banco (tem cobrança),
+ * não some: o boleto registrado recebe a baixa no banco antes (sem a baixa,
+ * nada muda) e a parcela fica como cancelada, guardando o histórico.
+ * Parcela paga pelo banco não sai. Retorna ['ok' => bool, 'mensagem' =>
+ * string, 'resultado' => 'excluida'|'cancelada'|null, 'aguardando' => bool].
+ */
+function excluirParcelaReceber(PDO $pdo, int $id): array
+{
+    $stmt = $pdo->prepare('SELECT * FROM contas_receber WHERE id = ?');
+    $stmt->execute([$id]);
+    $conta = $stmt->fetch();
+    if (!$conta) {
+        return ['ok' => false, 'mensagem' => 'Lançamento não encontrado.', 'resultado' => null, 'aguardando' => false];
+    }
+
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM cobrancas_bancarias WHERE conta_receber_id = ?');
+    $stmt->execute([$id]);
+    if ((int) $stmt->fetchColumn() === 0) {
+        $pdo->prepare('DELETE FROM contas_receber WHERE id = ?')->execute([$id]);
+        registrarAtividade('contas_receber', 'exclusao', 'Conta a receber excluída: ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
+        return ['ok' => true, 'mensagem' => 'Lançamento excluído.', 'resultado' => 'excluida', 'aguardando' => false];
+    }
+
+    if ($conta['status'] === 'pago') {
+        return ['ok' => false, 'mensagem' => $conta['descricao'] . ': já foi paga pelo banco e não pode ser excluída.', 'resultado' => null, 'aguardando' => false];
+    }
+    if ($conta['status'] === 'cancelado') {
+        return ['ok' => true, 'mensagem' => $conta['descricao'] . ' já estava cancelada.', 'resultado' => 'cancelada', 'aguardando' => false];
+    }
+    $baixa = baixarBoletoBancoItau($pdo, $id);
+    if (!$baixa['ok']) {
+        return ['ok' => false, 'mensagem' => $conta['descricao'] . ': ' . $baixa['mensagem'] . ' A parcela não foi excluída.', 'resultado' => null, 'aguardando' => false];
+    }
+    $pdo->prepare("UPDATE contas_receber SET status = 'cancelado' WHERE id = ?")->execute([$id]);
+    registrarHistoricoParcela($pdo, $id, 'cancelamento', 'Excluída pelo usuário' . ($baixa['havia_boleto'] ? ' — boleto baixado no banco' : '') . ' (fica como cancelada, porque já passou pelo banco)');
+    registrarAtividade('contas_receber', 'exclusao', 'Conta a receber cancelada (boleto baixado no banco): ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
+    $aguardando = str_contains($baixa['mensagem'], AVISO_APROVACAO_ITAU);
+    return [
+        'ok' => true,
+        'resultado' => 'cancelada',
+        'aguardando' => $aguardando,
+        'mensagem' => $baixa['havia_boleto']
+            ? ($aguardando ? 'Parcela cancelada. ' . $baixa['mensagem'] : 'Boleto baixado no banco e parcela cancelada (fica no histórico como cancelada).')
+            : 'Parcela cancelada (fica no histórico como cancelada, porque já passou pelo banco).',
+    ];
+}
