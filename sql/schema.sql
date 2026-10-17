@@ -339,6 +339,7 @@ CREATE TABLE contas_bancarias (
     webhook_client_id VARCHAR(64) DEFAULT NULL,
     webhook_client_secret_cripto TEXT DEFAULT NULL,
     webhook_cadastrado_em DATETIME DEFAULT NULL,
+    webhook_pix_cadastrado_em DATETIME DEFAULT NULL,
     padrao TINYINT(1) NOT NULL DEFAULT 0,
     ativo TINYINT(1) NOT NULL DEFAULT 1,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -618,6 +619,7 @@ CREATE TABLE cobrancas_bancarias (
     linha_digitavel VARCHAR(60) DEFAULT NULL,
     codigo_barras VARCHAR(60) DEFAULT NULL,
     pix_copia_cola TEXT DEFAULT NULL,
+    txid VARCHAR(35) DEFAULT NULL,
     payload JSON DEFAULT NULL,
     resposta JSON DEFAULT NULL,
     mensagem_erro VARCHAR(255) DEFAULT NULL,
@@ -626,6 +628,7 @@ CREATE TABLE cobrancas_bancarias (
     atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_cobranca_nosso_numero (conta_bancaria_id, nosso_numero),
     KEY idx_cobranca_conta_receber (conta_receber_id),
+    KEY idx_cobranca_txid (txid),
     CONSTRAINT fk_cobranca_conta_receber FOREIGN KEY (conta_receber_id) REFERENCES contas_receber(id),
     CONSTRAINT fk_cobranca_conta_bancaria FOREIGN KEY (conta_bancaria_id) REFERENCES contas_bancarias(id),
     CONSTRAINT fk_cobranca_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id)

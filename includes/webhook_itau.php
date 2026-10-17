@@ -21,6 +21,13 @@ const ITAU_URL_NOTIFICACOES = [
 
 const ITAU_TIPOS_NOTIFICACAO = ['BAIXA_OPERACIONAL', 'BAIXA_EFETIVA'];
 
+// API Pix Recebimentos (padrão do Banco Central): cadastro do aviso de Pix
+// na hora (PUT /webhook/{chave}) e consulta de um Pix (GET /pix/{e2eid}).
+const ITAU_URL_PIX = [
+    'producao' => 'https://secure.api.itau/pix_recebimentos/v2',
+    'sandbox' => 'https://sandbox.devportal.itau.com.br/itau-ep9-gtw-pix-recebimentos-ext-v2/v2',
+];
+
 // Scope que o Itaú pede ao nosso endpoint de token ao avisar um pagamento
 // (o mesmo do exemplo da documentação).
 const ITAU_WEBHOOK_SCOPE = 'boletos-notificacao';
@@ -31,6 +38,11 @@ const WEBHOOK_TOKEN_SEGUNDOS = 3600;
 function urlApiNotificacoesItau(array $conta): string
 {
     return ITAU_URL_NOTIFICACOES[$conta['api_ambiente'] === 'producao' ? 'producao' : 'sandbox'];
+}
+
+function urlApiPixItau(array $conta): string
+{
+    return ITAU_URL_PIX[$conta['api_ambiente'] === 'producao' ? 'producao' : 'sandbox'];
 }
 
 /**
@@ -46,6 +58,9 @@ function urlsWebhookItau(): array
     return [
         'token' => $base . '/webhook/itau/token.php',
         'webhook' => $base . '/webhook/itau/boletos.php',
+        // Cadastrada SEM o "/pix": o Itaú acrescenta ao avisar
+        // (chama .../pix.php/pix) — orientação do manual do Itaú.
+        'pix' => $base . '/webhook/itau/pix.php',
     ];
 }
 
@@ -202,6 +217,136 @@ function listarWebhooksItau(PDO $pdo, array $conta): array
 function excluirWebhookItau(PDO $pdo, array $conta, string $idNotificacao): array
 {
     return chamarApiNotificacoesItau($pdo, $conta, 'DELETE', '/notificacoes_boletos/' . rawurlencode($idNotificacao));
+}
+
+// ---------------------------------------------------------------------
+// Aviso de Pix na hora (webhook Pix): um endereço por chave Pix
+// ---------------------------------------------------------------------
+
+function caminhoWebhookPixItau(array $conta): ?string
+{
+    $chave = trim((string) ($conta['chave_pix'] ?? ''));
+    return $chave === '' ? null : '/webhook/' . rawurlencode($chave);
+}
+
+// O que está cadastrado no Itaú para a chave Pix da conta (404 = nada).
+function consultarWebhookPixItau(PDO $pdo, array $conta): array
+{
+    $caminho = caminhoWebhookPixItau($conta);
+    if (!$caminho) {
+        return ['ok' => false, 'status' => 0, 'mensagem' => 'Cadastre a chave Pix na conta bancária.', 'resposta' => null, 'url' => null];
+    }
+    $resultado = chamarApiNotificacoesItau($pdo, $conta, 'GET', $caminho, null, urlApiPixItau($conta), 'consulta_webhook_pix');
+    if ($resultado['status'] === 404) {
+        return ['ok' => true, 'status' => 404, 'mensagem' => 'Nenhum aviso de Pix cadastrado nesta chave.', 'resposta' => $resultado['resposta'], 'url' => null];
+    }
+    $resultado['url'] = is_array($resultado['resposta']) ? ($resultado['resposta']['webhookUrl'] ?? null) : null;
+    return $resultado;
+}
+
+// Cadastra (ou troca) o endereço do aviso de Pix desta chave.
+function cadastrarWebhookPixItau(PDO $pdo, array $conta, string $url): array
+{
+    $caminho = caminhoWebhookPixItau($conta);
+    if (!$caminho) {
+        return ['ok' => false, 'status' => 0, 'mensagem' => 'Cadastre a chave Pix na conta bancária.', 'resposta' => null];
+    }
+    $resultado = chamarApiNotificacoesItau($pdo, $conta, 'PUT', $caminho, ['webhookUrl' => $url], urlApiPixItau($conta), 'cadastro_webhook_pix');
+    if ($resultado['ok']) {
+        $pdo->prepare('UPDATE contas_bancarias SET webhook_pix_cadastrado_em = NOW() WHERE id = ?')->execute([$conta['id']]);
+    }
+    return $resultado;
+}
+
+function excluirWebhookPixItau(PDO $pdo, array $conta): array
+{
+    $caminho = caminhoWebhookPixItau($conta);
+    if (!$caminho) {
+        return ['ok' => false, 'status' => 0, 'mensagem' => 'Cadastre a chave Pix na conta bancária.', 'resposta' => null];
+    }
+    $resultado = chamarApiNotificacoesItau($pdo, $conta, 'DELETE', $caminho, null, urlApiPixItau($conta), 'exclusao_webhook_pix');
+    if ($resultado['ok']) {
+        $pdo->prepare('UPDATE contas_bancarias SET webhook_pix_cadastrado_em = NULL WHERE id = ?')->execute([$conta['id']]);
+    }
+    return $resultado;
+}
+
+/**
+ * Processa um Pix avisado pelo Itaú ({"pix": [{endToEndId, txid, valor,
+ * horario, ...}]}). O aviso não é aceito de olhos fechados: o Pix é
+ * confirmado na API do banco (GET /pix/{endToEndId}) antes da baixa — um
+ * aviso falso não baixa nada. Pix sem txid de boleto do sistema (pagamento
+ * avulso na chave) só fica registrado.
+ * Retorna ['status' => ..., 'mensagem' => ..., 'repetir' => bool]; repetir =
+ * falha nossa ou do banco na confirmação, para o Itaú reenviar o aviso.
+ */
+function processarAvisoPixItau(PDO $pdo, array $pix): array
+{
+    $txid = trim((string) ($pix['txid'] ?? ''));
+    $endToEnd = trim((string) ($pix['endToEndId'] ?? $pix['endToEndid'] ?? $pix['end_to_end_id'] ?? ''));
+    $valorAvisado = valorNotificacao($pix['valor'] ?? null);
+    $dataPagamento = dataNotificacao(substr((string) ($pix['horario'] ?? ''), 0, 10)) ?? date('Y-m-d');
+
+    $cobranca = null;
+    if ($txid !== '') {
+        $stmt = $pdo->prepare("SELECT * FROM cobrancas_bancarias WHERE txid = ? AND status IN ('registrada', 'paga') ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$txid]);
+        $cobranca = $stmt->fetch() ?: null;
+    }
+    $conta = null;
+    if ($cobranca) {
+        $stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
+        $stmt->execute([$cobranca['conta_bancaria_id']]);
+        $conta = $stmt->fetch() ?: null;
+    } elseif (!empty($pix['chave'])) {
+        $stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE chave_pix = ? LIMIT 1');
+        $stmt->execute([(string) $pix['chave']]);
+        $conta = $stmt->fetch() ?: null;
+    }
+    if ($conta) {
+        definirContaRequisicaoWebhook((int) $conta['id']);
+    }
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO webhook_eventos (conta_bancaria_id, requisicao_id, tipo_notificacao, nosso_numero, cobranca_id, conta_receber_id, valor_pago, data_pagamento, payload, ip)
+         VALUES (?, ?, 'PIX', ?, ?, ?, ?, ?, ?, ?)"
+    );
+    $stmt->execute([
+        $conta['id'] ?? null, idRequisicaoWebhook(), $cobranca['nosso_numero'] ?? null, $cobranca['id'] ?? null, $cobranca['conta_receber_id'] ?? null,
+        $valorAvisado, $dataPagamento, json_encode($pix, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), enderecoIpAtual(),
+    ]);
+    $eventoId = (int) $pdo->lastInsertId();
+    $resultado = function (string $status, string $mensagem, bool $repetir = false) use ($pdo, $eventoId) {
+        $pdo->prepare('UPDATE webhook_eventos SET status = ?, mensagem = ? WHERE id = ?')
+            ->execute([$status, mb_strimwidth($mensagem, 0, 255, '…', 'UTF-8'), $eventoId]);
+        return ['status' => $status, 'mensagem' => $mensagem, 'repetir' => $repetir];
+    };
+
+    if (!$cobranca) {
+        return $resultado('ignorado', $txid !== '' ? "Pix com txid {$txid}, que não é de boleto do sistema." : 'Pix avulso na chave (sem txid) — não é de boleto do sistema.');
+    }
+    if ($endToEnd === '' || !$conta) {
+        return $resultado('erro', 'Aviso sem endToEndId — não dá para confirmar no banco.');
+    }
+
+    // Confirma no banco que o Pix existe, é deste QR Code e com este valor.
+    contextoChamadaBanco(['conta_receber_id' => (int) $cobranca['conta_receber_id']]);
+    $confirmacao = chamarApiNotificacoesItau($pdo, $conta, 'GET', '/pix/' . rawurlencode($endToEnd), null, urlApiPixItau($conta), 'confirmacao_pix');
+    if ($confirmacao['status'] === 404) {
+        return $resultado('erro', 'O banco não confirma este Pix (endToEndId não existe) — nada baixado.');
+    }
+    if (!$confirmacao['ok'] || !is_array($confirmacao['resposta'])) {
+        return $resultado('erro', 'Não foi possível confirmar o Pix no banco: ' . $confirmacao['mensagem'] . ' O Itaú reenviará o aviso.', true);
+    }
+    $banco = $confirmacao['resposta'];
+    if (trim((string) ($banco['txid'] ?? '')) !== $txid) {
+        return $resultado('erro', 'O Pix confirmado no banco é de outro QR Code (txid diferente) — nada baixado.');
+    }
+    $valorBanco = valorNotificacao($banco['valor'] ?? null) ?? $valorAvisado;
+    $dataBanco = dataNotificacao(substr((string) ($banco['horario'] ?? ''), 0, 10)) ?? $dataPagamento;
+
+    $baixa = baixarCobrancaPeloBanco($pdo, $cobranca, $valorBanco, $dataBanco, 'Pix', 'Itaú (Pix)');
+    return $resultado($baixa['status'], $baixa['mensagem']);
 }
 
 // ---------------------------------------------------------------------
@@ -392,8 +537,8 @@ function processarNotificacaoBoletoItau(PDO $pdo, array $conta, array $aviso, in
 }
 
 /**
- * Baixa a parcela de uma cobrança que o banco diz estar paga — usada pelo
- * aviso do webhook e pela consulta manual de pagamento. Retorna
+ * Baixa a parcela de uma cobrança que o banco diz estar paga — usada pelos
+ * avisos de boleto e de Pix. Retorna
  * ['status' => 'processado'|'ignorado', 'mensagem' => string].
  */
 function baixarCobrancaPeloBanco(PDO $pdo, array $cobranca, ?float $valorPago, ?string $dataPagamento, string $tipo, string $autor): array
@@ -445,70 +590,6 @@ function baixarCobrancaPeloBanco(PDO $pdo, array $cobranca, ?float $valorPago, ?
 
     return $resultado('processado', 'Parcela baixada: ' . formatMoney($valorRecebido) . ' em ' . formatDate($dataRecebimento)
         . ($valorPago === null ? ' (aviso sem valor pago — usado o valor da cobrança)' : '') . '.');
-}
-
-/**
- * Consulta manual: pergunta ao Itaú se o boleto da parcela foi pago, sem
- * esperar o webhook. Usa as movimentações da carteira ("francesa") da
- * Cobrança v2 — GET /francesas/{agência+conta+DAC}/movimentacoes?data=…
- * &nosso_numero=… — dia a dia, de hoje até a emissão (no máximo 31 dias).
- * Achou a liquidação: baixa a parcela como o webhook faria.
- * Retorna ['ok' => bool, 'pago' => bool, 'mensagem' => string].
- */
-function consultarPagamentoItau(PDO $pdo, int $contaReceberId): array
-{
-    $stmt = $pdo->prepare(
-        "SELECT * FROM cobrancas_bancarias WHERE conta_receber_id = ? AND status IN ('registrada', 'paga') ORDER BY id DESC LIMIT 1"
-    );
-    $stmt->execute([$contaReceberId]);
-    $cobranca = $stmt->fetch();
-    if (!$cobranca) {
-        return ['ok' => false, 'pago' => false, 'mensagem' => 'Esta parcela não tem boleto registrado no banco.'];
-    }
-    $stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
-    $stmt->execute([$cobranca['conta_bancaria_id']]);
-    $conta = $stmt->fetch();
-    $idFrancesa = $conta ? idBeneficiarioItau($conta) : null;
-    if (!$idFrancesa) {
-        return ['ok' => false, 'pago' => false, 'mensagem' => 'Confira agência, conta e dígito da conta bancária.'];
-    }
-    $stmt = $pdo->prepare('SELECT status FROM contas_receber WHERE id = ?');
-    $stmt->execute([$contaReceberId]);
-    if ($stmt->fetchColumn() === 'pago') {
-        return ['ok' => true, 'pago' => true, 'mensagem' => 'Esta parcela já está baixada.'];
-    }
-    contextoChamadaBanco(['conta_receber_id' => $contaReceberId]);
-
-    // As movimentações ficam na API de Cobrança v2 (cash_management).
-    $urlBase = ehApiCobrancaV2Itau($conta) ? rtrim($conta['api_url_base'], '/') : 'https://api.itau.com.br/cash_management/v2';
-    $nossoNumero = (int) $cobranca['nosso_numero'];
-    $dia = new DateTimeImmutable('today');
-    $inicio = max(new DateTimeImmutable(substr($cobranca['criado_em'], 0, 10)), $dia->modify('-31 days'));
-    $consultados = 0;
-
-    for (; $dia >= $inicio; $dia = $dia->modify('-1 day')) {
-        $consultados++;
-        $resposta = chamarApiNotificacoesItau($pdo, $conta, 'GET', '/francesas/' . $idFrancesa . '/movimentacoes?' . http_build_query([
-            'data' => $dia->format('Y-m-d'), 'nosso_numero' => formatarNossoNumeroItau($nossoNumero),
-        ]), null, $urlBase, 'consulta_pagamento');
-        if (!$resposta['ok'] && $resposta['status'] !== 404) {
-            return ['ok' => false, 'pago' => false, 'mensagem' => $resposta['mensagem']];
-        }
-        foreach ((is_array($resposta['resposta']) ? ($resposta['resposta']['data'] ?? []) : []) as $mov) {
-            $numero = (int) substr(apenasDigitos((string) ($mov['nosso_numero'] ?? '')), -8);
-            $liquidacao = str_starts_with(strtolower((string) ($mov['tipo_movimentacao'] ?? '')), 'liquida');
-            if ($numero !== $nossoNumero || !$liquidacao) {
-                continue;
-            }
-            $valor = valorNotificacao($mov['valor_liquido_lancado'] ?? null) ?: valorNotificacao($mov['valor_titulo'] ?? null);
-            $data = dataNotificacao($mov['data_movimentacao'] ?? null) ?? $dia->format('Y-m-d');
-            $baixa = baixarCobrancaPeloBanco($pdo, $cobranca, $valor, $data, 'consulta manual', usuarioLogado() ? ($_SESSION['user_nome'] ?? 'Usuário') : 'Consulta ao banco');
-            return ['ok' => true, 'pago' => true, 'mensagem' => 'O banco confirma o pagamento. ' . $baixa['mensagem']];
-        }
-    }
-
-    return ['ok' => true, 'pago' => false, 'mensagem' => "O banco ainda não mostra pagamento deste boleto (consultados {$consultados} dia(s)). "
-        . 'O Itaú costuma lançar o pagamento nas movimentações até o dia útil seguinte — tente de novo mais tarde.'];
 }
 
 /**

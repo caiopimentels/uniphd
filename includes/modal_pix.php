@@ -19,7 +19,6 @@
                     <div class="small text-muted">Isso leva alguns segundos.</div>
                 </div>
                 <div id="pix-falha" class="alert alert-danger text-start small d-none"></div>
-                <div id="pix-consulta" class="alert text-start small d-none"></div>
                 <div id="pix-conteudo" class="d-none">
                     <div class="fw-semibold" id="pix-descricao"></div>
                     <div class="fs-4 fw-bold" id="pix-valor"></div>
@@ -54,7 +53,6 @@
             <div class="modal-footer justify-content-between">
                 <div class="d-flex gap-2">
                     <a href="#" target="_blank" rel="noopener" class="btn btn-outline-secondary btn-sm" id="pix-boleto"><i class="bi bi-printer"></i> Abrir boleto</a>
-                    <button type="button" class="btn btn-outline-primary btn-sm d-none" id="pix-consultar" onclick="consultarPagamentoPix()"><i class="bi bi-search"></i> Consultar pagamento no banco</button>
                     <button type="button" class="btn btn-outline-danger btn-sm d-none" id="pix-tentar" onclick="(modoPixAtual === 'boleto' ? abrirBoleto : abrirPix)(parcelaPixAtual, true)"><i class="bi bi-arrow-repeat"></i> Tentar de novo</button>
                 </div>
                 <a href="#" target="_blank" rel="noopener" class="btn btn-success btn-sm d-none" id="pix-whatsapp"><i class="bi bi-whatsapp"></i> Enviar ao aluno</a>
@@ -92,8 +90,6 @@ function prepararModalPix(parcelaId, modo) {
     document.getElementById('pix-conteudo').classList.add('d-none');
     document.getElementById('pix-falha').classList.add('d-none');
     document.getElementById('pix-tentar').classList.add('d-none');
-    document.getElementById('pix-consultar').classList.add('d-none');
-    document.getElementById('pix-consulta').classList.add('d-none');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-pix')).show();
 }
 
@@ -164,7 +160,6 @@ function mostrarCobrancaPix(d) {
     desconto.textContent = d.desconto || '';
     desconto.classList.toggle('d-none', !d.desconto);
     document.getElementById('pix-registrado').classList.toggle('d-none', !d.boleto_registrado);
-    document.getElementById('pix-consultar').classList.toggle('d-none', !d.pode_consultar);
 
     // Sem registro não há Pix: desenha um QR com texto neutro (não leva
     // a pagamento nenhum), borrado, só para mostrar onde ele aparecerá.
@@ -200,30 +195,6 @@ function mostrarCobrancaPix(d) {
     whatsapp.href = d.whatsapp || '#';
 
     document.getElementById('pix-conteudo').classList.remove('d-none');
-}
-
-// Pergunta ao Itaú se o boleto já foi pago (não espera o aviso do webhook).
-// Pago: a parcela é baixada e a página recarrega para mostrar.
-function consultarPagamentoPix() {
-    const botao = document.getElementById('pix-consultar');
-    const caixa = document.getElementById('pix-consulta');
-    botao.disabled = true;
-    botao.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Consultando o banco...';
-    fetch('/financeiro/consultar_pagamento.php', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: new URLSearchParams({ id: parcelaPixAtual }) })
-        .then((r) => r.json())
-        .then((d) => {
-            caixa.className = 'alert text-start small ' + (d.pago ? 'alert-success' : (d.ok ? 'alert-warning' : 'alert-danger'));
-            caixa.textContent = d.mensagem;
-            if (d.pago) setTimeout(() => window.location.reload(), 2500);
-        })
-        .catch(() => {
-            caixa.className = 'alert alert-danger text-start small';
-            caixa.textContent = 'Erro de rede ao falar com o sistema. Tente de novo.';
-        })
-        .finally(() => {
-            botao.disabled = false;
-            botao.innerHTML = '<i class="bi bi-search"></i> Consultar pagamento no banco';
-        });
 }
 
 function copiarCampoPix(idCampo, botao) {

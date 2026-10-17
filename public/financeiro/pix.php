@@ -59,8 +59,6 @@ responderJson([
     'sucesso' => true,
     'registrado' => $registrado,
     'boleto_registrado' => (bool) $dados['registrada'],
-    // Boleto no banco e parcela ainda em aberto: dá para perguntar ao banco se já foi pago.
-    'pode_consultar' => (bool) $dados['registrada'] && $parcela['status'] === 'pendente',
     'copia_cola' => $dados['pix_copia_cola'],
     'linha_digitavel' => $dados['registrada'] ? $dados['linha_digitavel'] : null,
     'erro_geracao' => $erroGeracao,

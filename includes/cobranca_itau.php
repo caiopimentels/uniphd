@@ -747,6 +747,10 @@ function operacoesChamadaBanco(): array
         'consulta_webhook' => 'Consulta do webhook',
         'exclusao_webhook' => 'Exclusão do webhook',
         'consulta_pagamento' => 'Consulta de pagamento',
+        'cadastro_webhook_pix' => 'Cadastro do aviso de Pix',
+        'consulta_webhook_pix' => 'Consulta do aviso de Pix',
+        'exclusao_webhook_pix' => 'Exclusão do aviso de Pix',
+        'confirmacao_pix' => 'Confirmação de Pix recebido',
     ];
 }
 
@@ -1113,14 +1117,16 @@ function registrarCobrancaItau(PDO $pdo, int $contaReceberId, ?int $usuarioId, ?
     $linhaDigitavel = $individual['numero_linha_digitavel'] ?? null;
     $codigoBarras = $individual['codigo_barras'] ?? null;
     $pix = $resposta['dados_qrcode']['emv'] ?? null;
+    // O aviso de Pix na hora identifica a cobrança pelo txid do QR Code.
+    $txid = isset($resposta['dados_qrcode']['txid']) ? mb_substr((string) $resposta['dados_qrcode']['txid'], 0, 35) : null;
 
     $stmt = $pdo->prepare(
-        "UPDATE cobrancas_bancarias SET status = 'registrada', linha_digitavel = ?, codigo_barras = ?, pix_copia_cola = ?, payload = ?, resposta = ?, mensagem_erro = NULL WHERE id = ?"
+        "UPDATE cobrancas_bancarias SET status = 'registrada', linha_digitavel = ?, codigo_barras = ?, pix_copia_cola = ?, txid = ?, payload = ?, resposta = ?, mensagem_erro = NULL WHERE id = ?"
     );
     $stmt->execute([
         $linhaDigitavel ? apenasDigitos($linhaDigitavel) : null,
         $codigoBarras ? apenasDigitos($codigoBarras) : null,
-        $pix, $json($payload), $json($envio['resposta']), $cobrancaId,
+        $pix, $txid, $json($payload), $json($envio['resposta']), $cobrancaId,
     ]);
 
     return [

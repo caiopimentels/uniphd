@@ -44,7 +44,7 @@ if ($ver === 'enviadas') {
     ];
     $resultado = buscarRequisicoesWebhook($pdo, $filtrosWebhook, $pagina, 50);
     $statusEvento = statusEventoWebhook();
-    $endpoints = ['itau/boletos' => 'Aviso de pagamento', 'itau/token' => 'Pedido de token'];
+    $endpoints = ['itau/boletos' => 'Aviso de pagamento', 'itau/pix' => 'Aviso de Pix', 'itau/token' => 'Pedido de token'];
     $linkPaginaWebhook = fn (int $p) => '?' . http_build_query(array_merge($base, $filtros, ['busca' => $filtrosWebhook['busca'], 'pagina' => $p]));
 }
 $usuarios = $pdo->query('SELECT id, nome FROM usuarios ORDER BY nome')->fetchAll();

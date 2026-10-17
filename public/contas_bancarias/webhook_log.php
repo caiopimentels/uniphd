@@ -7,14 +7,14 @@ $pdo = getDB();
 $filtros = [
     'data_inicio' => trim($_GET['data_inicio'] ?? ''),
     'data_fim' => trim($_GET['data_fim'] ?? ''),
-    'endpoint' => in_array($_GET['endpoint'] ?? '', ['itau/boletos', 'itau/token'], true) ? $_GET['endpoint'] : '',
+    'endpoint' => in_array($_GET['endpoint'] ?? '', ['itau/boletos', 'itau/pix', 'itau/token'], true) ? $_GET['endpoint'] : '',
     'resultado' => in_array($_GET['resultado'] ?? '', ['ok', 'falha'], true) ? $_GET['resultado'] : '',
     'busca' => trim($_GET['busca'] ?? ''),
 ];
 $pagina = max(1, (int) ($_GET['pagina'] ?? 1));
 $resultado = buscarRequisicoesWebhook($pdo, $filtros, $pagina, 50);
 $statusEvento = statusEventoWebhook();
-$endpoints = ['itau/boletos' => 'Aviso de pagamento', 'itau/token' => 'Pedido de token'];
+$endpoints = ['itau/boletos' => 'Aviso de pagamento', 'itau/pix' => 'Aviso de Pix', 'itau/token' => 'Pedido de token'];
 
 $pageTitle = 'Configurações';
 $pageBreadcrumb = 'Administração · Contas bancárias · Registro do webhook';

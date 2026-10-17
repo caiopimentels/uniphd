@@ -44,12 +44,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         registrarAtividade('configuracoes', 'exclusao', 'Webhook removido do Itaú (' . $conta['apelido'] . '): ' . input('id_notificacao'));
         flash($resultado['ok'] ? 'success' : 'danger', $resultado['ok'] ? 'Cadastro removido do Itaú.' : $resultado['mensagem']);
         redirect($aqui . '&consultar=1');
+    } elseif ($acao === 'cadastrar_pix') {
+        if ($pendenciaUrl) {
+            flash('danger', $pendenciaUrl);
+        } else {
+            $resultado = cadastrarWebhookPixItau($pdo, $conta, $urls['pix']);
+            registrarAtividade('configuracoes', 'edicao', 'Cadastro do aviso de Pix no Itaú (' . $conta['apelido'] . '): ' . ($resultado['ok'] ? 'sucesso' : 'falha'));
+            flash($resultado['ok'] ? 'success' : 'danger', $resultado['ok'] ? 'Aviso de Pix cadastrado no Itaú.' : $resultado['mensagem']);
+        }
+        redirect($aqui . '&consultar_pix=1');
+    } elseif ($acao === 'excluir_pix') {
+        $resultado = excluirWebhookPixItau($pdo, $conta);
+        registrarAtividade('configuracoes', 'exclusao', 'Aviso de Pix removido do Itaú (' . $conta['apelido'] . ')');
+        flash($resultado['ok'] ? 'success' : 'danger', $resultado['ok'] ? 'Aviso de Pix removido do Itaú.' : $resultado['mensagem']);
+        redirect($aqui . '&consultar_pix=1');
     }
     redirect($aqui);
 }
 
 // Consultar o Itaú só quando pedido: é uma chamada externa (token + mTLS).
 $consulta = isset($_GET['consultar']) ? listarWebhooksItau($pdo, $conta) : null;
+$consultaPix = isset($_GET['consultar_pix']) ? consultarWebhookPixItau($pdo, $conta) : null;
 
 $stmt = $pdo->prepare(
     'SELECT we.*, cr.descricao AS parcela_descricao
@@ -137,6 +152,59 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
 
     <?php if ($conta['webhook_cadastrado_em']): ?>
         <p class="small text-muted mt-2 mb-0">Último cadastro feito por aqui: <?= formatDateTime($conta['webhook_cadastrado_em']) ?> (ambiente: <?= $conta['api_ambiente'] === 'producao' ? 'Produção' : 'Sandbox' ?>).</p>
+    <?php endif; ?>
+</div>
+
+<div class="secao" style="max-width: 900px;">
+    <div class="secao-titulo"><i class="bi bi-lightning-charge"></i> Aviso de Pix na hora</div>
+    <p class="text-muted">
+        O aviso de boleto acima só chega no processamento noturno do Itaú. Este avisa <strong>na hora</strong> em que o
+        aluno paga pelo QR Code: o sistema confirma o Pix no banco e baixa a parcela.
+    </p>
+    <div class="alert alert-warning small">
+        <i class="bi bi-exclamation-triangle"></i> O Itaú guarda <strong>um único endereço de aviso por chave Pix</strong>.
+        Se outro sistema já recebe os avisos da chave <strong><?= e($conta['chave_pix'] ?: '(sem chave)') ?></strong>, cadastrar aqui
+        tira o aviso dele. Clique em "Consultar no Itaú" antes, para ver o que está cadastrado.
+    </div>
+    <?php if (!$conta['chave_pix']): ?>
+        <div class="alert alert-danger py-2">Cadastre a chave Pix em "Dados da conta" para usar o aviso de Pix.</div>
+    <?php else: ?>
+        <label class="form-label">Endereço que será cadastrado</label>
+        <input type="text" class="form-control mb-1" readonly value="<?= e($urls['pix']) ?>" style="max-width: 600px;">
+        <div class="form-text mb-3">Sem o "/pix" no final: o Itaú acrescenta sozinho ao avisar.</div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="<?= e($aqui) ?>&consultar_pix=1" class="btn btn-outline-secondary"><i class="bi bi-search"></i> Consultar no Itaú</a>
+            <form method="post" onsubmit="return confirm(<?= e(json_encode('Cadastrar o aviso de Pix desta chave para este sistema? Se outro sistema recebia os avisos desta chave, ele deixa de receber.')) ?>);">
+                <input type="hidden" name="id" value="<?= $id ?>">
+                <input type="hidden" name="acao" value="cadastrar_pix">
+                <button type="submit" class="btn btn-brand" <?= $pendenciaUrl ? 'disabled' : '' ?>><i class="bi bi-cloud-upload"></i> Cadastrar no Itaú</button>
+            </form>
+        </div>
+        <?php if ($conta['webhook_pix_cadastrado_em']): ?>
+            <p class="small text-muted mt-2 mb-0">Último cadastro feito por aqui: <?= formatDateTime($conta['webhook_pix_cadastrado_em']) ?>.</p>
+        <?php endif; ?>
+    <?php endif; ?>
+
+    <?php if ($consultaPix): ?>
+        <div class="mt-3">
+            <?php if (!$consultaPix['ok']): ?>
+                <div class="alert alert-danger py-2 mb-0"><?= e($consultaPix['mensagem']) ?></div>
+            <?php elseif (!$consultaPix['url']): ?>
+                <div class="alert alert-secondary py-2 mb-0">Nenhum aviso de Pix cadastrado no Itaú para esta chave.</div>
+            <?php else: ?>
+                <div class="alert <?= $consultaPix['url'] === $urls['pix'] ? 'alert-success' : 'alert-warning' ?> py-2 mb-0 d-flex align-items-center gap-2">
+                    <div class="flex-grow-1">
+                        Cadastrado no Itaú: <code><?= e($consultaPix['url']) ?></code>
+                        <div class="small"><?= $consultaPix['url'] === $urls['pix'] ? 'É este sistema — os Pix já avisam na hora.' : 'É outro endereço (outro sistema?). Cadastrar aqui substitui.' ?></div>
+                    </div>
+                    <form method="post" onsubmit="return confirm('Remover o aviso de Pix desta chave no Itaú? Nenhum sistema receberá mais os avisos de Pix dela.');">
+                        <input type="hidden" name="id" value="<?= $id ?>">
+                        <input type="hidden" name="acao" value="excluir_pix">
+                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Remover do Itaú"><i class="bi bi-trash"></i></button>
+                    </form>
+                </div>
+            <?php endif; ?>
+        </div>
     <?php endif; ?>
 </div>
 
