@@ -246,3 +246,33 @@ function redesConfiguradasPortal(array $config): array
     $redes = json_decode((string) ($config['portal_redes'] ?? ''), true);
     return array_filter(is_array($redes) ? $redes : [], fn ($url, $rede) => isset(redesSociaisPortal()[$rede]) && preg_match('#^https?://#i', (string) $url), ARRAY_FILTER_USE_BOTH);
 }
+
+/**
+ * O que aparece no rodapé do portal, item a item. Sem escolha salva: segue a
+ * chave antiga (contatos ligados/desligados), com o WhatsApp só no botão
+ * flutuante (o link no rodapé repetia o mesmo contato).
+ */
+function itensRodapePortal(array $config): array
+{
+    $contatos = !empty($config['portal_rodape_contatos']);
+    $padrao = ['endereco' => $contatos, 'telefone' => $contatos, 'email' => $contatos, 'whatsapp' => false, 'whatsapp_flutuante' => true];
+    $salvo = json_decode((string) ($config['portal_rodape_itens'] ?? ''), true);
+    if (!is_array($salvo)) {
+        return $padrao;
+    }
+    foreach ($padrao as $chave => $valor) {
+        $padrao[$chave] = (bool) ($salvo[$chave] ?? $valor);
+    }
+    return $padrao;
+}
+
+function opcoesRodapePortal(): array
+{
+    return [
+        'endereco' => ['Endereço', 'bi-geo-alt'],
+        'telefone' => ['Telefone', 'bi-telephone'],
+        'email' => ['E-mail', 'bi-envelope'],
+        'whatsapp' => ['Link do WhatsApp no rodapé', 'bi-whatsapp'],
+        'whatsapp_flutuante' => ['Botão flutuante do WhatsApp (canto da tela)', 'bi-chat-dots'],
+    ];
+}

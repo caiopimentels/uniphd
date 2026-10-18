@@ -55,11 +55,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Cores próprias do portal; desligado (ou cor inválida) = usa as do sistema.
         $corValida = fn ($c) => preg_match('/^#[0-9a-fA-F]{6}$/', (string) $c) ? strtolower($c) : null;
         $coresProprias = isset($_POST['portal_cores_proprias']);
-        $pdo->prepare('UPDATE configuracoes SET portal_titulo = ?, portal_subtitulo = ?, portal_cadastro_aberto = ?, portal_rodape_texto = ?, portal_rodape_contatos = ?, portal_redes = ?,
+        $itensRodape = array_map(fn ($chave) => !empty($_POST['rodape_itens'][$chave]), array_combine(array_keys(opcoesRodapePortal()), array_keys(opcoesRodapePortal())));
+        $pdo->prepare('UPDATE configuracoes SET portal_titulo = ?, portal_subtitulo = ?, portal_cadastro_aberto = ?, portal_rodape_texto = ?, portal_rodape_contatos = ?, portal_rodape_itens = ?, portal_redes = ?,
                 portal_cor_primaria = ?, portal_cor_secundaria = ?, whatsapp_numero = ? WHERE id = 1')
             ->execute([
                 trim(input('portal_titulo')) ?: null, trim(input('portal_subtitulo')) ?: null, isset($_POST['portal_cadastro_aberto']) ? 1 : 0,
-                trim((string) ($_POST['portal_rodape_texto'] ?? '')) ?: null, isset($_POST['portal_rodape_contatos']) ? 1 : 0,
+                trim((string) ($_POST['portal_rodape_texto'] ?? '')) ?: null, $itensRodape['endereco'] || $itensRodape['telefone'] || $itensRodape['email'] ? 1 : 0,
+                json_encode(array_map('intval', $itensRodape)),
                 $redes ? json_encode($redes, JSON_UNESCAPED_SLASHES) : null,
                 $coresProprias ? $corValida($_POST['portal_cor_primaria'] ?? '') : null,
                 $coresProprias ? $corValida($_POST['portal_cor_secundaria'] ?? '') : null,
@@ -148,11 +150,19 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-layout-text-window-reverse"></i> Rodapé</div>
         <div class="row g-3">
-            <div class="col-12 form-check form-switch ms-2"><input type="checkbox" class="form-check-input" role="switch" name="portal_rodape_contatos" id="contatos" <?= $config['portal_rodape_contatos'] ? 'checked' : '' ?>><label class="form-check-label" for="contatos">Mostrar endereço, telefone, e-mail e WhatsApp da empresa (de Configurações › Empresa)</label></div>
+            <div class="col-12">
+                <div class="form-label mb-1">O que aparece no rodapé <span class="text-muted small">(dados de Configurações › Empresa)</span></div>
+                <div class="d-flex flex-wrap gap-3">
+                    <?php $itensRodapeAtuais = itensRodapePortal($config); ?>
+                    <?php foreach (opcoesRodapePortal() as $chave => [$rotuloItem, $iconeItem]): ?>
+                        <div class="form-check form-switch"><input type="checkbox" class="form-check-input" role="switch" name="rodape_itens[<?= $chave ?>]" id="rodape-<?= $chave ?>" <?= $itensRodapeAtuais[$chave] ? 'checked' : '' ?>><label class="form-check-label" for="rodape-<?= $chave ?>"><i class="bi <?= $iconeItem ?>"></i> <?= $rotuloItem ?></label></div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
             <div class="col-md-5">
                 <label class="form-label"><i class="bi bi-whatsapp"></i> WhatsApp da escola</label>
                 <input type="text" name="whatsapp_numero" class="form-control" inputmode="numeric" placeholder="Ex.: (77) 99999-9999" value="<?= e($config['whatsapp_numero'] ?? '') ?>">
-                <div class="form-text">Com DDD. Aparece o botão verde no canto da tela do portal (e no rodapé). Deixe vazio para não mostrar.</div>
+                <div class="form-text">Com DDD. Usado no botão verde do canto da tela e/ou no link do rodapé (escolha acima). Vazio = não mostra.</div>
             </div>
             <div class="col-12"><label class="form-label">Texto do rodapé</label><textarea name="portal_rodape_texto" class="form-control" rows="2" placeholder="Ex.: Credenciada pelo MEC — Portaria nº ..."><?= e($config['portal_rodape_texto'] ?? '') ?></textarea></div>
             <?php foreach (redesSociaisPortal() as $rede => [$nomeRede, $iconeRede]): ?>

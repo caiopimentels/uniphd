@@ -277,6 +277,16 @@ function excluirTurma(PDO $pdo, int $turmaId): array
     if ((int) $stmt->fetchColumn() > 0) {
         return ['ok' => false, 'mensagem' => "Turma {$nome}: já tem mensalidade paga e não pode ser excluída. Mude a situação para Cancelada ou Concluída."];
     }
+    // Boleto/Pix gerado no banco: o histórico da cobrança fica (e o boleto não
+    // pode sumir do sistema e continuar valendo no banco).
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM cobrancas_bancarias cb JOIN contas_receber cr ON cr.id = cb.conta_receber_id
+         JOIN matriculas m ON m.id = cr.matricula_id WHERE m.turma_id = ?'
+    );
+    $stmt->execute([$turmaId]);
+    if ((int) $stmt->fetchColumn() > 0) {
+        return ['ok' => false, 'mensagem' => "Turma {$nome}: tem boleto/Pix gerado no banco e não pode ser excluída. Cancele as matrículas dos alunos (os boletos em aberto são baixados no banco) e depois mude a situação da turma para Cancelada."];
+    }
 
     $pdo->beginTransaction();
     try {
@@ -286,6 +296,7 @@ function excluirTurma(PDO $pdo, int $turmaId): array
         $stmt->execute([$turmaId]);
         $stmt = $pdo->prepare('DELETE FROM matriculas WHERE turma_id = ?');
         $stmt->execute([$turmaId]);
+        $pdo->prepare('DELETE FROM turma_modulos WHERE turma_id = ?')->execute([$turmaId]);
         $stmt = $pdo->prepare('DELETE FROM turmas WHERE id = ?');
         $stmt->execute([$turmaId]);
         $pdo->commit();

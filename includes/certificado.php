@@ -42,7 +42,8 @@ function marcadoresCertificado(): array
         '{modulo_carga_horaria}' => 'Carga horária do módulo',
         '{data_modulo}' => 'Data de conclusão do módulo',
         '{data_emissao}' => 'Data de emissão (por extenso)',
-        '{cidade}' => 'Cidade da empresa',
+        '{data_evento}' => 'Data do evento, informada ao liberar (por extenso; ex.: dia da aula)',
+        '{cidade}' => 'Cidade e estado da empresa (ex.: Candiba - BA)',
         '{empresa}' => 'Nome da instituição',
         '{codigo}' => 'Código de verificação',
         '{url_verificacao}' => 'Página de verificação (sem o código)',
@@ -289,7 +290,8 @@ function valoresCertificado(array $certificado, array $config): array
             : ($certificado['data_termino'] ? formatDate(date('Y-m-d', strtotime($certificado['data_termino'] . ' -1 day'))) : '-'),
         '{data_conclusao}' => $certificado['data_conclusao'] ? formatDate($certificado['data_conclusao']) : '-',
         '{data_emissao}' => dataPorExtenso($certificado['emitido_em']),
-        '{cidade}' => $config['empresa_cidade'] ?: '',
+        '{data_evento}' => !empty($certificado['data_evento']) ? dataPorExtenso($certificado['data_evento']) : '',
+        '{cidade}' => cidadeCertificado($config),
         '{empresa}' => $config['empresa_razao_social'] ?: ($config['nome_sistema'] ?? ''),
         '{codigo}' => $codigo,
         '{url_verificacao}' => urlVerificacaoCertificado($config),
@@ -305,7 +307,7 @@ function valoresExemploCertificado(array $config): array
         '{filiacao}' => 'filho de JOANA DA SILVA SOUZA e JOÃO PAULO SOUZA', '{nascimento}' => '26/10/1993',
         '{documento}' => 'Certificado de conclusão', '{modulo}' => 'Planejamento e escopo', '{modulo_carga_horaria}' => '60', '{data_modulo}' => '30/06/2026', '{curso}' => 'Gestão de Projetos',
         '{turma}' => '2026/1 - Noite', '{carga_horaria}' => '360', '{data_inicio}' => '02/03/2026', '{data_termino}' => '30/11/2026', '{data_conclusao}' => '30/11/2026',
-        '{data_emissao}' => dataPorExtenso(date('Y-m-d')), '{cidade}' => $config['empresa_cidade'] ?: 'São Paulo',
+        '{data_emissao}' => dataPorExtenso(date('Y-m-d')), '{data_evento}' => dataPorExtenso('2026-09-11'), '{cidade}' => cidadeCertificado($config) ?: 'São Paulo - SP',
         '{empresa}' => $config['empresa_razao_social'] ?: ($config['nome_sistema'] ?? 'Instituição'),
         '{codigo}' => 'ABCD-EFGH-JKLM', '{url_verificacao}' => urlVerificacaoCertificado($config),
         '{link_verificacao}' => linkVerificacaoCertificado($config, 'ABCD-EFGH-JKLM'),
@@ -443,4 +445,22 @@ function pdfDocumentoEmitido(int $documentoId, string $html): ?string
     }
     rename($saida, $arquivo);
     return $arquivo;
+}
+
+// Cidade da empresa para o documento: "Vitória da Conquista - BA" (só a
+// primeira letra de cada palavra maiúscula; de/da/do/dos/das/e minúsculos).
+function cidadeCertificado(array $config): string
+{
+    $cidade = trim(preg_replace('/\s+/u', ' ', (string) ($config['empresa_cidade'] ?? '')));
+    if ($cidade !== '') {
+        $palavras = explode(' ', mb_strtolower($cidade, 'UTF-8'));
+        foreach ($palavras as $i => $palavra) {
+            if ($i === 0 || !in_array($palavra, ['de', 'da', 'do', 'dos', 'das', 'e', "d'"], true)) {
+                $palavras[$i] = mb_convert_case($palavra, MB_CASE_TITLE, 'UTF-8');
+            }
+        }
+        $cidade = implode(' ', $palavras);
+    }
+    $uf = mb_strtoupper(trim((string) ($config['empresa_uf'] ?? '')), 'UTF-8');
+    return $cidade !== '' && $uf !== '' ? $cidade . ' - ' . $uf : $cidade;
 }

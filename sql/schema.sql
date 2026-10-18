@@ -187,6 +187,8 @@ CREATE TABLE configuracoes (
     portal_cadastro_aberto TINYINT(1) NOT NULL DEFAULT 1,
     portal_rodape_texto TEXT DEFAULT NULL,
     portal_rodape_contatos TINYINT(1) NOT NULL DEFAULT 1,
+    -- O que aparece no rodapé, item a item (ver itensRodapePortal()).
+    portal_rodape_itens VARCHAR(255) DEFAULT NULL,
     portal_redes TEXT DEFAULT NULL,
     -- Em branco: <endereço do sistema>/portal/verificar.php
     certificado_url_verificacao VARCHAR(255) DEFAULT NULL,
@@ -967,6 +969,8 @@ CREATE TABLE certificados (
     id INT AUTO_INCREMENT PRIMARY KEY,
     matricula_id INT NOT NULL,
     curso_emissao_id INT DEFAULT NULL,
+    -- Data informada ao liberar (ex.: dia da aula numa declaração): {data_evento}.
+    data_evento DATE DEFAULT NULL,
     codigo CHAR(12) NOT NULL UNIQUE,
     liberado TINYINT(1) NOT NULL DEFAULT 1,
     liberado_em DATETIME DEFAULT NULL,

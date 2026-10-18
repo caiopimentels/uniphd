@@ -133,6 +133,28 @@ const DIAS_BOLETO_PARCELA_VENCIDA = 2;
  * dias de atraso (percentual diário, mensal ÷ 30 ou anual ÷ 360).
  * Retorna ['dias' => int, 'multa' => float, 'juros' => float, 'total' => float].
  */
+// Juros por dia (%) da conta; 0 = sem juros.
+function taxaJurosDiaConta(array $conta): float
+{
+    return match ($conta['juros_tipo'] ?? '05') {
+        '91' => (float) $conta['juros_percentual'],
+        '90' => (float) $conta['juros_percentual'] / 30,
+        '92' => (float) $conta['juros_percentual'] / 360,
+        default => 0.0,
+    };
+}
+
+/**
+ * O Itaú recusa boleto cujo juros de um dia daria menos de R$ 0,01
+ * ("Valor solicitado resultará em juros menor que R$0.01"). Retorna o
+ * menor valor de boleto com os juros da conta (0 = conta sem juros).
+ */
+function valorMinimoBoletoComJuros(array $conta): float
+{
+    $taxa = taxaJurosDiaConta($conta);
+    return $taxa > 0 ? ceil(0.01 / ($taxa / 100) * 100) / 100 : 0.0;
+}
+
 function encargosAtrasoParcela(array $conta, float $valor, string $vencimento, ?string $hoje = null): array
 {
     $hoje ??= date('Y-m-d');
@@ -283,11 +305,15 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
         }
     }
 
+    // Taxa de matrícula não tem juros por atraso (a multa, se houver, vale).
+    $contaJuros = $conta && (int) $parcela['categoria_id'] === (int) categoriaSistemaId($pdo, 'taxa_matricula')
+        ? ['juros_tipo' => '05', 'juros_percentual' => 0] + $conta : $conta;
+
     // ---- parcela vencida: multa + juros do atraso já entram no valor; ao
     // banco vai só o juros (continua correndo depois do novo vencimento) e a
     // multa isenta — ela já foi cobrada uma vez, aqui.
     if ($vencida && $conta) {
-        $encargos = encargosAtrasoParcela($conta, (float) $parcela['valor'], $parcela['vencimento_original']);
+        $encargos = encargosAtrasoParcela($contaJuros, (float) $parcela['valor'], $parcela['vencimento_original']);
         if ($encargos['total'] > 0) {
             $parcela['encargos'] = $encargos;
             $parcela['valor'] = round((float) $parcela['valor'] + $encargos['total'], 2);
@@ -300,8 +326,14 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
     $valor = number_format((float) $parcela['valor'], 2, '.', '');
     $diaSeguinte = date('Y-m-d', strtotime($parcela['data_vencimento'] . ' +1 day'));
 
-    $juros = ['codigo_tipo_juros' => $conta['juros_tipo'] ?? '05'];
-    if (($conta['juros_tipo'] ?? '05') !== '05') {
+    $juros = ['codigo_tipo_juros' => $contaJuros['juros_tipo'] ?? '05'];
+    // Valor pequeno demais para os juros da conta: o banco recusaria, então
+    // este boleto sai sem juros (a multa, se houver, continua).
+    if ($juros['codigo_tipo_juros'] !== '05' && (float) $valor < valorMinimoBoletoComJuros($conta)) {
+        $avisos[] = 'Valor abaixo de ' . formatMoney(valorMinimoBoletoComJuros($conta)) . ': com os juros desta conta, o juro de um dia daria menos de R$ 0,01, que o Itaú não aceita — este boleto sai sem juros por atraso.';
+        $juros = ['codigo_tipo_juros' => '05'];
+    }
+    if ($juros['codigo_tipo_juros'] !== '05') {
         $juros['percentual_juros'] = number_format((float) $conta['juros_percentual'], 5, '.', '');
         $juros['data_juros'] = $diaSeguinte;
     }
@@ -1313,7 +1345,12 @@ function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
         return ['ok' => true, 'mensagem' => '', 'havia_boleto' => false, 'reemitir' => false, 'aceito' => $aceito];
     }
 
-    if (blocoDescontoItau(descontoPontualidadeParcela($pdo, $antes)) !== blocoDescontoItau(descontoPontualidadeParcela($pdo, $depois))) {
+    // Desconto mudou, ou o valor novo ficou pequeno demais para os juros do
+    // boleto (o Itaú recusa a alteração): baixa e emite um boleto novo.
+    $semJurosTaxa = (int) ($antes['categoria_id'] ?? 0) === (int) categoriaSistemaId($pdo, 'taxa_matricula'); // taxa de matrícula: boleto sem juros
+    $minimoJuros = $cobranca['conta'] && !$semJurosTaxa ? valorMinimoBoletoComJuros($cobranca['conta']) : 0.0;
+    $valorAbaixoJuros = $minimoJuros > 0 && round((float) $antes['valor'], 2) !== round((float) $depois['valor'], 2) && (float) $depois['valor'] < $minimoJuros;
+    if ($valorAbaixoJuros || blocoDescontoItau(descontoPontualidadeParcela($pdo, $antes)) !== blocoDescontoItau(descontoPontualidadeParcela($pdo, $depois))) {
         $baixa = baixarBoletoBancoItau($pdo, (int) $antes['id']);
         if (!$baixa['ok']) {
             return ['ok' => false, 'havia_boleto' => true, 'reemitir' => false, 'aceito' => $aceito, 'mensagem' => $baixa['mensagem']];

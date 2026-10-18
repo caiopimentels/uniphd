@@ -356,18 +356,6 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <label class="form-label">Data da matrícula</label>
                 <input type="date" name="data_matricula" class="form-control" value="<?= e($dados['data_matricula']) ?>">
             </div>
-            <?php foreach (['forma_pagamento_id' => 'Matrícula paga com', 'forma_mensalidade_id' => 'Mensalidades pagas com'] as $campoForma => $rotuloForma): ?>
-            <div class="col-md-6">
-                <label class="form-label"><?= $rotuloForma ?></label>
-                <select name="<?= $campoForma ?>" id="<?= $campoForma ?>" class="form-select">
-                    <option value="">-</option>
-                    <?php foreach ($formasPagamento as $f): ?>
-                        <option value="<?= (int) $f['id'] ?>" <?= $dados[$campoForma] === (int) $f['id'] ? 'selected' : '' ?>><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            <?php endforeach; ?>
-            <div class="col-12"><div class="form-text mt-0">Vêm da turma; mude aqui se este aluno paga diferente. Depois, cada parcela pode mudar em Contas a receber (inclusive reparcelar).</div></div>
             <div class="col-12">
                 <label class="form-label">Observação</label>
                 <input type="text" name="observacao" class="form-control" maxlength="255" value="<?= e($dados['observacao']) ?>">
@@ -378,6 +366,24 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-cash-coin"></i> Condições financeiras</div>
         <div class="row g-3">
+            <div class="col-12"><div class="fw-semibold">Matrícula</div></div>
+            <div class="col-md-4">
+                <label class="form-label">Taxa de matrícula</label>
+                <input type="text" name="taxa_matricula" id="taxa_matricula" class="form-control"
+                       value="<?= e(number_format((float) $dados['taxa_matricula'], 2, ',', '')) ?>" oninput="atualizarPrevia()">
+                <div class="form-text">0 = sem taxa. Vence na data da matrícula.</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Matrícula paga com</label>
+                <select name="forma_pagamento_id" id="forma_pagamento_id" class="form-select">
+                    <option value="">-</option>
+                    <?php foreach ($formasPagamento as $f): ?>
+                        <option value="<?= (int) $f['id'] ?>" <?= $dados['forma_pagamento_id'] === (int) $f['id'] ? 'selected' : '' ?>><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="col-12"><hr class="my-1"><div class="fw-semibold">Curso (mensalidades)</div></div>
             <div class="col-md-4">
                 <label class="form-label">Valor do curso</label>
                 <input type="text" id="mensalidade_turma" class="form-control" disabled value="-">
@@ -389,10 +395,13 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <div class="form-text">Seu limite: <?= formatPercent($descontoMax) ?></div>
             </div>
             <div class="col-md-4">
-                <label class="form-label">Taxa de matrícula</label>
-                <input type="text" name="taxa_matricula" id="taxa_matricula" class="form-control"
-                       value="<?= e(number_format((float) $dados['taxa_matricula'], 2, ',', '')) ?>" oninput="atualizarPrevia()">
-                <div class="form-text">0 = sem taxa. Vence na data da matrícula.</div>
+                <label class="form-label">Mensalidades pagas com</label>
+                <select name="forma_mensalidade_id" id="forma_mensalidade_id" class="form-select">
+                    <option value="">-</option>
+                    <?php foreach ($formasPagamento as $f): ?>
+                        <option value="<?= (int) $f['id'] ?>" <?= $dados['forma_mensalidade_id'] === (int) $f['id'] ? 'selected' : '' ?>><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option>
+                    <?php endforeach; ?>
+                </select>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Nº de mensalidades *</label>
@@ -406,6 +415,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                        value="<?= e($dados['primeiro_vencimento']) ?>" oninput="atualizarPrevia()">
                 <div class="form-text">As demais vencem no mesmo dia, mês a mês.</div>
             </div>
+            <div class="col-12"><div class="form-text mt-0">Valores e formas de pagamento vêm da turma; mude aqui se este aluno paga diferente. Depois, cada parcela pode mudar em Contas a receber (inclusive reparcelar).</div></div>
         </div>
     </div>
 

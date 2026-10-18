@@ -138,11 +138,11 @@ if ($mudancasHistorico) {
 // parcela já salva (valor, vencimento e desconto novos).
 if ($reemitir) {
     $novo = registrarCobrancaItau($pdo, $id, usuarioAtualId());
-    registrarAtividade('contas_receber', 'edicao', 'Boleto reemitido por mudança de desconto: ' . $descricao . ($novo['ok'] ? '' : ' (falhou: ' . $novo['mensagem'] . ')'));
+    registrarAtividade('contas_receber', 'edicao', 'Boleto reemitido (mudança de desconto ou valor): ' . $descricao . ($novo['ok'] ? '' : ' (falhou: ' . $novo['mensagem'] . ')'));
     $textoAprovacao = str_starts_with($avisoBanco, 'ok:') ? ' ' . substr($avisoBanco, 3) : '';
     flash($novo['ok'] && $textoAprovacao === '' ? 'success' : 'warning', 'Parcela atualizada' . ($mudancas ? ': ' . implode('; ', $mudancas) : '') . '. '
         . ($novo['ok']
-            ? 'Como o desconto mudou, o boleto antigo foi baixado e um novo foi emitido — o boleto e o Pix enviados antes ao aluno não valem mais; mande o novo.'
+            ? 'Para essa mudança, o boleto antigo foi baixado e um novo foi emitido — o boleto e o Pix enviados antes ao aluno não valem mais; mande o novo.'
             : 'O boleto antigo foi baixado, mas o novo não foi emitido: ' . $novo['mensagem'] . ' Clique no ícone do boleto para tentar de novo.')
         . $textoAprovacao);
     redirect($voltar);

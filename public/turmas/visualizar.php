@@ -152,6 +152,11 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute([$id]);
 $temPagamento = (int) $stmt->fetchColumn() > 0;
+$stmt = $pdo->prepare(
+    'SELECT COUNT(*) FROM cobrancas_bancarias cb JOIN contas_receber cr ON cr.id = cb.conta_receber_id JOIN matriculas m ON m.id = cr.matricula_id WHERE m.turma_id = ?'
+);
+$stmt->execute([$id]);
+$temBoletoBanco = (int) $stmt->fetchColumn() > 0;
 
 $pageTitle = e($turma['nome']);
 $pageBreadcrumb = 'Acadêmico · Turmas · ' . $turma['curso_nome'];
@@ -204,12 +209,17 @@ $situacoesPermitidas = array_values(array_filter($situacoes, function ($sit) use
 <?php if (usuarioPodeExcluirTurma()): ?>
 <?php
     // Com pagamento a exclusão é barrada no servidor; aqui só avisa antes.
-    $mensagemExclusao = $temPagamento
-        ? 'Esta turma já tem mensalidade paga e não pode ser excluída. Use uma situação de cancelada ou concluída.'
-        : 'Excluir a turma ' . $turma['nome'] . '?' . ($matriculas ? ' As ' . count($matriculas) . ' matrícula(s) e as parcelas em aberto dela também serão apagadas.' : '') . ' Esta ação não pode ser desfeita.';
+    $naoExclui = $temPagamento || $temBoletoBanco;
+    if ($temPagamento) {
+        $mensagemExclusao = 'Esta turma já tem mensalidade paga e não pode ser excluída. Use uma situação de cancelada ou concluída.';
+    } elseif ($temBoletoBanco) {
+        $mensagemExclusao = 'Esta turma tem boleto/Pix gerado no banco e não pode ser excluída. Cancele as matrículas dos alunos (os boletos em aberto são baixados no banco) e depois mude a situação da turma para Cancelada.';
+    } else {
+        $mensagemExclusao = 'Excluir a turma ' . $turma['nome'] . '?' . ($matriculas ? ' As ' . count($matriculas) . ' matrícula(s) e as parcelas em aberto dela também serão apagadas.' : '') . ' Esta ação não pode ser desfeita.';
+    }
 ?>
 <form action="/turmas/excluir.php" method="post" class="d-inline"
-      onsubmit="<?= $temPagamento ? 'alert(' . e(json_encode($mensagemExclusao)) . '); return false;' : 'return confirm(' . e(json_encode($mensagemExclusao)) . ');' ?>">
+      onsubmit="<?= $naoExclui ? 'alert(' . e(json_encode($mensagemExclusao)) . '); return false;' : 'return confirm(' . e(json_encode($mensagemExclusao)) . ');' ?>">
     <input type="hidden" name="ids[]" value="<?= (int) $id ?>">
     <input type="hidden" name="voltar" value="/turmas/visualizar.php?id=<?= (int) $id ?>">
     <button type="submit" class="btn btn-outline-danger"><i class="bi bi-trash"></i> Excluir</button>
@@ -410,6 +420,9 @@ require __DIR__ . '/../../includes/layout_header.php';
             <div class="typeahead-lista d-none" id="documento-lista"></div>
         </div>
         <input type="hidden" name="documento" id="documento-escolhido">
+        <label class="small text-muted d-none align-items-center gap-1" id="campo-data-evento" title="Preenche o marcador {data_evento} do documento (ex.: o dia da aula)">
+            Data do evento <input type="date" name="data_evento" class="form-control form-control-sm" style="width: 150px;">
+        </label>
         <button type="submit" name="liberado" value="1" class="btn btn-sm btn-success"><i class="bi bi-unlock"></i> Liberar</button>
         <button type="submit" name="liberado" value="0" class="btn btn-sm btn-outline-secondary"><i class="bi bi-lock"></i> Bloquear</button>
         <?php if ($podeForcarDocumento): ?>
@@ -669,6 +682,13 @@ if (document.getElementById('documento-busca')) {
         titulo: (o) => o.nome,
         detalhe: (o) => o.detalhe,
         vazio: 'Nenhum documento com esse nome. Os modelos ficam em Acadêmico › Documentos.',
+        // Documento avulso: pede a data do evento ({data_evento}).
+        aoEscolher: (id) => {
+            const campo = document.getElementById('campo-data-evento');
+            const avulso = String(id || document.getElementById('documento-escolhido').value).startsWith('m:');
+            campo.classList.toggle('d-none', !avulso);
+            campo.classList.toggle('d-flex', avulso);
+        },
     });
 }
 

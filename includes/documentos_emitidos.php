@@ -158,7 +158,7 @@ function gerarCodigoDocumento(PDO $pdo): string
  * precisa estar disponível (módulo/curso concluído), também salvo com $forcar.
  * Retorna ['ok' => bool, 'mensagem' => string].
  */
-function definirLiberacaoDocumento(PDO $pdo, int $matriculaId, int $emissaoId, bool $liberar, bool $forcar = false, ?string $quem = null): array
+function definirLiberacaoDocumento(PDO $pdo, int $matriculaId, int $emissaoId, bool $liberar, bool $forcar = false, ?string $quem = null, ?string $dataEvento = null): array
 {
     $matricula = matriculaParaDocumentos($pdo, $matriculaId);
     $documento = null;
@@ -183,12 +183,13 @@ function definirLiberacaoDocumento(PDO $pdo, int $matriculaId, int $emissaoId, b
             return ['ok' => false, 'mensagem' => $aluno . ': ' . implode(' · ', $bloqueios) . '.'];
         }
     }
+    // Data do evento ({data_evento}): só muda quando informada.
     if ($documento['emitido']) {
-        $pdo->prepare('UPDATE certificados SET liberado = ?, liberado_em = NOW(), liberado_por = ? WHERE id = ?')
-            ->execute([$liberar ? 1 : 0, $quem, $documento['emitido']['id']]);
+        $pdo->prepare('UPDATE certificados SET liberado = ?, liberado_em = NOW(), liberado_por = ?, data_evento = COALESCE(?, data_evento) WHERE id = ?')
+            ->execute([$liberar ? 1 : 0, $quem, $dataEvento, $documento['emitido']['id']]);
     } else {
-        $pdo->prepare('INSERT INTO certificados (matricula_id, curso_emissao_id, codigo, liberado, liberado_em, liberado_por) VALUES (?, ?, ?, ?, NOW(), ?)')
-            ->execute([$matriculaId, $emissaoId, gerarCodigoDocumento($pdo), $liberar ? 1 : 0, $quem]);
+        $pdo->prepare('INSERT INTO certificados (matricula_id, curso_emissao_id, data_evento, codigo, liberado, liberado_em, liberado_por) VALUES (?, ?, ?, ?, ?, NOW(), ?)')
+            ->execute([$matriculaId, $emissaoId, $dataEvento, gerarCodigoDocumento($pdo), $liberar ? 1 : 0, $quem]);
     }
     registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'documento', ($liberar ? 'Liberado' : 'Bloqueado') . ': "' . $documento['nome'] . '" — ' . $matricula['curso_nome']
         . ($liberar && $forcar ? ' (liberado mesmo com pendência)' : ''), $matriculaId);

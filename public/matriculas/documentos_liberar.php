@@ -30,6 +30,8 @@ if (preg_match('/^e:(\d+)$/', $escolhido, $m)) {
 }
 $liberar = !empty($_POST['liberado']);
 $forcar = $liberar && !empty($_POST['forcar']) && usuarioEhAdmin();
+// Data do evento (opcional; ex.: o dia da aula numa declaração de presença).
+$dataEvento = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_POST['data_evento'] ?? '')) && strtotime($_POST['data_evento']) ? $_POST['data_evento'] : null;
 if (!$ids || !$emissaoId) {
     flash('warning', 'Marque pelo menos um aluno e escolha o documento.');
     redirect($voltar);
@@ -38,7 +40,7 @@ if (!$ids || !$emissaoId) {
 $feitos = [];
 $recusados = [];
 foreach ($ids as $matriculaId) {
-    $r = definirLiberacaoDocumento($pdo, $matriculaId, $emissaoId, $liberar, $forcar);
+    $r = definirLiberacaoDocumento($pdo, $matriculaId, $emissaoId, $liberar, $forcar, null, $dataEvento);
     if ($r['ok']) {
         $feitos[] = $r['mensagem'];
     } else {

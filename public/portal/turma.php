@@ -63,7 +63,7 @@ require __DIR__ . '/../../includes/portal_header.php';
 
         <div class="portal-card">
             <div class="row g-3">
-                <div class="col-6"><div class="small text-muted">Início</div><div class="fw-semibold"><?= $turma['data_inicio'] ? formatDate($turma['data_inicio']) : 'A definir' ?></div><?php if (!$turma['data_inicio'] && $turma['minimo_alunos']): ?><div class="small text-muted">A turma começa ao fechar <?= (int) $turma['minimo_alunos'] ?> alunos</div><?php endif; ?></div>
+                <div class="col-6"><div class="small text-muted">Início</div><div class="fw-semibold"><?= $turma['data_inicio'] ? formatDate($turma['data_inicio']) : 'A definir' ?></div><?php if (!$turma['data_inicio'] && $turma['minimo_alunos']): ?><div class="small text-muted"></div><?php endif; ?></div>
                 <div class="col-6"><div class="small text-muted">Duração</div><div class="fw-semibold"><?= e(textoDuracaoTurma($turma)) ?></div></div>
                 <?php if ($agenda = textoAgendaTurma($turma)): ?><div class="col-6"><div class="small text-muted">Dias e horário</div><div class="fw-semibold"><?= e($agenda) ?></div></div><?php endif; ?>
                 <?php if ($turma['local']): ?><div class="col-6"><div class="small text-muted">Local</div><div class="fw-semibold"><?= e($turma['local']) ?></div></div><?php endif; ?>
