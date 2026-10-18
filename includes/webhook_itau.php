@@ -200,6 +200,30 @@ function cadastrarWebhookItau(PDO $pdo, array $conta, array $urls, float $valorM
     ]];
 
     $resultado = chamarApiNotificacoesItau($pdo, $conta, 'POST', '/notificacoes_boletos', $corpo);
+
+    // Já cadastrado (ex.: com o endereço antigo do sistema): o Itaú não
+    // atualiza — apaga os cadastros destes tipos e cadastra de novo.
+    if (!$resultado['ok'] && $resultado['status'] === 422 && str_contains(mb_strtolower($resultado['mensagem'], 'UTF-8'), 'já cadastrad')) {
+        $existentes = listarWebhooksItau($pdo, $conta);
+        $doTipo = array_filter($existentes['cadastros'], fn ($c) => in_array($c['tipo_notificacao'] ?? '', ITAU_TIPOS_NOTIFICACAO, true));
+        $jaIgual = $doTipo && !array_filter($doTipo, fn ($c) => ($c['webhook_url'] ?? '') !== $urls['webhook'] || ($c['webhook_oauth_url'] ?? $urls['token']) !== $urls['token']);
+        if ($jaIgual) {
+            $pdo->prepare('UPDATE contas_bancarias SET webhook_cadastrado_em = NOW() WHERE id = ?')->execute([$conta['id']]);
+            return ['ok' => true, 'status' => 200, 'mensagem' => 'O Itaú já estava avisando neste endereço.', 'resposta' => $existentes['resposta']];
+        }
+        $antigos = [];
+        foreach ($doTipo as $c) {
+            $exclusao = excluirWebhookItau($pdo, $conta, (string) ($c['id_notificacao_boleto'] ?? ''));
+            if (!$exclusao['ok']) {
+                return ['ok' => false, 'status' => $exclusao['status'], 'mensagem' => 'Para trocar o endereço, o cadastro antigo (' . ($c['webhook_url'] ?? '') . ') precisa sair, mas o Itaú não deixou: ' . $exclusao['mensagem'], 'resposta' => $exclusao['resposta']];
+            }
+            $antigos[] = $c['webhook_url'] ?? '';
+        }
+        $resultado = chamarApiNotificacoesItau($pdo, $conta, 'POST', '/notificacoes_boletos', $corpo);
+        $resultado['mensagem'] = $resultado['ok']
+            ? 'Endereço do aviso trocado no Itaú' . ($antigos ? ' (antes: ' . implode(', ', array_unique($antigos)) . ')' : '') . '.'
+            : 'O cadastro antigo saiu, mas o novo não entrou — clique em "Cadastrar no Itaú" de novo: ' . $resultado['mensagem'];
+    }
     if ($resultado['ok']) {
         $pdo->prepare('UPDATE contas_bancarias SET webhook_cadastrado_em = NOW() WHERE id = ?')->execute([$conta['id']]);
     }

@@ -37,7 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $resultado = cadastrarWebhookItau($pdo, $conta, $urls, max(0.01, decimalInput('valor_minimo', 0.01)));
             registrarAtividade('configuracoes', 'edicao', 'Cadastro do webhook no Itaú (' . $conta['apelido'] . '): ' . ($resultado['ok'] ? 'sucesso' : 'falha'));
-            flash($resultado['ok'] ? 'success' : 'danger', $resultado['ok'] ? 'Webhook cadastrado no Itaú.' : $resultado['mensagem']);
+            flash($resultado['ok'] ? 'success' : 'danger', $resultado['ok'] ? 'Webhook cadastrado no Itaú. ' . (str_starts_with($resultado['mensagem'], 'O banco aceitou') ? '' : $resultado['mensagem']) : $resultado['mensagem']);
         }
     } elseif ($acao === 'excluir') {
         $resultado = excluirWebhookItau($pdo, $conta, input('id_notificacao'));
