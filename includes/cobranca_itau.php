@@ -451,7 +451,18 @@ function adaptarCorpoCobrancaV2Itau(array $payload): array
         $payload['etapa_processo_boleto'] = 'validacao';
     }
     $payload['dado_boleto']['desconto_expresso'] = false;
-    if (($payload['dado_boleto']['desconto']['codigo_tipo_desconto'] ?? '00') === '00' || empty($payload['dado_boleto']['desconto']['descontos'])) {
+    return numerosNoFormatoItau($payload);
+}
+
+/**
+ * Valores e percentuais só com números, como a Cobrança v2 e o Boleto com
+ * Pix validam: valor_* em 17 dígitos com 2 casas (R$ 0,50 =
+ * "00000000000000050"), percentual_* em 12 dígitos com 5 casas (1% =
+ * "000000100000"). Sem desconto, o bloco "desconto" não vai.
+ */
+function numerosNoFormatoItau(array $payload): array
+{
+    if (isset($payload['dado_boleto']) && (($payload['dado_boleto']['desconto']['codigo_tipo_desconto'] ?? '00') === '00' || empty($payload['dado_boleto']['desconto']['descontos']))) {
         unset($payload['dado_boleto']['desconto']);
     }
     $valores = function ($dados) use (&$valores) {
@@ -991,6 +1002,8 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
         $baseApi = ITAU_URL_BOLETO_PIX_PRODUCAO;
         $endpoint = ITAU_ENDPOINT_BOLETO_PIX;
         $v2 = false;
+        // O Boleto com Pix também só aceita números nos valores.
+        $payload = numerosNoFormatoItau($payload);
     }
     $corpos = [$payload];
     if ($v2) {
