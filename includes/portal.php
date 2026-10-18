@@ -136,9 +136,25 @@ function validarSenhaNovaAluno(string $senha, string $confirmacao): ?string
 
 function urlAbsoluta(string $caminho): string
 {
+    // Páginas do portal vão no endereço próprio dele, se configurado
+    // (Portal do aluno › Menu e rodapé) — links de e-mail, QR Code etc.
+    if (str_starts_with($caminho, '/portal') && ($base = urlPortalConfigurada())) {
+        return $base . $caminho;
+    }
     $https = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'
         || strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
     return ($https ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost') . $caminho;
+}
+
+// Endereço próprio do portal (sem barra no fim) ou null.
+function urlPortalConfigurada(): ?string
+{
+    try {
+        $url = trim((string) (buscarConfiguracoes(getDB())['portal_url'] ?? ''));
+    } catch (Throwable $e) {
+        return null;
+    }
+    return preg_match('#^https?://[^/\s]+#i', $url) ? rtrim($url, '/') : null;
 }
 
 /**

@@ -26,7 +26,6 @@ function instrumentosCobranca(): array
         'manual' => 'Manual (só registra a baixa)',
         'boleto' => 'Boleto',
         'boleto_pix' => 'Boleto + Pix (QR Code no boleto)',
-        'pix' => 'Pix',
     ];
 }
 
@@ -412,6 +411,17 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
 // Caminho do registro de boleto com Pix (bolecode), somado à URL base da
 // API cadastrada na conta.
 const ITAU_ENDPOINT_BOLETO_PIX = '/boletos-pix';
+
+// API Boleto com Pix (bolecode) em produção. A Cobrança v2 (cash_management)
+// registra só o boleto — o QR Code do Pix vem desta outra API, que pede as
+// permissões cob.write/cobv.write na aplicação do Itaú.
+const ITAU_URL_BOLETO_PIX_PRODUCAO = 'https://pix-pj.api.itau.com/recebimentos-pix/v1';
+
+// A aplicação tem a permissão do Boleto com Pix? (pelos escopos do token)
+function tokenPermiteBoletoPixItau(?array $token): bool
+{
+    return str_contains((string) ($token['escopos'] ?? ''), 'cobv.write');
+}
 
 // API de Cobrança v2 do Itaú (cash_management): registra boleto e bolecode
 // em <base>/boletos. A URL base da conta diz qual API a aplicação usa.
@@ -968,9 +978,22 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
     //    POST <base>/boletos, corpo dentro de "data" com codigo_canal_operacao;
     //  - Boleto com Pix (recebimentos-pix, escopos cob.write/cobv.write):
     //    POST <base>/boletos-pix, corpo solto.
+    $baseApi = rtrim($conta['api_url_base'], '/');
     $endpoint = endpointBoletoItau($conta);
+    $v2 = ehApiCobrancaV2Itau($conta);
+    // Boleto + Pix numa conta da Cobrança v2: se a aplicação já tem a
+    // permissão do Boleto com Pix, vai para a API dele (que devolve o QR
+    // Code); senão segue na v2, que registra só o boleto.
+    $tokenInicial = $v2 ? obterTokenItau($pdo, $conta) : null;
+    $querPix = ($payload['dado_boleto']['descricao_instrumento_cobranca'] ?? '') === 'boleto_pix';
+    $semPermissaoPix = $v2 && $querPix && !tokenPermiteBoletoPixItau($tokenInicial);
+    if ($v2 && $querPix && $conta['api_ambiente'] === 'producao' && tokenPermiteBoletoPixItau($tokenInicial)) {
+        $baseApi = ITAU_URL_BOLETO_PIX_PRODUCAO;
+        $endpoint = ITAU_ENDPOINT_BOLETO_PIX;
+        $v2 = false;
+    }
     $corpos = [$payload];
-    if (ehApiCobrancaV2Itau($conta)) {
+    if ($v2) {
         $comCanal = ['codigo_canal_operacao' => 'API'] + adaptarCorpoCobrancaV2Itau($payload);
         // Se o banco não entender o envelope (400 de corpo/parse), tenta uma
         // vez sem ele — com 400 nada foi registrado, repetir não duplica.
@@ -987,7 +1010,7 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
                 return $falha('Não foi possível obter o token: ' . $token['mensagem']);
             }
 
-            $curl = curl_init(rtrim($conta['api_url_base'], '/') . $endpoint);
+            $curl = curl_init($baseApi . $endpoint);
             // Guarda os cabeçalhos da resposta: quando o portão do Itaú (AWS)
             // recusa, o motivo vem em x-amzn-ErrorType, não no corpo.
             $cabecalhosResposta = [];
@@ -1023,7 +1046,7 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
             curl_close($curl);
             $etapa = $corpo['data']['etapa_processo_boleto'] ?? $corpo['etapa_processo_boleto'] ?? '';
             registrarChamadaBanco($pdo, $conta, in_array($etapa, ['validacao', 'simulacao'], true) ? 'validacao_boleto' : 'registro_boleto', 'POST',
-                rtrim($conta['api_url_base'], '/') . $endpoint, $corpo, $resposta === false ? null : $status, $resposta === false ? null : $resposta,
+                $baseApi . $endpoint, $corpo, $resposta === false ? null : $status, $resposta === false ? null : $resposta,
                 $correlacao, (int) ((microtime(true) - $inicio) * 1000), $resposta === false ? 'Falha de conexão: ' . $erroCurl : '');
 
             if ($resposta === false) {
@@ -1054,7 +1077,7 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
         ]);
         $mensagem .= ' — ' . implode(' · ', $detalhes);
         if ($status === 403) {
-            $mensagem .= ehApiCobrancaV2Itau($conta)
+            $mensagem .= $v2
                 ? '. A aplicação entrou, mas não tem acesso a esta API: a Cobrança v2 pede a permissão cash_management/emissaocobranca.write.'
                 : '. A aplicação entrou, mas não tem acesso a esta API: o Boleto com Pix (recebimentos-pix) pede as permissões cob.write e cobv.write.'
                     . (str_contains((string) ($token['escopos'] ?? ''), 'cash_management/emissaocobranca.write')
@@ -1067,6 +1090,9 @@ function enviarBoletoPixItau(PDO $pdo, array $conta, array $payload): array
         'mensagem' => $mensagem,
         'requisicao' => $payload,
         'resposta' => $json ?? mb_substr(trim(strip_tags((string) $resposta)), 0, 500),
+        // Pediu boleto + Pix, mas a aplicação não tem a permissão do Pix:
+        // o banco registra só o boleto.
+        'sem_permissao_pix' => $semPermissaoPix,
     ];
 }
 
@@ -1153,6 +1179,24 @@ function dadosBoletoParcela(PDO $pdo, int $contaReceberId): ?array
 
     $pix = $cobranca && pixCopiaEColaValido($cobranca['pix_copia_cola']) ? $cobranca['pix_copia_cola'] : null;
 
+    // Juros e multa que valem neste boleto: os que foram ao banco no registro
+    // (ou, na prévia, os que iriam) — não a configuração geral da conta
+    // (taxa de matrícula e boleto de valor pequeno vão sem juros).
+    $enviado = $cobranca ? json_decode((string) $cobranca['payload'], true) : $previa['payload'];
+    $achar = function ($dados, string $chave) use (&$achar) {
+        foreach ((array) $dados as $k => $v) {
+            if ($k === $chave) {
+                return $v;
+            }
+            if (is_array($v) && ($r = $achar($v, $chave)) !== null) {
+                return $r;
+            }
+        }
+        return null;
+    };
+    $jurosBoleto = $achar($enviado, 'juros');
+    $multaBoleto = $achar($enviado, 'multa');
+
     return [
         'parcela' => $parcela,
         'aluno' => $previa['aluno'],
@@ -1166,6 +1210,8 @@ function dadosBoletoParcela(PDO $pdo, int $contaReceberId): ?array
         'nosso_numero' => $calculo['nosso_numero_formatado'] ?? null,
         'agencia_codigo' => $calculo['agencia_codigo'] ?? null,
         'pix_copia_cola' => $pix,
+        'juros' => is_array($jurosBoleto) ? $jurosBoleto : null,
+        'multa' => is_array($multaBoleto) ? $multaBoleto : null,
         // Desconto com o prazo já passado não vale mais: nem aparece.
         // (calculado pelo vencimento original da parcela, não pelo do boleto).
         'desconto' => ($descontoParcela = descontoPontualidadeParcela($pdo, array_merge($parcela, ['data_vencimento' => $parcela['vencimento_original'] ?? $parcela['data_vencimento']])))
@@ -1550,7 +1596,12 @@ function registrarCobrancaItau(PDO $pdo, int $contaReceberId, ?int $usuarioId, ?
     return [
         'ok' => true,
         'mensagem' => 'Boleto registrado no Itaú (nosso número ' . formatarNossoNumeroItau($nossoNumero) . ').'
-            . (!$linhaDigitavel || ($previa['instrumento'] === 'boleto_pix' && !$pix) ? ' Atenção: a resposta não trouxe ' . (!$linhaDigitavel ? 'a linha digitável' : 'o Pix') . ' — confira a resposta salva.' : ''),
+            . (!$linhaDigitavel ? ' Atenção: a resposta não trouxe a linha digitável — confira a resposta salva.'
+                : ($previa['instrumento'] === 'boleto_pix' && !$pix
+                    ? (!empty($envio['sem_permissao_pix'])
+                        ? ' Saiu só o boleto, sem Pix: a aplicação do Itaú ainda não tem a permissão do Boleto com Pix (cob.write/cobv.write) — peça a liberação ao banco.'
+                        : ' Atenção: o banco não devolveu o Pix — confira a resposta salva.')
+                    : '')),
         'cobranca_id' => $cobrancaId,
     ];
 }

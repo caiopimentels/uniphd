@@ -1,5 +1,9 @@
 <?php
 require_once __DIR__ . '/../includes/bootstrap.php';
+// Raiz do domínio próprio do portal (ex.: portal.uniphd.com.br): vai ao portal.
+if (($urlPortal = urlPortalConfigurada()) && strcasecmp((string) parse_url($urlPortal, PHP_URL_HOST), preg_replace('/:\d+$/', '', (string) ($_SERVER['HTTP_HOST'] ?? ''))) === 0) {
+    redirect('/portal/');
+}
 exigirLogin();
 exigirDashboard();
 

@@ -53,7 +53,7 @@
                         <select name="forma_pagamento_id" id="ep-forma" class="form-select">
                             <option value="">-</option>
                             <?php foreach (getDB()->query("SELECT id, nome, instrumento FROM formas_pagamento WHERE ativo = 1 ORDER BY instrumento = 'manual', nome")->fetchAll() as $formaEp): ?>
-                                <option value="<?= (int) $formaEp['id'] ?>" data-online="<?= $formaEp['instrumento'] === 'manual' ? 0 : 1 ?>"><?= e($formaEp['nome']) ?><?= $formaEp['instrumento'] === 'manual' ? ' (na secretaria)' : '' ?></option>
+                                <option value="<?= (int) $formaEp['id'] ?>" data-online="<?= $formaEp['instrumento'] === 'manual' ? 0 : 1 ?>"><?= e(rotuloFormaPagamento($formaEp)) ?></option>
                             <?php endforeach; ?>
                         </select>
                         <div class="form-text" id="ep-forma-aviso"></div>

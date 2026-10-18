@@ -51,7 +51,7 @@ $informacoes = [
     ['Vencidas', count($vencidasLista) . ' · ' . formatMoney(array_sum(array_column($vencidasLista, 'valor'))), $vencidasLista ? 'estoque-baixo' : ''],
     ['Recebidas', count($pagasLista) . ' · ' . formatMoney(array_sum(array_map(fn ($c) => (float) ($c['valor_recebido'] ?? $c['valor']), $pagasLista))), ''],
 ];
-$formasPagamento = $pdo->query("SELECT id, nome, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY nome")->fetchAll();
+$formasPagamento = $pdo->query("SELECT id, nome, instrumento, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY nome")->fetchAll();
 
 $labelTotal = match ($status) {
     'pendente' => 'Total pendente',
@@ -253,7 +253,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                 <label class="form-label">Nova forma de pagamento</label>
                 <select name="forma_pagamento_id" class="form-select">
                     <option value="">-</option>
-                    <?php foreach ($formasPagamento as $f): ?><option value="<?= (int) $f['id'] ?>"><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option><?php endforeach; ?>
+                    <?php foreach ($formasPagamento as $f): ?><option value="<?= (int) $f['id'] ?>"><?= e(rotuloFormaPagamento($f)) ?></option><?php endforeach; ?>
                 </select>
                 <div class="small text-muted mt-2">Indo para cartão/dinheiro, o boleto/Pix que já estiver no banco é baixado (o aluno não paga duas vezes) e no portal aparece "pague na secretaria".</div>
             </div>
@@ -295,7 +295,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                         <label class="form-label">Forma de pagamento <span class="text-muted small">(aplica em todas)</span></label>
                         <select id="rp-forma" class="form-select" onchange="document.querySelectorAll('.rp-forma-parcela').forEach((s) => { s.value = this.value; })">
                             <option value="">-</option>
-                            <?php foreach ($formasPagamento as $f): ?><option value="<?= (int) $f['id'] ?>"><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option><?php endforeach; ?>
+                            <?php foreach ($formasPagamento as $f): ?><option value="<?= (int) $f['id'] ?>"><?= e(rotuloFormaPagamento($f)) ?></option><?php endforeach; ?>
                         </select>
                         <div class="form-text">Depois dá para mudar a forma de cada parcela na tabela.</div>
                     </div>

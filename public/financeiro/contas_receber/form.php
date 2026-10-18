@@ -8,7 +8,7 @@ $alunosJson = array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome']
 // Vindo do cadastro do aluno (?aluno_id=), o aluno já chega escolhido.
 $alunoEscolhido = (int) ($_POST['aluno_id'] ?? $_GET['aluno_id'] ?? 0) ?: '';
 $categorias = $pdo->query("SELECT id, nome FROM categorias_financeiras WHERE tipo = 'receita' AND ativo = 1 ORDER BY nome")->fetchAll();
-$formasPagamento = $pdo->query("SELECT id, nome, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY instrumento = 'manual', nome")->fetchAll();
+$formasPagamento = $pdo->query("SELECT id, nome, instrumento, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY instrumento = 'manual', nome")->fetchAll();
 
 $erros = [];
 
@@ -83,7 +83,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                     <select name="forma_pagamento_id" class="form-select">
                         <option value="">-</option>
                         <?php foreach ($formasPagamento as $fp): ?>
-                            <option value="<?= (int) $fp['id'] ?>" <?= (int) ($_POST['forma_pagamento_id'] ?? 0) === (int) $fp['id'] ? 'selected' : '' ?>><?= e($fp['nome']) ?><?= $fp['na_secretaria'] ? ' (na secretaria)' : '' ?></option>
+                            <option value="<?= (int) $fp['id'] ?>" <?= (int) ($_POST['forma_pagamento_id'] ?? 0) === (int) $fp['id'] ? 'selected' : '' ?>><?= e(rotuloFormaPagamento($fp)) ?></option>
                         <?php endforeach; ?>
                     </select>
                     <div class="form-text">Pix gera só QR Code; Boleto só boleto; Boleto + Pix os dois; cartão/dinheiro: pago na secretaria.</div>

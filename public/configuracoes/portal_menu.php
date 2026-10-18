@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $coresProprias = isset($_POST['portal_cores_proprias']);
         $itensRodape = array_map(fn ($chave) => !empty($_POST['rodape_itens'][$chave]), array_combine(array_keys(opcoesRodapePortal()), array_keys(opcoesRodapePortal())));
         $pdo->prepare('UPDATE configuracoes SET portal_titulo = ?, portal_subtitulo = ?, portal_cadastro_aberto = ?, portal_rodape_texto = ?, portal_rodape_contatos = ?, portal_rodape_itens = ?, portal_redes = ?,
-                portal_cor_primaria = ?, portal_cor_secundaria = ?, whatsapp_numero = ? WHERE id = 1')
+                portal_cor_primaria = ?, portal_cor_secundaria = ?, whatsapp_numero = ?, portal_url = ? WHERE id = 1')
             ->execute([
                 trim(input('portal_titulo')) ?: null, trim(input('portal_subtitulo')) ?: null, isset($_POST['portal_cadastro_aberto']) ? 1 : 0,
                 trim((string) ($_POST['portal_rodape_texto'] ?? '')) ?: null, $itensRodape['endereco'] || $itensRodape['telefone'] || $itensRodape['email'] ? 1 : 0,
@@ -67,6 +67,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $coresProprias ? $corValida($_POST['portal_cor_secundaria'] ?? '') : null,
                 // wa.me precisa do código do país: só DDD + número ganha o 55.
                 ($zap = apenasDigitos((string) ($_POST['whatsapp_numero'] ?? ''))) !== '' ? (strlen($zap) <= 11 ? '55' . $zap : $zap) : null,
+                // Só o endereço do site (https://dominio), sem caminho.
+                preg_match('#^(https?://[^/\s?\#]+)#i', trim((string) ($_POST['portal_url'] ?? '')), $urlPortal) ? strtolower($urlPortal[1]) : null,
             ]);
         $pdo->commit();
         registrarAtividade('portal', 'edicao', 'Menu, rodapé e ajustes do portal alterados');
@@ -100,7 +102,12 @@ require __DIR__ . '/../../includes/layout_header.php';
             <div class="col-md-5"><label class="form-label">Nome do portal</label><input type="text" name="portal_titulo" class="form-control" maxlength="150" placeholder="<?= e($config['nome_sistema']) ?>" value="<?= e($config['portal_titulo'] ?? '') ?>"></div>
             <div class="col-md-7"><label class="form-label">Frase de boas-vindas</label><input type="text" name="portal_subtitulo" class="form-control" maxlength="255" placeholder="Ex.: Sua jornada de aprendizado começa aqui." value="<?= e($config['portal_subtitulo'] ?? '') ?>"><div class="form-text">Aparece no bloco "Saudação".</div></div>
             <div class="col-12 form-check form-switch ms-2"><input type="checkbox" class="form-check-input" role="switch" name="portal_cadastro_aberto" id="cadastro" <?= $config['portal_cadastro_aberto'] ? 'checked' : '' ?>><label class="form-check-label" for="cadastro">Qualquer pessoa pode criar conta de aluno pelo portal</label></div>
-            <div class="col-12"><label class="form-label">Endereço do portal para divulgar</label><input type="text" class="form-control" readonly value="<?= e(urlAbsoluta('/portal/')) ?>"></div>
+            <div class="col-md-7">
+                <label class="form-label">Endereço do portal</label>
+                <input type="url" name="portal_url" class="form-control" maxlength="255" placeholder="Ex.: https://portal.uniphd.com.br" value="<?= e($config['portal_url'] ?? '') ?>">
+                <div class="form-text">Domínio próprio do portal (apontando para este sistema). Os links que vão para o aluno — e-mail de senha, QR Code e conferência do certificado — usam este endereço, e quem abre ele cai direto no portal. Em branco: o endereço deste sistema.</div>
+            </div>
+            <div class="col-md-5"><label class="form-label">Para divulgar</label><input type="text" class="form-control" readonly value="<?= e(urlPortalConfigurada() ? urlPortalConfigurada() . '/' : urlAbsoluta('/portal/')) ?>"></div>
         </div>
     </div>
 

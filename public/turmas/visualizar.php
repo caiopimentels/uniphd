@@ -102,20 +102,27 @@ $todosDocumentos = array_merge([], ...array_values($documentosPorMatricula));
 $documentosLiberados = count(array_filter($todosDocumentos, fn ($d) => $d['situacao'] === 'liberado'));
 $documentosDisponiveis = count(array_filter($todosDocumentos, fn ($d) => $d['disponivel'] || $d['emitido']));
 $podeForcarDocumento = usuarioEhAdmin();
-// Para liberar: os documentos do curso e, como avulso, qualquer modelo.
+// Para liberar: os documentos do curso e, como avulso, qualquer modelo. A
+// "data do evento" só é pedida quando o modelo usa o marcador {data_evento}.
+$modelosPorId = array_column(modelosCertificado($pdo), null, "id");
+$usaDataEvento = fn (int $modeloId) => str_contains((string) ($modelosPorId[$modeloId]["layout"] ?? ""), "{data_evento}");
+$modeloPadraoId = (int) (modeloPadraoCertificado($pdo)["id"] ?? 0);
+// Modelo de cada documento do curso (sem modelo: o do curso, senão o padrão).
+$modeloDaEmissao = fn (array $emi) => (int) ($emi["modelo_id"] ?: ($emi["modulo_id"] ? 0 : ($turma["certificado_modelo_id"] ?? 0)) ?: $modeloPadraoId);
 $opcoesDocumento = [];
 foreach ($emissoesTurma as $emi) {
-    $opcoesDocumento[] = ['id' => 'e:' . $emi['id'], 'nome' => $emi['nome'], 'detalhe' => 'Do curso · ' . ($emi['modulo_id'] ? 'ao concluir o módulo ' . $emi['modulo_nome'] : 'ao concluir o curso') . ($emi['modelo_nome'] ? ' · modelo ' . $emi['modelo_nome'] : '')];
+    $opcoesDocumento[] = ["id" => "e:" . $emi["id"], "nome" => $emi["nome"], "usa_data" => $usaDataEvento($modeloDaEmissao($emi)),
+        "detalhe" => "Do curso · " . ($emi["modulo_id"] ? "ao concluir o módulo " . $emi["modulo_nome"] : "ao concluir o curso") . ($emi["modelo_nome"] ? " · modelo " . $emi["modelo_nome"] : "")];
 }
 // Modelos que este curso já usa entram pelo documento do curso (sem o
 // "Certificado de conclusão" repetido como avulso).
-$modeloPadraoId = (int) (modeloPadraoCertificado($pdo)['id'] ?? 0);
-$modelosDoCurso = array_map(fn ($emi) => (int) ($emi['modelo_id'] ?: ($emi['modulo_id'] ? 0 : ($turma['certificado_modelo_id'] ?? 0)) ?: $modeloPadraoId), $emissoesTurma);
-foreach (modelosCertificado($pdo) as $modeloDoc) {
-    if (in_array((int) $modeloDoc['id'], $modelosDoCurso, true)) {
+$modelosDoCurso = array_map($modeloDaEmissao, $emissoesTurma);
+foreach ($modelosPorId as $modeloDoc) {
+    if (in_array((int) $modeloDoc["id"], $modelosDoCurso, true)) {
         continue;
     }
-    $opcoesDocumento[] = ['id' => 'm:' . $modeloDoc['id'], 'nome' => $modeloDoc['nome'], 'detalhe' => 'Documento avulso (só para os marcados) · ' . (($modeloDoc['orientacao'] ?? 'horizontal') === 'vertical' ? 'vertical' : 'horizontal')];
+    $opcoesDocumento[] = ["id" => "m:" . $modeloDoc["id"], "nome" => $modeloDoc["nome"], "usa_data" => $usaDataEvento((int) $modeloDoc["id"]),
+        "detalhe" => "Documento avulso (só para os marcados) · " . (($modeloDoc["orientacao"] ?? "horizontal") === "vertical" ? "vertical" : "horizontal")];
 }
 $podeMarcarDocumentos = $podeLiberarCertificado && $documentosPorMatricula;
 // Para o modal "documentos do aluno".
@@ -682,12 +689,14 @@ if (document.getElementById('documento-busca')) {
         titulo: (o) => o.nome,
         detalhe: (o) => o.detalhe,
         vazio: 'Nenhum documento com esse nome. Os modelos ficam em Acadêmico › Documentos.',
-        // Documento avulso: pede a data do evento ({data_evento}).
-        aoEscolher: (id) => {
+        // Data do evento: só para documento cujo modelo usa {data_evento}.
+        aoEscolher: () => {
             const campo = document.getElementById('campo-data-evento');
-            const avulso = String(id || document.getElementById('documento-escolhido').value).startsWith('m:');
-            campo.classList.toggle('d-none', !avulso);
-            campo.classList.toggle('d-flex', avulso);
+            const opcao = OPCOES_DOCUMENTO.find((o) => o.id === document.getElementById('documento-escolhido').value);
+            const pede = !!(opcao && opcao.usa_data);
+            campo.classList.toggle('d-none', !pede);
+            campo.classList.toggle('d-flex', pede);
+            if (!pede) campo.querySelector('input').value = '';
         },
     });
 }

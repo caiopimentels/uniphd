@@ -257,13 +257,13 @@ $professores = $stmt->fetchAll();
 
 // Formas de pagamento: as de boleto/Pix o portal cobra sozinho; as outras
 // (cartão, dinheiro...) o aluno paga na secretaria.
-$formasCobranca = $pdo->query("SELECT id, nome, instrumento IN ('boleto', 'boleto_pix', 'pix') AS online FROM formas_pagamento WHERE ativo = 1 ORDER BY instrumento = 'manual', nome")->fetchAll();
+$formasCobranca = $pdo->query("SELECT id, nome, instrumento, instrumento IN ('boleto', 'boleto_pix', 'pix') AS online FROM formas_pagamento WHERE ativo = 1 ORDER BY instrumento = 'manual', nome")->fetchAll();
 $temFormaOnline = (bool) array_filter($formasCobranca, fn ($f) => $f['online']);
 $opcoesForma = function (?int $escolhida) use ($formasCobranca): string {
     $html = '<option value="">Selecione...</option>';
     foreach ($formasCobranca as $f) {
         $html .= '<option value="' . (int) $f['id'] . '"' . ((int) $escolhida === (int) $f['id'] ? ' selected' : '') . '>'
-            . e($f['nome']) . ($f['online'] ? '' : ' (na secretaria)') . '</option>';
+            . e(rotuloFormaPagamento($f)) . '</option>';
     }
     return $html;
 };

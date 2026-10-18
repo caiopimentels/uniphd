@@ -1037,3 +1037,27 @@ function trocarFormaParcela(PDO $pdo, int $id, ?int $formaNova): array
     return ['ok' => true, 'mensagem' => $parcela['descricao'] . ': ' . ($nomeNova ?: 'sem forma') . $aviso, 'mudou' => true,
         'resumo' => ($parcela['forma_nome'] ?: 'nenhuma') . ' → ' . ($nomeNova ?: 'nenhuma') . $aviso];
 }
+
+/**
+ * Nome da forma de pagamento com o tipo de cobrança, para as listas de
+ * escolha: "Boleto Bancário (boleto + Pix)", "Cartão de crédito (na
+ * secretaria)". Não repete o que o nome já diz ("Pix", não "Pix (Pix)").
+ */
+function rotuloFormaPagamento(array $forma): string
+{
+    $nome = (string) $forma['nome'];
+    $instrumento = $forma['instrumento'] ?? null;
+    if ($instrumento === null) {
+        return $nome;
+    }
+    $minusculo = mb_strtolower($nome, 'UTF-8');
+    $temBoleto = str_contains($minusculo, 'boleto');
+    $temPix = str_contains($minusculo, 'pix');
+    $tipo = match ($instrumento) {
+        'boleto_pix' => $temBoleto && $temPix ? '' : 'boleto + Pix',
+        'boleto' => $temBoleto ? '' : 'boleto',
+        'pix' => $temPix ? '' : 'Pix',
+        default => 'na secretaria',
+    };
+    return $tipo === '' ? $nome : $nome . ' (' . $tipo . ')';
+}

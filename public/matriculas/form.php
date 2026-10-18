@@ -255,7 +255,7 @@ $stmt = $pdo->prepare(
 $stmt->execute([$dados['aluno_id']]);
 $alunos = $stmt->fetchAll();
 
-$formasPagamento = $pdo->query("SELECT id, nome, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY nome")->fetchAll();
+$formasPagamento = $pdo->query("SELECT id, nome, instrumento, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY nome")->fetchAll();
 
 // A busca de aluno e de turma roda no navegador sobre estas listas; os
 // cadastros rápidos acrescentam nelas o que for criado na hora.
@@ -378,7 +378,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <select name="forma_pagamento_id" id="forma_pagamento_id" class="form-select">
                     <option value="">-</option>
                     <?php foreach ($formasPagamento as $f): ?>
-                        <option value="<?= (int) $f['id'] ?>" <?= $dados['forma_pagamento_id'] === (int) $f['id'] ? 'selected' : '' ?>><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option>
+                        <option value="<?= (int) $f['id'] ?>" <?= $dados['forma_pagamento_id'] === (int) $f['id'] ? 'selected' : '' ?>><?= e(rotuloFormaPagamento($f)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -399,7 +399,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <select name="forma_mensalidade_id" id="forma_mensalidade_id" class="form-select">
                     <option value="">-</option>
                     <?php foreach ($formasPagamento as $f): ?>
-                        <option value="<?= (int) $f['id'] ?>" <?= $dados['forma_mensalidade_id'] === (int) $f['id'] ? 'selected' : '' ?>><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option>
+                        <option value="<?= (int) $f['id'] ?>" <?= $dados['forma_mensalidade_id'] === (int) $f['id'] ? 'selected' : '' ?>><?= e(rotuloFormaPagamento($f)) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

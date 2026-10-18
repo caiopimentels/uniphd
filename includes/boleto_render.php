@@ -24,15 +24,17 @@ $pagadorEndereco = $end ? trim(implode(', ', array_filter([
     $end['cep'] ? 'CEP ' . $end['cep'] : '',
 ]))) : '';
 
-// Instruções impressas: o que o banco aplica sozinho após o vencimento,
-// conforme a configuração de juros/multa da conta.
+// Instruções impressas: o que o banco aplica sozinho após o vencimento —
+// os juros/multa que foram (ou iriam) para o banco neste boleto.
 $instrucoes = [];
-if ($conta && $conta['multa_tipo'] === '02' && (float) $conta['multa_percentual'] > 0) {
-    $instrucoes[] = 'Após o vencimento, multa de ' . formatPercent($conta['multa_percentual']) . '.';
+$multaBoleto = $dados['multa'] ?? null;
+$jurosBoleto = $dados['juros'] ?? null;
+if ($multaBoleto && ($multaBoleto['codigo_tipo_multa'] ?? '03') === '02' && (float) ($multaBoleto['percentual_multa'] ?? 0) > 0) {
+    $instrucoes[] = 'Após o vencimento, multa de ' . formatPercent((float) $multaBoleto['percentual_multa']) . '.';
 }
-if ($conta && $conta['juros_tipo'] !== '05' && (float) $conta['juros_percentual'] > 0) {
-    $periodo = ['90' => 'ao mês', '91' => 'ao dia', '92' => 'ao ano'][$conta['juros_tipo']] ?? '';
-    $instrucoes[] = 'Juros de ' . formatPercent($conta['juros_percentual']) . ' ' . $periodo . ' após o vencimento.';
+if ($jurosBoleto && ($jurosBoleto['codigo_tipo_juros'] ?? '05') !== '05' && (float) ($jurosBoleto['percentual_juros'] ?? 0) > 0) {
+    $periodo = ['90' => 'ao mês', '91' => 'ao dia', '92' => 'ao ano'][$jurosBoleto['codigo_tipo_juros']] ?? '';
+    $instrucoes[] = 'Juros de ' . formatPercent((float) $jurosBoleto['percentual_juros']) . ' ' . $periodo . ' após o vencimento.';
 }
 $desconto = $dados['desconto'];
 if ($desconto) {
@@ -40,7 +42,13 @@ if ($desconto) {
         . ' — PAGUE ' . formatMoney($desconto['valor_com_desconto']) . '.');
 }
 $instrucoes[] = 'Referente a: ' . $parcela['descricao'] . '.';
-$instrucoes[] = 'Pague também pelo Pix, lendo o QR Code ao lado.';
+// QR Code do Pix: só quando o banco devolveu o Pix. Na prévia (antes de
+// registrar) aparece borrado, marcando o lugar dele.
+$temPix = (bool) $dados['pix_copia_cola'];
+$mostrarQr = $temPix || !$registrada;
+if ($temPix) {
+    $instrucoes[] = 'Pague também pelo Pix, lendo o QR Code ao lado.';
+}
 
 $especie = $conta ? ($conta['itau_especie'] ?? '04') : '04';
 $siglaEspecie = explode(' - ', especiesItau()[$especie] ?? 'ME')[0];
@@ -173,7 +181,7 @@ $cpfPagador = $aluno['cpf'] ?? '';
     </div>
     <table class="campos">
         <tr>
-            <td colspan="5"><span class="rotulo">Local de pagamento</span>Pagável em qualquer banco, app ou Pix (QR Code abaixo) até o vencimento.</td>
+            <td colspan="5"><span class="rotulo">Local de pagamento</span><?= $temPix ? 'Pagável em qualquer banco, app ou Pix (QR Code abaixo) até o vencimento.' : 'Pagável em qualquer banco ou app até o vencimento.' ?></td>
             <td class="direita destaque"><span class="rotulo">Vencimento</span><?= formatDate($parcela['data_vencimento']) ?></td>
         </tr>
         <tr>
@@ -201,12 +209,14 @@ $cpfPagador = $aluno['cpf'] ?? '';
                 <span class="rotulo">Instruções (texto de responsabilidade do beneficiário)</span>
                 <div class="instrucoes-area">
                     <div class="texto"><?php foreach ($instrucoes as $n => $i): ?><?= $desconto && $n === 0 ? '<strong>' . e($i) . '</strong>' : e($i) ?><br><?php endforeach; ?></div>
+                    <?php if ($mostrarQr): ?>
                     <div class="qr-pix">
-                        <div class="qr <?= $dados['pix_copia_cola'] ? '' : 'borrado' ?>" id="qr-boleto">
-                            <?php if (!$dados['pix_copia_cola']): ?><div class="selo">QR Pix gerado no registro</div><?php endif; ?>
+                        <div class="qr <?= $temPix ? '' : 'borrado' ?>" id="qr-boleto">
+                            <?php if (!$temPix): ?><div class="selo">QR Pix gerado no registro</div><?php endif; ?>
                         </div>
                         Pague com Pix
                     </div>
+                    <?php endif; ?>
                 </div>
             </td>
             <td class="direita"><span class="rotulo">(-) Desconto / abatimento</span>&nbsp;</td>
@@ -232,7 +242,7 @@ $cpfPagador = $aluno['cpf'] ?? '';
 <script>
 // Sem registro não existe Pix: desenha um QR com um texto neutro (que não
 // leva a pagamento nenhum) só para mostrar o lugar dele no boleto, borrado.
-new QRCode(document.getElementById('qr-boleto'), {
+if (document.getElementById('qr-boleto')) new QRCode(document.getElementById('qr-boleto'), {
     text: <?= json_encode($dados['pix_copia_cola'] ?: 'PREVIA - BOLETO NAO REGISTRADO') ?>,
     width: 256,
     height: 256,

@@ -181,6 +181,8 @@ CREATE TABLE configuracoes (
     -- certificado_modelos).
     portal_titulo VARCHAR(150) DEFAULT NULL,
     portal_subtitulo VARCHAR(255) DEFAULT NULL,
+    -- Endereço próprio do portal (links para o aluno; raiz do domínio vai ao portal).
+    portal_url VARCHAR(255) DEFAULT NULL,
     -- Cores do portal; em branco usa as do sistema (cor_primaria/secundaria).
     portal_cor_primaria VARCHAR(7) DEFAULT NULL,
     portal_cor_secundaria VARCHAR(7) DEFAULT NULL,
