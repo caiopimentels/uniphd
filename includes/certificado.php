@@ -27,6 +27,8 @@ function marcadoresCertificado(): array
     return [
         '{aluno}' => 'Nome do aluno',
         '{cpf}' => 'CPF do aluno',
+        '{filiacao}' => 'Nome da mãe e do pai',
+        '{nascimento}' => 'Data de nascimento',
         '{ra}' => 'RA do aluno',
         '{documento}' => 'Nome do documento (ex.: Certificado de conclusão)',
         '{curso}' => 'Nome do curso',
@@ -253,9 +255,24 @@ function valoresCertificado(array $certificado, array $config): array
 {
     $cpf = apenasDigitos((string) $certificado['cpf']);
     $codigo = formatarCodigoCertificado($certificado['codigo']);
+    $pai = trim(mb_strtoupper($certificado['nome_pai'] ?? '', 'UTF-8'));
+    $mae = trim(mb_strtoupper($certificado['nome_mae'] ?? '', 'UTF-8'));
+
+    $nomes = array_filter([$pai, $mae], fn($nome) => $nome !== '');
+
+    if (count($nomes) === 2) {
+        $filiacao = 'filho(a) de ' . implode(' e ', $nomes);
+    } elseif (count($nomes) === 1) {
+        $filiacao = 'filho(a) de ' . reset($nomes);
+    } else {
+        $filiacao = '';
+    }
+
     return [
-        '{aluno}' => $certificado['aluno_nome'],
+        '{aluno}' => mb_strtoupper($certificado['aluno_nome']),
         '{ra}' => (string) ($certificado['ra'] ?? ''),
+        '{filiacao}' => (string) $filiacao,
+        '{nascimento}' => formatDate($certificado['data_nascimento']),
         '{documento}' => (string) ($certificado['documento_nome'] ?? 'Certificado'),
         '{modulo}' => (string) ($certificado['modulo_nome'] ?? ''),
         '{modulo_carga_horaria}' => !empty($certificado['modulo_carga']) ? (string) (int) $certificado['modulo_carga'] : '—',
@@ -285,6 +302,7 @@ function valoresExemploCertificado(array $config): array
 {
     return [
         '{aluno}' => 'Maria Aparecida da Silva Souza', '{cpf}' => '123.456.789-09', '{ra}' => 'RA0000123', '{parceria}' => 'em parceria com a Faculdade Exemplo',
+        '{filiacao}' => 'filho de JOANA DA SILVA SOUZA e JOÃO PAULO SOUZA', '{nascimento}' => '26/10/1993',
         '{documento}' => 'Certificado de conclusão', '{modulo}' => 'Planejamento e escopo', '{modulo_carga_horaria}' => '60', '{data_modulo}' => '30/06/2026', '{curso}' => 'Gestão de Projetos',
         '{turma}' => '2026/1 - Noite', '{carga_horaria}' => '360', '{data_inicio}' => '02/03/2026', '{data_termino}' => '30/11/2026', '{data_conclusao}' => '30/11/2026',
         '{data_emissao}' => dataPorExtenso(date('Y-m-d')), '{cidade}' => $config['empresa_cidade'] ?: 'São Paulo',
@@ -315,4 +333,114 @@ function apagarFundoSemUso(PDO $pdo, string $imagem): void
     if (!$usado) {
         apagarImagemPortal($imagem);
     }
+}
+
+/**
+ * Marca d'água do modelo (logo do sistema repetida em diagonal): ativa,
+ * tamanho de cada logo e espaço entre elas (em % da largura da folha) e
+ * intensidade (% de opacidade). Sem configuração: ligada, no padrão.
+ */
+function marcaDaguaModelo(?array $modelo): array
+{
+    $dados = json_decode((string) ($modelo['marca_dagua'] ?? ''), true);
+    $dados = is_array($dados) ? $dados : [];
+    $numero = fn ($chave, $padrao, $min, $max) => round(min($max, max($min, (float) ($dados[$chave] ?? $padrao))), 1);
+    return [
+        'ativa' => (bool) ($dados['ativa'] ?? true),
+        'tamanho' => $numero('tamanho', 8, 3, 25),
+        'espaco' => $numero('espaco', 1.5, 0, 10),
+        'opacidade' => $numero('opacidade', 10, 2, 40),
+    ];
+}
+
+// ---------------------------------------------------------------------
+// PDF do documento: o aluno recebe um arquivo fechado (não a página HTML,
+// que dá para mexer na tela). Gerado pelo Chrome/Chromium sem janela
+// (headless) a partir do mesmo HTML; fica guardado em storage e só é feito
+// de novo quando algo do documento muda. Servidor: apt install chromium
+// (ou defina CHROME_PATH em config/config.php).
+// ---------------------------------------------------------------------
+
+function navegadorParaPdf(): ?string
+{
+    $opcoes = array_filter([
+        defined('CHROME_PATH') ? CHROME_PATH : null,
+        '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+        '/snap/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    ]);
+    foreach ($opcoes as $caminho) {
+        if (is_file($caminho) && is_executable($caminho)) {
+            return $caminho;
+        }
+    }
+    return null;
+}
+
+/**
+ * PDF do documento a partir do HTML da página. Retorna o caminho do arquivo
+ * (já gerado antes ou feito agora) ou null se não deu (sem navegador, erro).
+ */
+function pdfDocumentoEmitido(int $documentoId, string $html): ?string
+{
+    $pasta = caminhoStorage('documentos_pdf');
+    if (!is_dir($pasta)) {
+        mkdir($pasta, 0700, true);
+    }
+    $arquivo = $pasta . '/' . $documentoId . '-' . sha1($html) . '.pdf';
+    if (is_file($arquivo) && filesize($arquivo) > 1000) {
+        return $arquivo;
+    }
+    $navegador = navegadorParaPdf();
+    if (!$navegador) {
+        error_log('[PDF documento] Chrome/Chromium não encontrado (instale o chromium ou defina CHROME_PATH).');
+        return null;
+    }
+
+    // O navegador abre um arquivo local (sem pedir nada ao próprio site):
+    // CSS, imagens e fontes do sistema viram caminhos de arquivo, e a logo
+    // da marca d'água vai embutida (o desenho dela usa canvas).
+    $publico = BASE_PATH . '/public';
+    $html = preg_replace_callback('~data-logo="(/[^"?]+)[^"]*"~', function ($m) use ($publico) {
+        $caminho = realpath($publico . $m[1]);
+        if (!$caminho || !str_starts_with($caminho, $publico) || !is_file($caminho)) {
+            return $m[0];
+        }
+        $tipo = mime_content_type($caminho) ?: 'image/png';
+        return 'data-logo="data:' . $tipo . ';base64,' . base64_encode(file_get_contents($caminho)) . '"';
+    }, $html);
+    $html = preg_replace('~(["\'(])/(assets|uploads)/~', '$1file://' . $publico . '/$2/', $html);
+
+    $temporario = $pasta . '/tmp-' . bin2hex(random_bytes(6)) . '.html';
+    file_put_contents($temporario, $html);
+    $perfil = caminhoStorage('chrome');
+    if (!is_dir($perfil)) {
+        mkdir($perfil, 0700, true);
+    }
+    $saida = $arquivo . '.tmp';
+    $argumentos = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--hide-scrollbars',
+        '--allow-file-access-from-files', '--user-data-dir=' . $perfil, '--virtual-time-budget=8000',
+        '--no-pdf-header-footer', '--print-to-pdf=' . $saida];
+    if (PHP_OS_FAMILY === 'Linux') {
+        $argumentos[] = '--no-sandbox'; // usuário do Apache (www-data) não tem sandbox do Chrome
+    }
+    $comando = (PHP_OS_FAMILY === 'Linux' && is_executable('/usr/bin/timeout') ? '/usr/bin/timeout 60 ' : '')
+        . escapeshellarg($navegador) . ' ' . implode(' ', array_map('escapeshellarg', $argumentos))
+        . ' ' . escapeshellarg('file://' . $temporario) . ' 2>&1';
+    $ambiente = getenv('HOME');
+    putenv('HOME=' . $perfil);
+    exec($comando, $log, $codigo);
+    putenv('HOME=' . ($ambiente ?: ''));
+    @unlink($temporario);
+
+    if (!is_file($saida) || filesize($saida) < 1000) {
+        @unlink($saida);
+        error_log('[PDF documento] falhou (código ' . $codigo . '): ' . mb_strimwidth(implode(' ', $log), 0, 500));
+        return null;
+    }
+    // Versões antigas deste documento saem (só a atual fica guardada).
+    foreach (glob($pasta . '/' . $documentoId . '-*.pdf') ?: [] as $antigo) {
+        @unlink($antigo);
+    }
+    rename($saida, $arquivo);
+    return $arquivo;
 }

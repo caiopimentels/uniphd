@@ -8,7 +8,7 @@ $id = (int) ($_GET['id'] ?? 0);
 
 $stmt = $pdo->prepare(
     'SELECT t.*, c.nome AS curso_nome, c.carga_horaria, p.nome AS professor_nome,
-            s.nome AS situacao_nome, s.cor AS situacao_cor, s.comportamento,
+            s.nome AS situacao_nome, s.cor AS situacao_cor, s.comportamento, c.certificado_modelo_id,
             ft.nome AS forma_taxa_nome, fm.nome AS forma_mensalidade_nome
      FROM turmas t
      LEFT JOIN formas_pagamento ft ON ft.id = t.portal_forma_pagamento_id
@@ -105,9 +105,16 @@ $podeForcarDocumento = usuarioEhAdmin();
 // Para liberar: os documentos do curso e, como avulso, qualquer modelo.
 $opcoesDocumento = [];
 foreach ($emissoesTurma as $emi) {
-    $opcoesDocumento[] = ['id' => 'e:' . $emi['id'], 'nome' => $emi['nome'], 'detalhe' => 'Do curso · ' . ($emi['modulo_id'] ? 'ao concluir o módulo ' . $emi['modulo_nome'] : 'ao concluir o curso')];
+    $opcoesDocumento[] = ['id' => 'e:' . $emi['id'], 'nome' => $emi['nome'], 'detalhe' => 'Do curso · ' . ($emi['modulo_id'] ? 'ao concluir o módulo ' . $emi['modulo_nome'] : 'ao concluir o curso') . ($emi['modelo_nome'] ? ' · modelo ' . $emi['modelo_nome'] : '')];
 }
+// Modelos que este curso já usa entram pelo documento do curso (sem o
+// "Certificado de conclusão" repetido como avulso).
+$modeloPadraoId = (int) (modeloPadraoCertificado($pdo)['id'] ?? 0);
+$modelosDoCurso = array_map(fn ($emi) => (int) ($emi['modelo_id'] ?: ($emi['modulo_id'] ? 0 : ($turma['certificado_modelo_id'] ?? 0)) ?: $modeloPadraoId), $emissoesTurma);
 foreach (modelosCertificado($pdo) as $modeloDoc) {
+    if (in_array((int) $modeloDoc['id'], $modelosDoCurso, true)) {
+        continue;
+    }
     $opcoesDocumento[] = ['id' => 'm:' . $modeloDoc['id'], 'nome' => $modeloDoc['nome'], 'detalhe' => 'Documento avulso (só para os marcados) · ' . (($modeloDoc['orientacao'] ?? 'horizontal') === 'vertical' ? 'vertical' : 'horizontal')];
 }
 $podeMarcarDocumentos = $podeLiberarCertificado && $documentosPorMatricula;
@@ -119,6 +126,11 @@ foreach ($matriculas as $m) {
             'nome' => $d['nome'], 'situacao' => $d['situacao'], 'cor' => $d['cor'], 'texto' => $d['texto'],
             'codigo' => $d['emitido'] ? formatarCodigoCertificado($d['emitido']['codigo']) : null,
             'abrir' => $d['emitido'] ? '/portal/certificado.php?documento=' . (int) $d['emitido']['id'] : null,
+            'emissao' => (int) $d['id'],
+            'liberado' => (bool) $d['liberado'],
+            // Liberar direto (disponível e sem pendência) ou só forçando (admin).
+            'pode_liberar' => !$d['liberado'] && $d['disponivel'] && $d['pendencias'] === '',
+            'pendencias' => $d['pendencias'] ?: ($d['disponivel'] ? '' : $d['texto']),
             'quando' => $d['emitido'] && $d['emitido']['liberado_em'] ? ($d['emitido']['liberado'] ? 'liberado' : 'bloqueado') . ' em ' . formatDateTime($d['emitido']['liberado_em']) . ($d['emitido']['liberado_por'] ? ' por ' . $d['emitido']['liberado_por'] : '') : '',
         ], $documentosPorMatricula[(int) $m['id']])];
     }
@@ -490,10 +502,10 @@ require __DIR__ . '/../../includes/layout_header.php';
                         <?php if ($podeLiberarCertificado): ?>
                             <td onclick="event.stopPropagation()">
                                 <?php if (!empty($documentosPorMatricula[(int) $m['id']])): $docsAluno = $documentosPorMatricula[(int) $m['id']];
-                                    $liberadosAluno = count(array_filter($docsAluno, fn ($d) => $d['situacao'] === 'liberado'));
+                                    $liberadosAluno = count(array_filter($docsAluno, fn ($d) => $d['liberado']));
                                     $pendenteAluno = (bool) array_filter($docsAluno, fn ($d) => $d['situacao'] === 'pendente'); ?>
                                     <button type="button" class="btn btn-sm <?= $pendenteAluno ? 'btn-outline-danger' : ($liberadosAluno ? 'btn-outline-success' : 'btn-outline-secondary') ?> text-nowrap"
-                                            onclick="abrirDocumentosAluno(<?= (int) $m['id'] ?>)" title="Ver os documentos deste aluno">
+                                            onclick="abrirDocumentosAluno(<?= (int) $m['id'] ?>)" title="<?= $pendenteAluno ? 'Aluno com pendência: os documentos liberados só abrem para ele quando resolver' : 'Ver os documentos deste aluno' ?>">
                                         <i class="bi bi-<?= $pendenteAluno ? 'exclamation-circle' : 'award' ?>"></i> <?= $liberadosAluno ?>/<?= count($docsAluno) ?> liberado(s)
                                     </button>
                                 <?php else: ?>
@@ -589,7 +601,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             </div>
             <div class="modal-body pt-0" id="docs-aluno-lista"></div>
             <div class="modal-footer">
-                <a href="#" id="docs-aluno-matricula" class="btn btn-outline-secondary"><i class="bi bi-person-vcard"></i> Liberar / bloquear na matrícula</a>
+                <a href="#" id="docs-aluno-matricula" class="btn btn-outline-secondary"><i class="bi bi-person-vcard"></i> Ver matrícula</a>
                 <button type="button" class="btn btn-brand" data-bs-dismiss="modal">Fechar</button>
             </div>
         </div>
@@ -660,6 +672,28 @@ if (document.getElementById('documento-busca')) {
     });
 }
 
+// Liberar / bloquear um documento direto da janela do aluno.
+const PODE_LIBERAR_DOCS = <?= $podeLiberarCertificado ? 'true' : 'false' ?>;
+const PODE_FORCAR_DOCS = <?= $podeForcarDocumento ? 'true' : 'false' ?>;
+function botaoDocumentoAluno(matriculaId, d) {
+    // [liberado, classe, ícone, rótulo, forçar]
+    let acao = null;
+    if (d.liberado) acao = [0, "btn-outline-secondary", "lock", "Bloquear", false];
+    else if (d.pode_liberar) acao = [1, "btn-success", "unlock", "Liberar", false];
+    else if (PODE_FORCAR_DOCS) acao = [1, "btn-outline-success", "unlock", "Liberar mesmo assim", true];
+    if (!acao) return "";
+    const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]));
+    return `<form method="post" action="/matriculas/documentos_liberar.php" class="m-0" data-aviso="${acao[4] ? esc(d.pendencias || d.texto) : ""}"
+        onsubmit="return !this.dataset.aviso || confirm('Liberar mesmo com pendência?\\n\\n' + this.dataset.aviso);">
+        <input type="hidden" name="ids[]" value="${matriculaId}">
+        <input type="hidden" name="emissao_id" value="${d.emissao}">
+        <input type="hidden" name="liberado" value="${acao[0]}">
+        ${acao[4] ? "<input type=\"hidden\" name=\"forcar\" value=\"1\">" : ""}
+        <input type="hidden" name="voltar" value="/turmas/visualizar.php?id=<?= (int) $id ?>">
+        <button type="submit" class="btn btn-sm ${acao[1]} text-nowrap"><i class="bi bi-${acao[2]}"></i> ${acao[3]}</button>
+    </form>`;
+}
+
 // Documentos de um aluno (botão da coluna Documentos).
 const DOCUMENTOS_ALUNOS = <?= json_encode($documentosModal, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
 function abrirDocumentosAluno(matriculaId) {
@@ -677,6 +711,7 @@ function abrirDocumentosAluno(matriculaId) {
                 ${d.quando ? `<div class="small text-muted">${esc(d.quando)}${d.codigo ? ' · código ' + esc(d.codigo) : ''}</div>` : ''}
             </div>
             ${d.abrir ? `<a href="${esc(d.abrir)}" target="_blank" class="btn btn-sm btn-outline-primary" title="Abrir / imprimir"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
+            ${PODE_LIBERAR_DOCS ? botaoDocumentoAluno(matriculaId, d) : ''}
         </div>`).join('');
     document.getElementById('docs-aluno-matricula').href = '/matriculas/visualizar.php?id=' + matriculaId + '#documentos';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-docs-aluno')).show();

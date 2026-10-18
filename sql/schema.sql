@@ -947,6 +947,8 @@ CREATE TABLE certificado_modelos (
     fundo VARCHAR(255) DEFAULT NULL,
     layout TEXT DEFAULT NULL,
     padrao TINYINT(1) NOT NULL DEFAULT 0,
+    -- Marca d'água: {"ativa":1,"tamanho":8,"espaco":1.5,"opacidade":10} (vazio = padrão, ligada).
+    marca_dagua VARCHAR(255) DEFAULT NULL,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

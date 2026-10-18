@@ -30,7 +30,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($acao === 'duplicar' && $modelo && !$ehNovo) {
         $nome = mb_substr(trim(input('nome')), 0, 100) ?: ($acao === 'duplicar' ? $modelo['nome'] . ' (cópia)' : 'Novo modelo');
         $paginas = $acao === 'duplicar' ? paginasModeloCertificado($modelo) : normalizarPaginasCertificado(paginasPadraoCertificado());
-        $pdo->prepare('INSERT INTO certificado_modelos (nome, fundo, layout) VALUES (?, ?, ?)')->execute([$nome, $paginas[0]['fundo'], $jsonLayout($paginas)]);
+        $pdo->prepare('INSERT INTO certificado_modelos (nome, fundo, layout, orientacao, marca_dagua) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$nome, $paginas[0]['fundo'], $jsonLayout($paginas), $modelo['orientacao'] ?? 'horizontal', $modelo['marca_dagua'] ?? null]);
         $novoId = (int) $pdo->lastInsertId();
         if ($acao === 'duplicar') {
             // A cópia leva os fundos do modelo (mesmos arquivos).
@@ -156,9 +157,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             responderJson(['sucesso' => false, 'mensagem' => implode(' ', $erros)]);
         }
         $orientacao = input('orientacao') === 'vertical' ? 'vertical' : 'horizontal';
+        $marcaDagua = marcaDaguaModelo(['marca_dagua' => (string) ($_POST['marca_dagua'] ?? '')]);
+        $marcaDaguaJson = json_encode(['ativa' => $marcaDagua['ativa'] ? 1 : 0] + $marcaDagua);
         if ($ehNovo) {
-            $pdo->prepare('INSERT INTO certificado_modelos (nome, orientacao, layout, fundo) VALUES (?, ?, ?, ?)')
-                ->execute([$nomeModelo, $orientacao, $jsonLayout($paginas), $paginas[0]['fundo']]);
+            $pdo->prepare('INSERT INTO certificado_modelos (nome, orientacao, layout, fundo, marca_dagua) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$nomeModelo, $orientacao, $jsonLayout($paginas), $paginas[0]['fundo'], $marcaDaguaJson]);
             $novoId = (int) $pdo->lastInsertId();
             $insereFundo = $pdo->prepare('INSERT INTO certificado_fundos (modelo_id, nome, imagem) VALUES (?, ?, ?)');
             foreach ($fundosNovos as $url => $nomeFundo) {
@@ -169,8 +172,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             flash('success', 'Modelo "' . $nomeModelo . '" criado. Escolha-o no cadastro dos cursos.');
             responderJson(['sucesso' => true, 'id' => $novoId]);
         }
-        $pdo->prepare('UPDATE certificado_modelos SET nome = ?, orientacao = ?, layout = ?, fundo = ? WHERE id = ?')
-            ->execute([$nomeModelo, $orientacao, $jsonLayout($paginas), $paginas[0]['fundo'], $modelo['id']]);
+        $pdo->prepare('UPDATE certificado_modelos SET nome = ?, orientacao = ?, layout = ?, fundo = ?, marca_dagua = ? WHERE id = ?')
+            ->execute([$nomeModelo, $orientacao, $jsonLayout($paginas), $paginas[0]['fundo'], $marcaDaguaJson, $modelo['id']]);
         $pdo->prepare('UPDATE configuracoes SET certificado_url_verificacao = ? WHERE id = 1')->execute([$urlVerificacao ?: null]);
         registrarAtividade('portal', 'edicao', 'Modelo de documento alterado: ' . $nomeModelo);
         responderJson(['sucesso' => true]);
@@ -208,7 +211,8 @@ if (!$modelo):
     <?php foreach ($modelos as $m):
         $paginas = paginasModeloCertificado($m);
         $paginasCertificado = [$paginas[0]];
-        $orientacaoCertificado = $m['orientacao'] ?? 'horizontal'; ?>
+        $orientacaoCertificado = $m['orientacao'] ?? 'horizontal';
+        $marcaDaguaCertificado = marcaDaguaModelo($m); ?>
         <div class="col-md-6 col-xl-4">
             <div class="modelo-card">
                 <a class="miniatura" href="/configuracoes/certificado.php?modelo=<?= (int) $m['id'] ?>" title="Editar"><?php require __DIR__ . '/../../includes/certificado_render.php'; ?></a>
@@ -252,6 +256,8 @@ endif;
 $paginas = paginasModeloCertificado($modelo);
 $paginasCertificado = [$paginas[0]];
 $orientacaoCertificado = $modelo['orientacao'] ?? 'horizontal';
+$marcaDaguaCertificado = marcaDaguaModelo($modelo);
+$temLogoSistema = trim((string) ($config['logo_sistema'] ?? '')) !== '';
 $fundos = fundosCertificado($pdo, (int) $modelo['id']);
 $cursosDoModelo = $ehNovo ? null : ($modelo['padrao']
     ? $pdo->query('SELECT GROUP_CONCAT(nome ORDER BY nome SEPARATOR ", ") FROM cursos WHERE certificado_modelo_id IS NULL OR certificado_modelo_id = ' . (int) $modelo['id'])->fetchColumn()
@@ -308,7 +314,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         </div>
         <div>
             <label class="form-label small mb-1">Orientação</label>
-            <select id="orientacao-modelo" class="form-select" onchange="trocarOrientacao()">
+            <select id="orientacao-modelo" class="form-select" style="min-width: 240px;" onchange="trocarOrientacao()">
                 <option value="horizontal" <?= $orientacaoCertificado === 'horizontal' ? 'selected' : '' ?>>Horizontal (A4 deitado)</option>
                 <option value="vertical" <?= $orientacaoCertificado === 'vertical' ? 'selected' : '' ?>>Vertical (A4 em pé)</option>
             </select>
@@ -357,6 +363,19 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <div class="form-text">Arte sem os dados do aluno. Ideal: 3508 × 2480 px (A4 deitado) ou 2480 × 3508 px (A4 em pé), até 10 MB.</div>
             </div>
 
+            <div class="secao">
+                <div class="secao-titulo"><i class="bi bi-droplet-half"></i> Marca d'água <span class="small text-muted fw-normal ms-1">(logo do sistema, em todas as folhas)</span></div>
+                <div class="form-check form-switch mb-2">
+                    <input class="form-check-input" type="checkbox" id="marca-ativa" <?= $marcaDaguaCertificado['ativa'] ? 'checked' : '' ?> onchange="atualizarMarcaDagua()" <?= $temLogoSistema ? '' : 'disabled' ?>>
+                    <label class="form-check-label" for="marca-ativa">Mostrar marca d'água</label>
+                </div>
+                <div class="row g-2 small" id="marca-ajustes"<?= $marcaDaguaCertificado['ativa'] ? '' : ' style="opacity: .4"' ?>>
+                    <div class="col-sm-4"><label class="form-label small mb-0">Tamanho</label><input type="range" class="form-range" id="marca-tamanho" min="3" max="25" step="0.5" value="<?= $marcaDaguaCertificado['tamanho'] ?>" oninput="atualizarMarcaDagua()"></div>
+                    <div class="col-sm-4"><label class="form-label small mb-0">Espaço entre as logos</label><input type="range" class="form-range" id="marca-espaco" min="0" max="10" step="0.5" value="<?= $marcaDaguaCertificado['espaco'] ?>" oninput="atualizarMarcaDagua()"></div>
+                    <div class="col-sm-4"><label class="form-label small mb-0">Intensidade</label><input type="range" class="form-range" id="marca-opacidade" min="2" max="40" step="1" value="<?= $marcaDaguaCertificado['opacidade'] ?>" oninput="atualizarMarcaDagua()"></div>
+                </div>
+                <?php if (!$temLogoSistema): ?><div class="form-text text-danger">Cadastre a logo do sistema (Configurações) para usar a marca d'água.</div><?php endif; ?>
+            </div>
             <div class="secao">
                 <div class="secao-titulo"><i class="bi bi-layers"></i> Elementos <span class="small text-muted fw-normal ms-1" id="elementos-da-folha"></span></div>
                 <div class="d-flex flex-wrap gap-2 mb-2">
@@ -409,6 +428,29 @@ let alterado = false;
 const folha = document.querySelector('#previa .cert-folha');
 // Fonte em cqw (% da largura): folha em pé é mais estreita, a conversão muda.
 const fatorFonte = () => (document.getElementById('orientacao-modelo').value === 'vertical' ? 5.953 : 8.418);
+// Marca d'água: liga/desliga e ajusta na prévia (salva com o modelo).
+function valoresMarcaDagua() {
+    return {
+        ativa: document.getElementById('marca-ativa').checked ? 1 : 0,
+        tamanho: parseFloat(document.getElementById('marca-tamanho').value),
+        espaco: parseFloat(document.getElementById('marca-espaco').value),
+        opacidade: parseFloat(document.getElementById('marca-opacidade').value),
+    };
+}
+function atualizarMarcaDagua() {
+    const v = valoresMarcaDagua();
+    document.getElementById('marca-ajustes').style.opacity = v.ativa ? 1 : 0.4;
+    const camada = folha.querySelector('.cert-marca-dagua');
+    if (camada) {
+        camada.hidden = !v.ativa;
+        camada.dataset.tamanho = v.tamanho;
+        camada.dataset.espaco = v.espaco;
+        camada.style.setProperty('--opacidade-marca', v.opacidade / 100);
+        desenharMarcaDagua(folha);
+    }
+    marcarAlterado();
+}
+
 function trocarOrientacao() {
     folha.classList.toggle('cert-vertical', document.getElementById('orientacao-modelo').value === 'vertical');
     marcarAlterado();
@@ -418,6 +460,28 @@ const elementos = () => paginas[folhaAtual].elementos;
 
 // ---------------------------------------------------------------- utilidades
 function escapar(t) { const d = document.createElement('div'); d.textContent = t ?? ''; return d.innerHTML; }
+
+function formatarTexto(texto) {
+    let html = escapar(texto);
+
+    // *texto* = negrito
+    html = html.replace(/\*([^*\r\n]+)\*/g, '<strong>$1</strong>');
+
+    // _texto_ = itálico
+    html = html.replace(/_([^_\r\n]+)_/g, '<em>$1</em>');
+
+    // &texto& = sublinhado
+    html = html.replace(/&amp;([^&\r\n]+)&amp;/g, '<u>$1</u>');
+
+    // %texto% = tachado
+    html = html.replace(/%([^%\r\n]+)%/g, '<s>$1</s>');
+
+    // Quebras de linha
+    html = html.replace(/\r?\n/g, '<br>');
+
+    return html;
+}
+
 function linkVerificacao() {
     const base = document.getElementById('url_verificacao').value.trim() || URL_PADRAO;
     return base + (base.includes('?') ? '&' : '?') + 'codigo=ABCD-EFGH-JKLM';
@@ -529,7 +593,7 @@ function desenharPrevia(guias = []) {
             let texto = preencher(c.texto);
             if (c.maiusculo) texto = texto.toLocaleUpperCase('pt-BR');
             if (c.uma_linha) { el.classList.add('cert-uma-linha'); texto = texto.replace(/\s*\n\s*/g, ' '); }
-            el.innerHTML = '<div class="cert-conteudo">' + escapar(texto).replace(/\n/g, '<br>') + '</div>';
+            el.innerHTML = '<div class="cert-conteudo">' + formatarTexto(texto) + '</div>';
         }
         if (i === selecionado) {
             (c.tipo === 'qrcode' ? ['esq', 'dir'] : ['esq', 'dir', 'cima', 'baixo', 'canto']).forEach((lado) => {
@@ -798,7 +862,7 @@ function salvar() {
     const botao = document.getElementById('btn-salvar');
     botao.disabled = true;
     const dados = new URLSearchParams({ acao: 'salvar', modelo_id: MODELO_ID, nome: document.getElementById('nome-modelo').value.trim(), orientacao: document.getElementById('orientacao-modelo').value,
-        paginas: JSON.stringify(paginas), url_verificacao: document.getElementById('url_verificacao').value.trim(),
+        paginas: JSON.stringify(paginas), url_verificacao: document.getElementById('url_verificacao').value.trim(), marca_dagua: JSON.stringify(valoresMarcaDagua()),
         fundos_novos: MODELO_ID === 'novo' ? JSON.stringify(fundos.map((f) => ({ nome: f.nome, url: f.url }))) : '[]' });
     fetch('/configuracoes/certificado.php', { method: 'POST', body: dados, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then((r) => r.json())

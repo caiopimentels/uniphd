@@ -104,14 +104,17 @@ function documentosMatricula(PDO $pdo, int $matriculaId, ?array $bloqueios = nul
             $situacao = ['liberado', 'success', 'Liberado'];
         } elseif ($emitido && !$emitido['liberado']) {
             $situacao = ['bloqueado', 'secondary', 'Bloqueado pela secretaria'];
-        } elseif ($bloqueios && ($disponivel || $emitido)) {
+        } elseif ($bloqueios && $emitido) {
+            // Já liberado, mas a pendência impede o aluno de abrir.
+            $situacao = ['pendente', 'danger', 'Liberado, mas o aluno só abre quando resolver: ' . implode(' · ', $bloqueios)];
+        } elseif ($bloqueios && $disponivel) {
             $situacao = ['pendente', 'danger', implode(' · ', $bloqueios)];
         } elseif (!$disponivel) {
             $situacao = ['indisponivel', 'light', $e['avulso'] ? 'Só com matrícula ativa ou concluída' : ($e['modulo_id'] ? 'Ao concluir o módulo ' . $e['modulo_nome'] : 'Ao concluir o curso')];
         } else {
             $situacao = ['aguardando', 'warning', 'Disponível — aguardando liberação'];
         }
-        $lista[] = $e + ['disponivel' => $disponivel, 'emitido' => $emitido, 'situacao' => $situacao[0], 'cor' => $situacao[1], 'texto' => $situacao[2]];
+        $lista[] = $e + ['disponivel' => $disponivel, 'emitido' => $emitido, 'liberado' => $emitido && $emitido['liberado'], 'pendencias' => implode(' · ', $bloqueios), 'situacao' => $situacao[0], 'cor' => $situacao[1], 'texto' => $situacao[2]];
     }
     return $lista;
 }
@@ -247,8 +250,8 @@ function documentoEmitidoCompleto(PDO $pdo, string $campo, $valor): ?array
 {
     $coluna = $campo === 'codigo' ? 'ce.codigo' : 'ce.id';
     $stmt = $pdo->prepare(
-        "SELECT ce.*, m.aluno_id, m.turma_id, a.nome AS aluno_nome, a.cpf, a.ra, c.id AS curso_id, c.nome AS curso_nome, c.carga_horaria,
-                c.certificado_modelo_id, t.nome AS turma_nome, t.parceria, t.data_inicio, t.data_termino, t.data_conclusao,
+        "SELECT ce.*, m.aluno_id, m.turma_id, a.nome AS aluno_nome, a.cpf, a.ra, c.id AS curso_id, c.nome AS curso_nome, c.carga_horaria, a.nome_mae, a.nome_pai,
+                a.data_nascimento, c.certificado_modelo_id, t.nome AS turma_nome, t.parceria, t.data_inicio, t.data_termino, t.data_conclusao,
                 e.nome AS documento_nome, e.modelo_id, e.modulo_id, cm.nome AS modulo_nome, cm.carga_horaria AS modulo_carga, tm.concluido_em AS modulo_concluido_em
          FROM certificados ce
          JOIN matriculas m ON m.id = ce.matricula_id

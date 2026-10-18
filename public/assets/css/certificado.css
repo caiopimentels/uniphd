@@ -35,3 +35,53 @@
 }
 /* Editor e miniaturas: a folha em pé não ocupa a largura toda. */
 .coluna-previa .cert-folha.cert-vertical, .modelo-card .cert-folha.cert-vertical { max-width: 62%; margin: 0 auto; }
+.cert-conteudo strong,
+.cert-conteudo b {
+    font-weight: 700 !important;
+}
+
+.cert-conteudo em,
+.cert-conteudo i {
+    font-style: italic;
+}
+
+.cert-conteudo u {
+    text-decoration: underline;
+}
+
+.cert-conteudo s {
+    text-decoration: line-through;
+}
+
+.cert-folha {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+}
+
+/* Marca d'água: camada maior que a folha (cobre os cantos depois de girar),
+   com o padrão da logo repetido — o desenho (logo + espaço) é gerado por
+   desenharMarcaDagua() em certificado.js; o tamanho vem em cqw, então sai
+   igual na tela e na impressão. */
+.cert-marca-dagua {
+    position: absolute;
+    inset: -50%;
+    z-index: 1;
+    pointer-events: none;
+    background-repeat: repeat;
+    background-position: center;
+    opacity: var(--opacidade-marca, 0.1);
+    filter: grayscale(1);
+    transform: rotate(-25deg);
+}
+.cert-marca-dagua[hidden] { display: none; }
+.cert-folha > .cert-campo {
+    z-index: 2;
+}
+
+@media print {
+    .cert-marca-dagua {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}

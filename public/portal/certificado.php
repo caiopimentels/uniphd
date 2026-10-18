@@ -47,9 +47,14 @@ $config = buscarConfiguracoes($pdo);
 $modelo = modeloDoDocumento($pdo, $documento);
 $paginasCertificado = paginasModeloCertificado($modelo);
 $orientacaoCertificado = $modelo['orientacao'] ?? 'horizontal';
+$marcaDaguaCertificado = marcaDaguaModelo($modelo);
 $modulosCertificado = modulosDoCurso($pdo, (int) $documento['curso_id']);
 $valores = valoresCertificado($documento, $config);
 $voltar = $ehDono ? '/portal/certificados.php' : '/matriculas/visualizar.php?id=' . (int) $documento['matricula_id'];
+
+// A página é montada aqui e vira PDF no servidor (ver pdfDocumentoEmitido):
+// quem abre recebe o arquivo, não o HTML.
+ob_start();
 ?>
 <!doctype html>
 <html lang="pt-br">
@@ -78,3 +83,24 @@ $voltar = $ehDono ? '/portal/certificados.php' : '/matriculas/visualizar.php?id=
     </script>
 </body>
 </html>
+<?php
+$html = ob_get_clean();
+// A barra (Imprimir / Voltar) muda conforme quem abre e não vai para o PDF.
+$pdf = pdfDocumentoEmitido((int) $documento['id'], preg_replace('~<div class="cert-barra">.*?</div>~s', '', $html, 1));
+if ($pdf) {
+    $nomeArquivo = preg_replace('/[^A-Za-z0-9 ._-]+/', '', iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', ($documento['documento_nome'] ?: 'Certificado') . ' - ' . $documento['aluno_nome'])) ?: 'documento';
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: inline; filename="' . $nomeArquivo . '.pdf"');
+    header('Content-Length: ' . filesize($pdf));
+    header('Cache-Control: private, no-store');
+    readfile($pdf);
+    exit;
+}
+// Sem o PDF (navegador do servidor ausente ou com erro): a secretaria ainda
+// vê a página; o aluno recebe um aviso para tentar depois.
+if ($ehSecretaria) {
+    echo str_replace('<div class="cert-barra">', '<div class="cert-barra"><span style="color:#b00;font-size:14px;align-self:center">PDF indisponível no servidor (instale o chromium) — mostrando a página.</span>', $html);
+    exit;
+}
+flash('warning', 'Não conseguimos gerar o seu documento agora. Tente de novo em alguns minutos; se continuar, fale com a secretaria.');
+redirect('/portal/certificados.php');

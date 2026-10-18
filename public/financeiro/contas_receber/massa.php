@@ -138,13 +138,18 @@ if ($acao === 'reparcelar') {
     // Parcelas como ficaram na tela (data e valor de cada uma); sem elas,
     // divide igual, mês a mês. A soma tem que fechar no total, ao centavo.
     $valoresTela = (array) ($_POST['parcela_valor'] ?? []);
+    $formasValidas = array_map('intval', $pdo->query('SELECT id FROM formas_pagamento')->fetchAll(PDO::FETCH_COLUMN));
     $datasTela = (array) ($_POST['parcela_venc'] ?? []);
     $novasParcelas = [];
     if ($valoresTela) {
         foreach (array_values($valoresTela) as $i => $textoValor) {
             $valorTela = (float) str_replace(',', '.', str_replace('.', '', (string) $textoValor));
             $dataTela = (string) (array_values($datasTela)[$i] ?? '');
-            $novasParcelas[] = ['valor' => round($valorTela, 2), 'vencimento' => $dataTela];
+            $formaTela = (int) (array_values((array) ($_POST['parcela_forma'] ?? []))[$i] ?? 0) ?: $formaNova;
+            if ($formaTela && !in_array($formaTela, $formasValidas, true)) {
+                $formaTela = null;
+            }
+            $novasParcelas[] = ['valor' => round($valorTela, 2), 'vencimento' => $dataTela, 'forma' => $formaTela];
             if ($valorTela <= 0) {
                 $erros[] = 'A parcela ' . ($i + 1) . ' está sem valor.';
             }
@@ -190,12 +195,12 @@ if ($acao === 'reparcelar') {
     $novas = [];
     if (!$novasParcelas) {
         foreach (dividirValor($total, $numParcelas) as $i => $valor) {
-            $novasParcelas[] = ['valor' => $valor, 'vencimento' => somarMeses($primeiro, $i)];
+            $novasParcelas[] = ['valor' => $valor, 'vencimento' => somarMeses($primeiro, $i), 'forma' => $formaNova];
         }
     }
     foreach ($novasParcelas as $i => $nova) {
         $insere->execute([$alunosDiferentes[0], $matriculaId, $categoriaId, $descricaoBase . ' ' . ($i + 1) . '/' . $numParcelas, $nova['valor'],
-            $nova['vencimento'], $formaNova, 'Reparcelamento', usuarioAtualId()]);
+            $nova['vencimento'], $nova['forma'], 'Reparcelamento', usuarioAtualId()]);
         $novaId = (int) $pdo->lastInsertId();
         $novas[] = $novaId;
         registrarHistoricoParcela($pdo, $novaId, 'criacao', 'Criada no reparcelamento de: ' . $origem

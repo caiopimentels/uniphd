@@ -47,7 +47,8 @@ function enviarEmail(array $configSmtp, string $paraEmail, string $paraNome, str
     $seguranca = $configSmtp['smtp_seguranca'] ?? 'tls';
     $usuario = (string) ($configSmtp['smtp_usuario'] ?? '');
     $senha = (string) ($configSmtp['smtp_senha'] ?? '');
-    $remetenteEmail = trim((string) ($configSmtp['smtp_remetente_email'] ?? $usuario));
+    // Remetente em branco (campo vazio na tela) = o próprio usuário do SMTP.
+    $remetenteEmail = trim((string) ($configSmtp['smtp_remetente_email'] ?? '')) ?: trim($usuario);
     $remetenteNome = trim((string) ($configSmtp['smtp_remetente_nome'] ?? ''));
 
     if ($host === '' || $usuario === '' || $senha === '' || $remetenteEmail === '') {
@@ -145,20 +146,33 @@ function enviarEmail(array $configSmtp, string $paraEmail, string $paraNome, str
             : '';
         $assuntoCodificado = '=?UTF-8?B?' . base64_encode($assunto) . '?=';
 
+        // Data, Message-ID e versão em texto junto com a HTML: sem eles os
+        // filtros anti-spam (ex.: rspamd do provedor) pontuam a mensagem como
+        // suspeita e ela volta como "classified as rSPAM".
+        $dominio = substr(strrchr($remetenteEmail, '@') ?: '@localhost', 1);
+        $fronteira = 'b' . bin2hex(random_bytes(12));
         $cabecalhos = [
+            'Date: ' . date('r'),
+            'Message-ID: <' . bin2hex(random_bytes(16)) . '@' . $dominio . '>',
             'From: ' . $nomeRemetenteCodificado . '<' . $remetenteEmail . '>',
             'To: ' . $nomeParaCodificado . '<' . $paraEmail . '>',
             'Subject: ' . $assuntoCodificado,
             'MIME-Version: 1.0',
-            'Content-Type: text/html; charset=UTF-8',
-            'Content-Transfer-Encoding: 8bit',
+            'Content-Type: multipart/alternative; boundary="' . $fronteira . '"',
         ];
+        $texto = html_entity_decode(strip_tags(preg_replace(['~<br\s*/?>~i', '~</(p|div|h[1-6]|li|tr|pre)>~i'], ["\n", "\n\n"], $corpoHtml)), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $texto = trim(preg_replace("/\n{3,}/", "\n\n", $texto));
+        $html = '<!doctype html><html><head><meta charset="utf-8"></head><body>' . $corpoHtml . '</body></html>';
+        // Base64 em linhas de 76: sem linha longa e sem precisar de dot-stuffing.
+        $corpo = '--' . $fronteira . "\r\n"
+            . "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+            . chunk_split(base64_encode($texto), 76, "\r\n")
+            . '--' . $fronteira . "\r\n"
+            . "Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+            . chunk_split(base64_encode($html), 76, "\r\n")
+            . '--' . $fronteira . '--';
 
-        // Linhas iniciadas com "." precisam ser escapadas (dot-stuffing) e o
-        // corpo termina com uma linha "." sozinha, conforme o protocolo SMTP.
-        $corpoEscapado = preg_replace('/^\./m', '..', $corpoHtml);
-
-        $enviar(implode("\r\n", $cabecalhos) . "\r\n\r\n" . $corpoEscapado . "\r\n.");
+        $enviar(implode("\r\n", $cabecalhos) . "\r\n\r\n" . $corpo . "\r\n.");
         $resposta = $ler();
         if ($codigoResposta($resposta) !== 250) {
             throw new RuntimeException("Servidor recusou o envio: {$resposta}");

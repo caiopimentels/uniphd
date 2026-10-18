@@ -292,11 +292,12 @@ require __DIR__ . '/../../../includes/layout_header.php';
                         <input type="date" name="primeiro_vencimento" id="rp-venc" class="form-control" required oninput="montarParcelasReparcelar()">
                     </div>
                     <div class="col-6">
-                        <label class="form-label">Forma de pagamento</label>
-                        <select name="forma_pagamento_id" class="form-select">
+                        <label class="form-label">Forma de pagamento <span class="text-muted small">(aplica em todas)</span></label>
+                        <select id="rp-forma" class="form-select" onchange="document.querySelectorAll('.rp-forma-parcela').forEach((s) => { s.value = this.value; })">
                             <option value="">-</option>
                             <?php foreach ($formasPagamento as $f): ?><option value="<?= (int) $f['id'] ?>"><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option><?php endforeach; ?>
                         </select>
+                        <div class="form-text">Depois dá para mudar a forma de cada parcela na tabela.</div>
                     </div>
                     <div class="col-12">
                         <label class="form-label">Descrição</label>
@@ -307,9 +308,9 @@ require __DIR__ . '/../../../includes/layout_header.php';
                 <div class="fw-semibold mt-3 mb-1">Como fica o parcelamento</div>
                 <div class="form-text mt-0 mb-2">Dá para mudar a data e o valor de cada parcela; a soma precisa fechar exatamente no valor total.</div>
                 <table class="table table-sm align-middle mb-1">
-                    <thead><tr><th style="width: 70px;">Parcela</th><th>Vencimento</th><th class="text-end">Valor</th></tr></thead>
+                    <thead><tr><th style="width: 70px;">Parcela</th><th>Vencimento</th><th>Forma de pagamento</th><th class="text-end">Valor</th></tr></thead>
                     <tbody id="rp-linhas"></tbody>
-                    <tfoot><tr><th colspan="2" class="text-end">Soma das parcelas</th><th class="text-end" id="rp-soma-parcelas"></th></tr></tfoot>
+                    <tfoot><tr><th colspan="3" class="text-end">Soma das parcelas</th><th class="text-end" id="rp-soma-parcelas"></th></tr></tfoot>
                 </table>
                 <div class="small" id="rp-previa"></div>
             </div>
@@ -436,14 +437,19 @@ function montarParcelasReparcelar() {
     const n = Math.min(60, Math.max(1, parseInt(document.getElementById('rp-n').value, 10) || 1));
     const primeiro = document.getElementById('rp-venc').value;
     const parte = Math.floor(total / n);
+    // Forma de cada parcela: a que já estava escolhida na linha, senão a de cima.
+    const formasAntes = [...document.querySelectorAll('.rp-forma-parcela')].map((s) => s.value);
+    const opcoesForma = document.getElementById('rp-forma').innerHTML;
     let html = '';
     for (let i = 0; i < n; i++) {
         const valor = i === n - 1 ? total - parte * (n - 1) : parte;
         html += '<tr><td>' + (i + 1) + '/' + n + '</td>'
             + '<td><input type="date" name="parcela_venc[]" class="form-control form-control-sm" required value="' + (primeiro ? somarMesesRp(primeiro, i) : '') + '"></td>'
+            + '<td><select name="parcela_forma[]" class="form-select form-select-sm rp-forma-parcela">' + opcoesForma + '</select></td>'
             + '<td><input type="text" name="parcela_valor[]" class="form-control form-control-sm text-end rp-valor" required value="' + (valor / 100).toFixed(2).replace('.', ',') + '" oninput="conferirReparcelar()"></td></tr>';
     }
     document.getElementById('rp-linhas').innerHTML = html;
+    document.querySelectorAll('.rp-forma-parcela').forEach((s, i) => { s.value = formasAntes[i] ?? document.getElementById('rp-forma').value; });
     conferirReparcelar();
 }
 function conferirReparcelar() {
