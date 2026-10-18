@@ -211,6 +211,7 @@ function aplicarSituacaoTurma(PDO $pdo, int $turmaId, array $situacao, ?string $
             $canceladas++;
         }
         $pdo->prepare('DELETE FROM turma_reservas WHERE turma_id = ?')->execute([$turmaId]);
+        sincronizarDocumentosTurma($pdo, $turmaId); // certificado de conclusão (liberação automática)
     } elseif ($abertaAgora && $turma['comportamento_atual'] === 'concluida') {
         // Reabriu uma turma concluída (ex.: concluída por engano): quem
         // tinha concluído volta a cursar.

@@ -74,10 +74,19 @@ body.portal { background: var(--bg); color: var(--text); font-family: 'Inter', s
 .bloco-metade .banner-baixa, .bloco-terco .banner-baixa { aspect-ratio: 3 / 1; }
 .bloco-metade .banner-media, .bloco-terco .banner-media { aspect-ratio: 16 / 9; }
 .bloco-metade .banner-alta, .bloco-terco .banner-alta { aspect-ratio: 4 / 5; }
-@media (max-width: 600px) {
-    .banner-baixa { aspect-ratio: 3 / 1; }
-    .banner-media, .banner-alta { aspect-ratio: 16 / 10; }
+/* No celular o banner mantém a proporção da imagem — nada é cortado (o texto
+   do banner costuma ficar nas laterais). */
+
+/* Botão do WhatsApp fixo no canto da tela. */
+.whatsapp-flutuante {
+    position: fixed; right: 18px; bottom: 18px; z-index: 1050;
+    width: 56px; height: 56px; border-radius: 50%;
+    background: #25d366; color: #fff; font-size: 30px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.25); text-decoration: none; transition: transform .15s ease;
 }
+.whatsapp-flutuante:hover { color: #fff; transform: scale(1.08); }
+@media print { .whatsapp-flutuante { display: none; } }
 .banner-slide { position: absolute; inset: 0; opacity: 0; transition: opacity .6s ease; display: block; }
 .banner-slide.ativo { opacity: 1; z-index: 1; }
 .banner-slide img { width: 100%; height: 100%; object-fit: cover; display: block; }

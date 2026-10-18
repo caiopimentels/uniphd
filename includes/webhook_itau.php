@@ -581,6 +581,7 @@ function baixarCobrancaPeloBanco(PDO $pdo, array $cobranca, ?float $valorPago, ?
     }
 
     confirmarMatriculaPorPagamento($pdo, (int) $parcela['id']);
+    sincronizarDocumentosPelaParcela($pdo, (int) $parcela['id']);
 
     $stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
     $stmt->execute([$cobranca['conta_bancaria_id']]);

@@ -16,7 +16,7 @@
                     <?php if ($agenda = textoAgendaTurma($t)): ?><div class="info"><i class="bi bi-clock"></i> <?= e($agenda) ?></div><?php endif; ?>
                     <div><span class="selo-vagas <?= $restam <= 5 ? 'poucas' : '' ?>"><?= $restam > 0 && $restam <= 5 ? '<i class="bi bi-fire"></i> ' : '' ?><?= e(textoVagasRestantes($restam)) ?></span></div>
                     <div class="preco">
-                        <?= (float) $t['valor_mensalidade'] > 0 ? numParcelasPortal($t) . 'x de ' . formatMoney($t['valor_mensalidade']) : 'Gratuito' ?>
+                        <?= valorTotalTurma($t) > 0 ? numParcelasPortal($t) . 'x de ' . formatMoney(mensalidadeDoTotal(valorTotalTurma($t), numParcelasPortal($t))) : 'Gratuito' ?>
                     </div>
                 </div>
             </a>

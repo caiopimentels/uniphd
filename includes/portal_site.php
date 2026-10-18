@@ -35,6 +35,25 @@ function urlPaginaPortal(array $pagina): ?string
     return urlsTelasPortal()[$pagina['chave']] ?? null;
 }
 
+// Telas do sistema escondidas pelo editor (portal_paginas.ativo = 0).
+function telaPortalVisivel(string $chave): bool
+{
+    static $ocultas = null;
+    if ($ocultas === null) {
+        $ocultas = getDB()->query("SELECT chave FROM portal_paginas WHERE tipo = 'sistema' AND ativo = 0")->fetchAll(PDO::FETCH_COLUMN);
+    }
+    return !in_array($chave, $ocultas, true);
+}
+
+// Tela oculta: só abre na prévia do editor; os demais voltam para o início.
+function exigirTelaPortal(string $chave): void
+{
+    if (!telaPortalVisivel($chave) && !emPreviaPortal()) {
+        flash('warning', 'Esta página não está disponível.');
+        redirect('/portal/index.php');
+    }
+}
+
 function paginasPortal(PDO $pdo): array
 {
     return $pdo->query("SELECT * FROM portal_paginas ORDER BY FIELD(tipo, 'inicio', 'personalizada', 'sistema'), ordem, titulo")->fetchAll();

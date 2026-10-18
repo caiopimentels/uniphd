@@ -1,8 +1,10 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
+exigirTelaPortal('meus_cursos');
 exigirAluno();
 
 $pdo = getDB();
+sincronizarDocumentosAluno($pdo, alunoAtualId());
 $tituloPagina = 'Meus cursos';
 $telaPortal = 'meus_cursos';
 require __DIR__ . '/../../includes/portal_header.php';
@@ -22,6 +24,13 @@ $stmt->execute([alunoAtualId()]);
 $matriculas = $stmt->fetchAll();
 ?>
 <h1 class="portal-titulo">Meus cursos</h1>
+<?php if ($faltamDocumentos = documentosParaEnviar(documentosDoAluno($pdo, alunoAtualId()))): ?>
+    <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2">
+        <i class="bi bi-file-earmark-arrow-up"></i>
+        <div class="flex-grow-1">Você tem <strong><?= $faltamDocumentos ?> documento(s)</strong> para enviar.</div>
+        <a href="/portal/documentos.php" class="btn btn-sm btn-warning">Enviar documentos</a>
+    </div>
+<?php endif; ?>
 <p class="portal-sub">Suas matrículas e inscrições.</p>
 
 <?php if (!$matriculas): ?>
@@ -74,11 +83,17 @@ $matriculas = $stmt->fetchAll();
             <div class="mt-3 d-flex gap-2 flex-wrap">
                 <a href="/portal/calendario.php" class="btn btn-sm btn-outline-brand"><i class="bi bi-calendar-week"></i> Calendário</a>
                 <a href="/portal/financeiro.php" class="btn btn-sm btn-outline-brand"><i class="bi bi-wallet2"></i> Pagamentos</a>
+                <?php if (array_filter(documentosMatricula($pdo, (int) $m['id']), fn ($d) => $d['situacao'] === 'liberado')): ?><a href="/portal/certificados.php" class="btn btn-sm btn-outline-brand"><i class="bi bi-award"></i> Declarações</a><?php endif; ?>
             </div>
-        <?php elseif ($m['status'] === 'concluida' && $m['certificado_liberado']): ?>
-            <a href="/portal/certificado.php?matricula=<?= (int) $m['id'] ?>" class="btn btn-sm btn-brand mt-3"><i class="bi bi-award"></i> Ver certificado</a>
         <?php elseif ($m['status'] === 'concluida'): ?>
-            <div class="small text-muted mt-3"><i class="bi bi-hourglass-split"></i> Seu certificado está em análise pela secretaria. Em caso de dúvida, fale com a gente.</div>
+            <?php $docs = documentosMatricula($pdo, (int) $m['id']); $pendente = array_filter($docs, fn ($d) => $d['situacao'] === 'pendente'); ?>
+            <?php if ($pendente): ?>
+                <div class="small mt-3 text-danger"><i class="bi bi-exclamation-circle"></i> Certificado bloqueado: <?= e(reset($pendente)['texto']) ?>. <a href="/portal/certificados.php">Ver detalhes</a></div>
+            <?php elseif (array_filter($docs, fn ($d) => $d['situacao'] === 'liberado')): ?>
+                <a href="/portal/certificados.php" class="btn btn-sm btn-brand mt-3"><i class="bi bi-award"></i> Ver certificados</a>
+            <?php elseif ($docs): ?>
+                <div class="small text-muted mt-3"><i class="bi bi-hourglass-split"></i> Seu certificado está em análise pela secretaria. Em caso de dúvida, fale com a gente.</div>
+            <?php endif; ?>
         <?php elseif ($m['observacao']): ?>
             <div class="small text-muted mt-2"><?= e($m['observacao']) ?></div>
         <?php endif; ?>

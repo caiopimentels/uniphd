@@ -91,6 +91,8 @@ $pageAction = '<a href="/situacoes_turma/listar.php" class="btn btn-outline-seco
 require __DIR__ . '/../../includes/layout_header.php';
 $abaAtiva = 'situacoes';
 require __DIR__ . '/../../includes/abas_configuracoes.php';
+$abaAuxiliar = 'situacoes';
+require __DIR__ . '/../../includes/abas_cadastros_auxiliares.php';
 ?>
 
 <?php if ($erros): ?>

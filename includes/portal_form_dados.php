@@ -24,7 +24,17 @@
         <input type="email" name="email" class="form-control" required maxlength="150" autocomplete="email" value="<?= e($d['email'] ?? '') ?>">
     </div>
 
-    <div class="col-12"><div class="fw-semibold mt-2">Endereço <span class="text-muted fw-normal small">— vai no boleto</span></div></div>
+    <div class="col-12"><div class="fw-semibold mt-2">Para o certificado</div></div>
+    <div class="col-12">
+        <?php
+        $dc = $d;
+        $tiposGraduacaoCampo = tiposGraduacao(getDB(), true, (int) ($d['graduacao_id'] ?? 0) ?: null);
+        $obrigatorioCertificacao = true;
+        require __DIR__ . '/campos_certificacao_aluno.php';
+        ?>
+    </div>
+
+    <div class="col-12"><div class="fw-semibold mt-2">Endereço <span class="text-muted fw-normal small">o</span></div></div>
     <div class="col-md-3">
         <label class="form-label">CEP *</label>
         <input type="text" name="cep" class="form-control" required inputmode="numeric" data-mascara="cep" autocomplete="postal-code" value="<?= e($d['cep'] ?? '') ?>">

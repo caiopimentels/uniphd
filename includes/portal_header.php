@@ -1,10 +1,16 @@
 <?php
+// Aluno com senha provisória troca antes de usar qualquer página do portal
+// (inclusive as abertas, como o início).
+if (alunoLogado() && !empty($_SESSION['portal_trocar_senha']) && !in_array(basename($_SERVER['SCRIPT_NAME'] ?? ''), ['trocar_senha.php', 'sair.php'], true)) {
+    redirect('/portal/trocar_senha.php');
+}
 // Topo do portal do aluno. Espera $tituloPagina e, opcionalmente,
 // $telaPortal (chave da tela do sistema, para os blocos montados pela
 // operadora antes/depois do conteúdo — ver portal_site.php). O menu vem de
 // Acadêmico › Portal do aluno › Menu e rodapé.
 $pdo = getDB();
 $configPortal = buscarConfiguracoes($pdo);
+agendarLiberacaoDocumentos(); // libera os documentos de quem ficou em dia
 $nomePortal = $configPortal['portal_titulo'] ?: nomeSistema();
 // Cores próprias do portal (Portal do aluno › Menu, rodapé e ajustes) ou,
 // sem elas, as do sistema.
@@ -62,6 +68,7 @@ $enderecoAtual = $enderecoAtual === '/portal/' ? '/portal/index.php' : $endereco
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" href="/portal/conta.php"><i class="bi bi-person"></i> Meus dados</a></li>
+                        <li><a class="dropdown-item" href="/portal/documentos.php"><i class="bi bi-folder2-open"></i> Meus documentos</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="/portal/sair.php"><i class="bi bi-box-arrow-right"></i> Sair</a></li>
                     </ul>

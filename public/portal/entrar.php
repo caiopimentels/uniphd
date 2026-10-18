@@ -11,7 +11,8 @@ $erro = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $resultado = tentarLoginAluno($pdo, input('cpf'), (string) ($_POST['senha'] ?? ''));
     if ($resultado['ok']) {
-        redirect($voltar);
+        // Senha provisória: a primeira coisa é trocar.
+        redirect(!empty($_SESSION['portal_trocar_senha']) ? '/portal/trocar_senha.php' : $voltar);
     }
     $erro = $resultado['mensagem'];
 }

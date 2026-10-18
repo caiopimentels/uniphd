@@ -33,6 +33,7 @@ if ($ocupadas >= (int) $matricula['vagas']) {
 }
 $pdo->prepare("UPDATE matriculas SET status = 'ativa', segura_vaga = 0, lista_espera = 0, pagamento_ate = NULL WHERE id = ?")->execute([$id]);
 $pdo->commit();
+sincronizarDocumentosMatricula($pdo, $id);
 avisarMinimoTurma($pdo, (int) $matricula['turma_id']);
 
 registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'confirmacao', 'Turma ' . $matricula['turma_nome'] . ' — inscrição do portal confirmada manualmente', (int) $matricula["id"]);

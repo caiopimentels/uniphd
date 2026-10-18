@@ -19,9 +19,102 @@ function valorMensalidadeComDesconto(float $valorMensalidade, float $descontoPer
 }
 
 /**
+ * Divide um valor em N parcelas sem perder centavo: todas iguais e a última
+ * com a diferença (R$ 1.000 em 3x = 333,33 + 333,33 + 333,34).
+ */
+function dividirValor(float $total, int $parcelas): array
+{
+    $parcelas = max(1, $parcelas);
+    // Em centavos inteiros, para não errar arredondamento (0,29 * 100 = 28,999...).
+    $centavos = (int) round($total * 100);
+    $parte = intdiv($centavos, $parcelas);
+    $lista = array_fill(0, $parcelas, $parte / 100);
+    $lista[$parcelas - 1] = ($centavos - $parte * ($parcelas - 1)) / 100;
+    return $lista;
+}
+
+// Mensalidade de referência (a que aparece nas telas): total ÷ parcelas.
+function mensalidadeDoTotal(float $total, int $parcelas): float
+{
+    return dividirValor($total, $parcelas)[0];
+}
+
+/**
+ * Forma de pagamento que não gera boleto/Pix (cartão, dinheiro...): no
+ * portal a parcela aparece como "pague na secretaria".
+ */
+function formaPagaNaSecretaria(PDO $pdo, ?int $formaId): ?string
+{
+    static $cache = [];
+    if (!$formaId) {
+        return null;
+    }
+    if (!array_key_exists($formaId, $cache)) {
+        $stmt = $pdo->prepare('SELECT nome, instrumento FROM formas_pagamento WHERE id = ?');
+        $stmt->execute([$formaId]);
+        $forma = $stmt->fetch();
+        $cache[$formaId] = $forma && $forma['instrumento'] === 'manual' ? $forma['nome'] : null;
+    }
+    return $cache[$formaId];
+}
+
+/**
+ * O que a forma de pagamento da parcela deixa gerar: Pix (QR Code) e/ou
+ * boleto. Pix -> só Pix; Boleto -> só boleto; Boleto + Pix -> os dois;
+ * cartão/dinheiro (manual) -> nenhum. Parcela sem forma: os dois (antigas).
+ * Retorna ['pix' => bool, 'boleto' => bool, 'nome' => string].
+ */
+function meiosCobrancaForma(PDO $pdo, ?int $formaId): array
+{
+    static $cache = [];
+    if (!$formaId) {
+        return ['pix' => true, 'boleto' => true, 'nome' => ''];
+    }
+    if (!isset($cache[$formaId])) {
+        $stmt = $pdo->prepare('SELECT nome, instrumento FROM formas_pagamento WHERE id = ?');
+        $stmt->execute([$formaId]);
+        $f = $stmt->fetch() ?: ['nome' => '', 'instrumento' => 'boleto_pix'];
+        $cache[$formaId] = [
+            'pix' => in_array($f['instrumento'], ['pix', 'boleto_pix'], true),
+            'boleto' => in_array($f['instrumento'], ['boleto', 'boleto_pix'], true),
+            'nome' => $f['nome'],
+        ];
+    }
+    return $cache[$formaId];
+}
+
+// Botões de Pix e boleto da parcela (listas do financeiro, aluno, matrícula):
+// apagados quando a forma de pagamento não usa aquele meio.
+function botoesCobrancaParcela(PDO $pdo, array $parcela): string
+{
+    $meios = meiosCobrancaForma($pdo, $parcela['forma_pagamento_id'] ? (int) $parcela['forma_pagamento_id'] : null);
+    $id = (int) $parcela['id'];
+    $motivo = fn (string $meio) => e('A forma de pagamento desta parcela é ' . $meios['nome'] . ': não gera ' . $meio . '. Para mudar, use o lápis (forma de pagamento).');
+    return ($meios['pix']
+            ? '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(' . $id . ')" title="Gerar / ver Pix (QR Code e copia e cola)"><i class="bi bi-qr-code"></i></button>'
+            : '<span class="btn btn-sm acao-inativa" title="' . $motivo('Pix') . '"><i class="bi bi-qr-code"></i></span>')
+        . ' ' . ($meios['boleto']
+            ? '<button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBoleto(' . $id . ')" title="Gerar / abrir boleto"><i class="bi bi-upc-scan"></i></button>'
+            : '<span class="btn btn-sm acao-inativa" title="' . $motivo('boleto') . '"><i class="bi bi-upc-scan"></i></span>');
+}
+
+// Formas que o portal consegue cobrar sozinho (boleto e/ou Pix no banco).
+function formaCobraOnline(PDO $pdo, ?int $formaId): bool
+{
+    if (!$formaId) {
+        return false;
+    }
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM formas_pagamento WHERE id = ? AND instrumento IN ('boleto', 'boleto_pix', 'pix')");
+    $stmt->execute([$formaId]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+/**
  * Gera as cobranças de uma matrícula em contas a receber: a taxa de
- * matrícula (se houver, vencendo na data da matrícula) e uma mensalidade
- * por mês a partir do primeiro vencimento. Tudo nasce emitido na data da
+ * matrícula (se houver, vencendo na data da matrícula, na forma da
+ * matrícula) e as mensalidades mês a mês a partir do primeiro vencimento,
+ * na forma das mensalidades. Com valor_total, o total (menos a bolsa) é
+ * dividido pelas parcelas sem perder centavo. Tudo nasce emitido na data da
  * matrícula, mas o DRE conta cada mensalidade no mês do seu vencimento
  * (ver calcularDRE).
  */
@@ -42,18 +135,24 @@ function gerarCobrancasMatricula(PDO $pdo, array $matricula, string $turmaNome, 
         ]);
     }
 
-    $valor = valorMensalidadeComDesconto((float) $matricula['valor_mensalidade'], (float) $matricula['desconto_percentual']);
-    if ($valor <= 0) {
+    $numParcelas = max(1, (int) $matricula['num_parcelas']);
+    if (isset($matricula['valor_total']) && $matricula['valor_total'] !== null) {
+        $totalComBolsa = round((float) $matricula['valor_total'] * (1 - (float) $matricula['desconto_percentual'] / 100), 2);
+        $valores = dividirValor($totalComBolsa, $numParcelas);
+    } else {
+        $valores = array_fill(0, $numParcelas, valorMensalidadeComDesconto((float) $matricula['valor_mensalidade'], (float) $matricula['desconto_percentual']));
+    }
+    if ($valores[0] <= 0) {
         return;
     }
 
-    $numParcelas = max(1, (int) $matricula['num_parcelas']);
-    for ($i = 0; $i < $numParcelas; $i++) {
+    $formaMensalidade = ($matricula['forma_mensalidade_id'] ?? null) ?: ($matricula['forma_pagamento_id'] ?: null);
+    foreach ($valores as $i => $valor) {
         $stmt->execute([
             $matricula['aluno_id'], $matricula['id'], categoriaSistemaId($pdo, 'mensalidade'),
             "Mensalidade " . ($i + 1) . "/{$numParcelas} - {$turmaNome}", $valor,
             $matricula['data_matricula'], somarMeses($matricula['primeiro_vencimento'], $i),
-            $matricula['forma_pagamento_id'] ?: null, $usuarioId,
+            $formaMensalidade, $usuarioId,
         ]);
     }
 }
@@ -168,6 +267,7 @@ function dadosEdicaoParcela(PDO $pdo, array $parcela): array
         'desconto_valor' => $parcela['desconto_valor'] === null ? null : (float) $parcela['desconto_valor'],
         'desconto_ate' => $parcela['desconto_ate'],
         'observacao' => (string) $parcela['observacao'],
+        'forma' => $parcela['forma_pagamento_id'] ? (int) $parcela['forma_pagamento_id'] : null,
         'regra' => $regra ? $regra['texto'] : null,
         'no_banco' => !empty($parcela['boleto_no_banco']),
     ];
@@ -863,6 +963,9 @@ function excluirParcelaReceber(PDO $pdo, int $id): array
     $stmt->execute([$id]);
     if ((int) $stmt->fetchColumn() === 0) {
         $pdo->prepare('DELETE FROM contas_receber WHERE id = ?')->execute([$id]);
+        if ($conta['aluno_id']) {
+            sincronizarDocumentosAluno($pdo, (int) $conta['aluno_id']); // pode ter saído da inadimplência
+        }
         registrarAtividade('contas_receber', 'exclusao', 'Conta a receber excluída: ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
         return ['ok' => true, 'mensagem' => 'Lançamento excluído.', 'resultado' => 'excluida', 'aguardando' => false];
     }
@@ -883,6 +986,7 @@ function excluirParcelaReceber(PDO $pdo, int $id): array
     // Já passou pelo banco: não apaga (o histórico do boleto fica); some das
     // telas e vai para o filtro "Excluídas".
     $pdo->prepare("UPDATE contas_receber SET status = 'cancelado', excluido_em = NOW() WHERE id = ?")->execute([$id]);
+    sincronizarDocumentosPelaParcela($pdo, $id); // pode ter saído da inadimplência
     registrarHistoricoParcela($pdo, $id, 'cancelamento', 'Excluída pelo usuário' . ($baixa['havia_boleto'] ? ' — boleto baixado no banco' : '') . ' (fica no filtro "Excluídas", porque já passou pelo banco)');
     registrarAtividade('contas_receber', 'exclusao', 'Conta a receber excluída (já tinha passado pelo banco): ' . $conta['descricao'] . ' - ' . formatMoney($conta['valor']));
     $aguardando = str_contains($baixa['mensagem'], AVISO_APROVACAO_ITAU);
@@ -893,4 +997,43 @@ function excluirParcelaReceber(PDO $pdo, int $id): array
         'mensagem' => ($baixa['havia_boleto'] ? ($aguardando ? $baixa['mensagem'] . ' ' : 'Boleto baixado no banco. ') : '')
             . 'Parcela excluída — como já passou pelo banco, ela fica guardada no filtro "Excluídas".',
     ];
+}
+
+/**
+ * Muda a forma de pagamento de uma parcela em aberto. Indo para uma forma
+ * que não é boleto/Pix (cartão, dinheiro...), o boleto que já estiver no
+ * banco é baixado antes — o aluno não pode pagar duas vezes. Se o banco
+ * recusar a baixa, nada muda.
+ * Retorna ['ok' => bool, 'mensagem' => string, 'mudou' => bool].
+ */
+function trocarFormaParcela(PDO $pdo, int $id, ?int $formaNova): array
+{
+    $stmt = $pdo->prepare('SELECT cr.*, fp.nome AS forma_nome FROM contas_receber cr LEFT JOIN formas_pagamento fp ON fp.id = cr.forma_pagamento_id WHERE cr.id = ?');
+    $stmt->execute([$id]);
+    $parcela = $stmt->fetch();
+    if (!$parcela || $parcela['status'] !== 'pendente' || $parcela['excluido_em']) {
+        return ['ok' => false, 'mensagem' => 'Só parcelas em aberto mudam de forma de pagamento.', 'mudou' => false];
+    }
+    if ((int) $parcela['forma_pagamento_id'] === (int) $formaNova) {
+        return ['ok' => true, 'mensagem' => '', 'mudou' => false];
+    }
+    $stmt = $pdo->prepare('SELECT nome FROM formas_pagamento WHERE id = ?');
+    $stmt->execute([$formaNova]);
+    $nomeNova = $formaNova ? (string) $stmt->fetchColumn() : '';
+    if ($formaNova && $nomeNova === '') {
+        return ['ok' => false, 'mensagem' => 'Forma de pagamento não encontrada.', 'mudou' => false];
+    }
+
+    $aviso = '';
+    if (!formaCobraOnline($pdo, $formaNova)) {
+        $baixa = baixarBoletoBancoItau($pdo, $id);
+        if (!$baixa['ok']) {
+            return ['ok' => false, 'mensagem' => $parcela['descricao'] . ': ' . $baixa['mensagem'] . ' A forma de pagamento não foi mudada.', 'mudou' => false];
+        }
+        $aviso = $baixa['havia_boleto'] ? ' — boleto/Pix baixado no banco' : '';
+    }
+    $pdo->prepare('UPDATE contas_receber SET forma_pagamento_id = ? WHERE id = ?')->execute([$formaNova, $id]);
+    registrarHistoricoParcela($pdo, $id, 'edicao', 'Forma de pagamento: ' . ($parcela['forma_nome'] ?: 'nenhuma') . ' → ' . ($nomeNova ?: 'nenhuma') . $aviso);
+    return ['ok' => true, 'mensagem' => $parcela['descricao'] . ': ' . ($nomeNova ?: 'sem forma') . $aviso, 'mudou' => true,
+        'resumo' => ($parcela['forma_nome'] ?: 'nenhuma') . ' → ' . ($nomeNova ?: 'nenhuma') . $aviso];
 }

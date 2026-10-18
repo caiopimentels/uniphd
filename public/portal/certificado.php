@@ -1,58 +1,74 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
 
+// Abre um documento emitido (certificado, declaração de módulo...) para o
+// próprio aluno ou para a secretaria. ?documento=ID; o link antigo
+// ?matricula=ID abre o certificado de conclusão daquela matrícula.
 $pdo = getDB();
-$matriculaId = (int) ($_GET['matricula'] ?? 0);
+if (isset($_GET['matricula'])) {
+    $stmt = $pdo->prepare(
+        'SELECT ce.id FROM certificados ce JOIN curso_emissoes e ON e.id = ce.curso_emissao_id WHERE ce.matricula_id = ? AND e.modulo_id IS NULL AND e.avulso = 0 ORDER BY ce.id LIMIT 1'
+    );
+    $stmt->execute([(int) $_GET['matricula']]);
+    $documentoId = (int) $stmt->fetchColumn();
+} else {
+    $documentoId = (int) ($_GET['documento'] ?? 0);
+}
+$documento = $documentoId ? documentoEmitidoCompleto($pdo, 'id', $documentoId) : null;
 
-// Abre para o próprio aluno, ou para a secretaria (botão na matrícula).
-// O aluno só abre com o certificado liberado (caixa na lista da turma).
-$stmt = $pdo->prepare('SELECT aluno_id, certificado_liberado FROM matriculas WHERE id = ?');
-$stmt->execute([$matriculaId]);
-$dono = $stmt->fetch() ?: ['aluno_id' => 0, 'certificado_liberado' => 0];
-$donoId = (int) $dono['aluno_id'];
-// Quem atende o aluno (vê a ficha dele) abre o certificado mesmo bloqueado.
+// Quem atende o aluno vê sempre (até bloqueado); o aluno só o que está
+// liberado e sem pendência.
 $ehSecretaria = usuarioLogado() && (usuarioPodeVerAlunos() || usuarioPodeGerenciarMatriculas() || usuarioPodeLiberarCertificado());
-$podeVer = (alunoLogado() && $donoId === alunoAtualId()) || $ehSecretaria;
-if (!$podeVer) {
+$ehDono = $documento && alunoLogado() && (int) $documento['aluno_id'] === alunoAtualId();
+if (!$documento || (!$ehDono && !$ehSecretaria)) {
     if (!alunoLogado() && !usuarioLogado()) {
         exigirAluno();
     }
+    if (alunoLogado() && isset($_GET['matricula'])) {
+        flash('info', 'Este documento ainda não está disponível.');
+        redirect('/portal/certificados.php');
+    }
     http_response_code(404);
-    exit('Certificado não encontrado.');
+    exit('Documento não encontrado.');
 }
-
-if (!$ehSecretaria && !$dono['certificado_liberado']) {
-    flash('info', 'Seu certificado está em análise pela secretaria. Em caso de dúvida, fale com a gente.');
-    redirect('/portal/certificados.php');
-}
-
-$emitido = emitirCertificado($pdo, $matriculaId);
-if (!$emitido) {
-    flash('warning', 'O certificado fica disponível quando o curso for concluído.');
-    redirect(alunoLogado() ? '/portal/certificados.php' : '/matriculas/visualizar.php?id=' . $matriculaId);
+if (!$ehSecretaria) {
+    $matricula = matriculaParaDocumentos($pdo, (int) $documento['matricula_id']);
+    if ($bloqueios = bloqueiosDocumentosMatricula($pdo, $matricula)) {
+        flash('warning', 'Seu documento está bloqueado: ' . implode(' · ', $bloqueios) . '. Em caso de dúvida, fale com a secretaria.');
+        redirect(isset($bloqueios['documentacao']) ? '/portal/documentos.php' : '/portal/certificados.php');
+    }
+    if (!$documento['liberado']) {
+        flash('info', 'Este documento está em análise pela secretaria. Em caso de dúvida, fale com a gente.');
+        redirect('/portal/certificados.php');
+    }
 }
 
 $config = buscarConfiguracoes($pdo);
-$certificado = buscarCertificadoCompleto($pdo, 'matricula', $matriculaId);
-$paginasCertificado = paginasModeloCertificado(modeloCertificadoDaMatricula($pdo, $matriculaId));
-$modulosCertificado = modulosDoCurso($pdo, (int) $certificado['curso_id']);
-$valores = valoresCertificado($certificado, $config);
+$modelo = modeloDoDocumento($pdo, $documento);
+$paginasCertificado = paginasModeloCertificado($modelo);
+$orientacaoCertificado = $modelo['orientacao'] ?? 'horizontal';
+$modulosCertificado = modulosDoCurso($pdo, (int) $documento['curso_id']);
+$valores = valoresCertificado($documento, $config);
+$voltar = $ehDono ? '/portal/certificados.php' : '/matriculas/visualizar.php?id=' . (int) $documento['matricula_id'];
 ?>
 <!doctype html>
 <html lang="pt-br">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Certificado - <?= e($certificado['aluno_nome']) ?> - <?= e($certificado['curso_nome']) ?></title>
+    <title><?= e($documento['documento_nome'] ?: 'Certificado') ?> - <?= e($documento['aluno_nome']) ?> - <?= e($documento['curso_nome']) ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="<?= e(assetUrl('/assets/css/certificado.css')) ?>" rel="stylesheet">
+    <?php if ($orientacaoCertificado === 'vertical'): ?>
+        <style>@media print { @page { size: A4 portrait; margin: 0; } .cert-moldura { width: 210mm; } .cert-folha { width: 210mm; height: 297mm; } }</style>
+    <?php endif; ?>
 </head>
 <body class="cert-pagina">
     <div class="cert-barra">
         <button type="button" class="principal" onclick="window.print()"><i class="bi bi-printer"></i> Imprimir / salvar em PDF</button>
-        <a href="<?= alunoLogado() && $donoId === alunoAtualId() ? '/portal/certificados.php' : '/matriculas/visualizar.php?id=' . $matriculaId ?>">Voltar</a>
+        <a href="<?= e($voltar) ?>">Voltar</a>
     </div>
-    <div class="cert-moldura"><?php require __DIR__ . '/../../includes/certificado_render.php'; ?></div>
+    <div class="cert-moldura<?= $orientacaoCertificado === 'vertical' ? ' cert-moldura-vertical' : '' ?>"><?php require __DIR__ . '/../../includes/certificado_render.php'; ?></div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="<?= e(assetUrl('/assets/js/certificado.js')) ?>"></script>
     <script>

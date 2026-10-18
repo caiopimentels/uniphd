@@ -13,19 +13,23 @@ $pdo = getDB();
 $id = (int) ($_GET['id'] ?? 0);
 
 $stmt = $pdo->prepare(
-    'SELECT m.*, a.nome AS aluno_nome, a.cpf AS aluno_cpf, a.telefone AS aluno_telefone,
+    'SELECT m.*, a.nome AS aluno_nome, a.ra AS aluno_ra, a.cpf AS aluno_cpf, a.telefone AS aluno_telefone,
             t.nome AS turma_nome, t.data_inicio, t.data_termino, t.minimo_alunos, t.duracao_unidade, c.nome AS curso_nome,
-            fp.nome AS forma_pagamento_nome, u.nome AS usuario_nome
+            fp.nome AS forma_pagamento_nome, fm.nome AS forma_mensalidade_nome, u.nome AS usuario_nome
      FROM matriculas m
      JOIN alunos a ON a.id = m.aluno_id
      JOIN turmas t ON t.id = m.turma_id
      JOIN cursos c ON c.id = t.curso_id
      LEFT JOIN formas_pagamento fp ON fp.id = m.forma_pagamento_id
+     LEFT JOIN formas_pagamento fm ON fm.id = m.forma_mensalidade_id
      LEFT JOIN usuarios u ON u.id = m.usuario_id
      WHERE m.id = ?'
 );
 $stmt->execute([$id]);
 $matricula = $stmt->fetch();
+if ($matricula) {
+    sincronizarDocumentosMatricula($pdo, (int) $matricula['id']);
+}
 
 if (!$matricula) {
     flash('danger', 'Matrícula não encontrada.');
@@ -61,7 +65,7 @@ $activeMenu = 'turmas';
 $pageAction = '<a href="/turmas/visualizar.php?id=' . (int) $matricula['turma_id'] . '" class="btn btn-outline-secondary">Ver turma</a>'
     . '<a href="/alunos/form.php?id=' . (int) $matricula['aluno_id'] . '" class="btn btn-outline-secondary">Ver aluno</a>'
     . '<a href="/matriculas/comprovante.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Comprovante</a>'
-    . ($matricula['status'] === 'concluida' ? '<a href="/portal/certificado.php?matricula=' . (int) $id . '" target="_blank" class="btn btn-brand"><i class="bi bi-award"></i> Certificado</a>' : '');
+    . ($matricula['status'] === 'concluida' ? '<a href="#documentos" class="btn btn-brand"><i class="bi bi-award"></i> Documentos</a>' : '');
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
 
@@ -85,16 +89,20 @@ require __DIR__ . '/../../includes/layout_header.php';
         <?php endif; ?>
         <div class="card"><div class="card-body">
             <div class="row g-3">
-                <div class="col-md-6"><div class="kpi-rotulo">Aluno</div><div><a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>"><?= e($matricula['aluno_nome']) ?></a><?= $matricula['aluno_cpf'] ? ' · ' . e($matricula['aluno_cpf']) : '' ?></div></div>
+                <div class="col-md-6"><div class="kpi-rotulo">Aluno</div><div><a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>"><?= e($matricula['aluno_nome']) ?></a><?= $matricula['aluno_ra'] ? ' · ' . e($matricula['aluno_ra']) : '' ?><?= $matricula['aluno_cpf'] ? ' · ' . e($matricula['aluno_cpf']) : '' ?></div></div>
                 <div class="col-md-6"><div class="kpi-rotulo">Turma</div><div><a href="/turmas/visualizar.php?id=<?= (int) $matricula['turma_id'] ?>"><?= e($matricula['curso_nome']) ?> · <?= e($matricula['turma_nome']) ?></a></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Data da matrícula</div><div><?= formatDate($matricula['data_matricula']) ?></div>
                     <div class="small text-muted">lançada em <?= formatDateTime($matricula['criado_em']) ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Período da turma</div><div><?= e(periodoTurma($matricula)) ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Mensalidade</div><div><?= formatMoney($mensalidadeFinal) ?><?php if ((float) $matricula['desconto_percentual'] > 0): ?> <span class="small text-muted">(<?= formatMoney($matricula['valor_mensalidade']) ?> − <?= formatPercent($matricula['desconto_percentual']) ?>)</span><?php endif; ?></div></div>
-                <div class="col-md-3"><div class="kpi-rotulo">Mensalidades</div><div><?= (int) $matricula['num_parcelas'] ?>× a partir de <?= formatDate($matricula['primeiro_vencimento']) ?></div></div>
+                <div class="col-md-3"><div class="kpi-rotulo">Mensalidades</div><div><?= (int) $matricula['num_parcelas'] ?>× a partir de <?= formatDate($matricula['primeiro_vencimento']) ?><?php if ($matricula['valor_total'] !== null): ?><div class="small text-muted">curso: <?= formatMoney($matricula['valor_total']) ?></div><?php endif; ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Taxa de matrícula</div><div><?= (float) $matricula['taxa_matricula'] > 0 ? formatMoney($matricula['taxa_matricula']) : 'Sem taxa' ?></div></div>
                 <div class="col-md-6"><div class="kpi-rotulo">Desconto por pontualidade</div><div><?= e(textoDescontoPontualidade($matricula)) ?></div></div>
-                <div class="col-md-3"><div class="kpi-rotulo">Forma de pagamento</div><div><?= e($matricula['forma_pagamento_nome'] ?: '-') ?></div></div>
+                <div class="col-md-3"><div class="kpi-rotulo">Formas de pagamento</div><div>
+                    <?php if ((float) $matricula['taxa_matricula'] > 0): ?>Matrícula: <?= e($matricula['forma_pagamento_nome'] ?: '-') ?><br><?php endif; ?>
+                    Mensalidades: <?= e(($matricula['forma_mensalidade_nome'] ?: $matricula['forma_pagamento_nome']) ?: '-') ?>
+                    <div class="small text-muted">Cada parcela pode mudar em Contas a receber.</div>
+                </div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Matriculado por</div><div><?= $matricula['origem'] === 'portal' ? '<i class="bi bi-globe2"></i> O aluno, pelo portal' : e($matricula['usuario_nome'] ?: '-') ?></div></div>
                 <?php if ($matricula['data_cancelamento']): ?>
                     <div class="col-md-3"><div class="kpi-rotulo">Cancelada em</div><div><?= formatDate($matricula['data_cancelamento']) ?></div></div>
@@ -141,8 +149,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                             </td>
                             <td class="text-end">
                                 <?php if ($p['status'] === 'pendente'): ?>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $p['id'] ?>)" title="Gerar / ver Pix (QR Code e copia e cola)"><i class="bi bi-qr-code"></i></button>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBoleto(<?= (int) $p['id'] ?>)" title="Gerar / abrir boleto"><i class="bi bi-upc-scan"></i></button>
+                                    <?= botoesCobrancaParcela($pdo, $p) ?>
                                 <?php endif; ?>
                                 <?php if ($p['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
                                     <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $p), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $p['boleto_no_banco'] ? 'Alterar (o boleto é alterado também no banco)' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
@@ -202,22 +209,41 @@ require __DIR__ . '/../../includes/layout_header.php';
     </div>
     <?php endif; ?>
 
-    <?php if (usuarioPodeLiberarCertificado() && in_array($matricula['status'], ['ativa', 'concluida'], true)): ?>
-    <div class="secao">
-        <div class="secao-titulo"><i class="bi bi-award"></i> Certificado</div>
+    <?php if (usuarioPodeLiberarCertificado() && in_array($matricula['status'], ['ativa', 'concluida'], true) && ($docsMatricula = documentosMatricula($pdo, (int) $id))): ?>
+    <div class="secao" id="documentos">
+        <div class="secao-titulo"><i class="bi bi-award"></i> Documentos do aluno</div>
+        <?php $bloqueiosMat = bloqueiosDocumentosMatricula($pdo, matriculaParaDocumentos($pdo, (int) $id)); ?>
         <div class="card"><div class="card-body">
-            <p class="small mb-2">
-                <?php if ($matricula['certificado_liberado']): ?>
-                    <span class="badge text-bg-success">Liberado</span> <?= $matricula['status'] === 'concluida' ? 'O aluno vê e baixa no portal.' : 'Aparece no portal quando a matrícula for concluída.' ?>
-                <?php else: ?>
-                    <span class="badge text-bg-danger">Bloqueado</span> O aluno vê "em análise pela secretaria".
-                <?php endif; ?>
-            </p>
-            <form action="/matriculas/certificado_liberar.php" method="post">
-                <input type="hidden" name="ids[]" value="<?= (int) $id ?>">
-                <input type="hidden" name="liberado" value="<?= $matricula['certificado_liberado'] ? 0 : 1 ?>">
-                <button type="submit" class="btn btn-outline-secondary w-100"><i class="bi bi-<?= $matricula['certificado_liberado'] ? 'lock' : 'unlock' ?>"></i> <?= $matricula['certificado_liberado'] ? 'Bloquear certificado' : 'Liberar certificado' ?></button>
-            </form>
+            <?php foreach ($docsMatricula as $doc): ?>
+                <div class="d-flex flex-wrap align-items-center gap-2 py-2 border-bottom">
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold small"><?= e($doc['nome']) ?></div>
+                        <span class="badge text-bg-<?= e($doc['cor']) ?><?= $doc['cor'] === 'light' ? ' border' : '' ?> fw-normal text-wrap text-start"><?= e($doc['texto']) ?></span>
+                        <?php if ($doc['emitido'] && $doc['emitido']['liberado_por']): ?><div class="small text-muted"><?= $doc['emitido']['liberado'] ? 'liberado' : 'bloqueado' ?> por <?= e($doc['emitido']['liberado_por']) ?> em <?= formatDateTime($doc['emitido']['liberado_em']) ?></div><?php endif; ?>
+                    </div>
+                    <?php if ($doc['emitido']): ?>
+                        <a href="/portal/certificado.php?documento=<?= (int) $doc['emitido']['id'] ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Abrir / imprimir"><i class="bi bi-box-arrow-up-right"></i></a>
+                    <?php endif; ?>
+                    <form action="/matriculas/documentos_liberar.php" method="post" class="d-inline-flex gap-1 align-items-center">
+                        <input type="hidden" name="ids[]" value="<?= (int) $id ?>">
+                        <input type="hidden" name="emissao_id" value="<?= (int) $doc['id'] ?>">
+                        <input type="hidden" name="voltar" value="/matriculas/visualizar.php?id=<?= (int) $id ?>#documentos">
+                        <?php if ($doc['situacao'] === 'liberado'): ?>
+                            <button type="submit" name="liberado" value="0" class="btn btn-sm btn-outline-secondary"><i class="bi bi-lock"></i> Bloquear</button>
+                        <?php elseif ($doc['disponivel'] && !$bloqueiosMat && in_array($doc['situacao'], ['aguardando', 'bloqueado'], true)): ?>
+                            <button type="submit" name="liberado" value="1" class="btn btn-sm btn-success"><i class="bi bi-unlock"></i> Liberar</button>
+                        <?php elseif (usuarioEhAdmin()): ?>
+                            <input type="hidden" name="forcar" value="1">
+                            <button type="submit" name="liberado" value="1" class="btn btn-sm btn-outline-success" title="Liberar mesmo com pendência / antes de concluir"
+                                    onclick="return confirm('Liberar mesmo assim? (<?= e(addslashes($doc['texto'])) ?>)');"><i class="bi bi-unlock"></i> Liberar mesmo assim</button>
+                        <?php endif; ?>
+                    </form>
+                </div>
+            <?php endforeach; ?>
+            <?php if ($faltamDocs = pendenciasDocumentosMatricula($pdo, (int) $id)): ?>
+                <div class="small text-muted mt-2"><i class="bi bi-file-earmark-x"></i> Falta o aluno enviar / aprovar: <?= e(implode(', ', $faltamDocs)) ?>.
+                    <a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>&tab=documentos">Ver documentos</a></div>
+            <?php endif; ?>
         </div></div>
     </div>
     <?php endif; ?>

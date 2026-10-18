@@ -10,6 +10,13 @@ if (!modeloPadraoCertificado($pdo)) {
 }
 $modeloId = (int) ($_GET['modelo'] ?? $_POST['modelo_id'] ?? 0);
 $modelo = $modeloId ? buscarModeloCertificado($pdo, $modeloId) : null;
+// Modelo novo (?modelo=novo): só um rascunho na tela — vai para o banco ao
+// salvar. Saindo sem salvar, não fica nada (nem os fundos enviados).
+$ehNovo = !$modelo && (($_GET['modelo'] ?? '') === 'novo' || ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['modelo_id'] ?? '') === 'novo'));
+if ($ehNovo) {
+    $modelo = ['id' => 0, 'nome' => 'Novo modelo', 'padrao' => 0, 'orientacao' => 'horizontal', 'fundo' => null,
+        'layout' => json_encode(['paginas' => normalizarPaginasCertificado(paginasPadraoCertificado())], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)];
+}
 if ($modeloId && !$modelo) {
     flash('danger', 'Modelo de certificado não encontrado.');
     redirect('/configuracoes/certificado.php');
@@ -20,17 +27,22 @@ $jsonLayout = fn (array $paginas) => json_encode(['paginas' => $paginas], JSON_U
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $acao = input('acao');
 
-    if ($acao === 'novo_modelo' || ($acao === 'duplicar' && $modelo)) {
+    if ($acao === 'duplicar' && $modelo && !$ehNovo) {
         $nome = mb_substr(trim(input('nome')), 0, 100) ?: ($acao === 'duplicar' ? $modelo['nome'] . ' (cópia)' : 'Novo modelo');
         $paginas = $acao === 'duplicar' ? paginasModeloCertificado($modelo) : normalizarPaginasCertificado(paginasPadraoCertificado());
         $pdo->prepare('INSERT INTO certificado_modelos (nome, fundo, layout) VALUES (?, ?, ?)')->execute([$nome, $paginas[0]['fundo'], $jsonLayout($paginas)]);
         $novoId = (int) $pdo->lastInsertId();
+        if ($acao === 'duplicar') {
+            // A cópia leva os fundos do modelo (mesmos arquivos).
+            $pdo->prepare('INSERT INTO certificado_fundos (modelo_id, nome, imagem) SELECT ?, nome, imagem FROM certificado_fundos WHERE modelo_id = ?')
+                ->execute([$novoId, $modelo['id']]);
+        }
         registrarAtividade('portal', 'criacao', 'Modelo de certificado criado: ' . $nome);
         flash('success', 'Modelo "' . $nome . '" criado. Depois de montar, escolha-o no cadastro dos cursos.');
         redirect('/configuracoes/certificado.php?modelo=' . $novoId);
     }
 
-    if ($acao === 'tornar_padrao' && $modelo) {
+    if ($acao === 'tornar_padrao' && $modelo && !$ehNovo) {
         $pdo->beginTransaction();
         $pdo->exec('UPDATE certificado_modelos SET padrao = 0');
         $pdo->prepare('UPDATE certificado_modelos SET padrao = 1 WHERE id = ?')->execute([$modelo['id']]);
@@ -40,13 +52,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         redirect(input('voltar') === 'lista' ? '/configuracoes/certificado.php' : $aqui);
     }
 
-    if ($acao === 'excluir_modelo' && $modelo) {
+    if ($acao === 'excluir_modelo' && $modelo && !$ehNovo) {
         if ($modelo['padrao']) {
             flash('danger', 'O modelo padrão não pode ser excluído. Torne outro modelo padrão antes.');
             redirect('/configuracoes/certificado.php');
         }
         // Os cursos que usavam este modelo passam a usar o padrão (ON DELETE SET NULL).
+        // Os fundos saem junto; o arquivo só se nenhum outro modelo usa.
+        $fundosModelo = array_column(fundosCertificado($pdo, (int) $modelo['id']), 'imagem');
         $pdo->prepare('DELETE FROM certificado_modelos WHERE id = ?')->execute([$modelo['id']]);
+        foreach (array_unique($fundosModelo) as $imagem) {
+            apagarFundoSemUso($pdo, $imagem);
+        }
         registrarAtividade('portal', 'exclusao', 'Modelo de certificado excluído: ' . $modelo['nome']);
         flash('success', 'Modelo "' . $modelo['nome'] . '" excluído. Os cursos que o usavam passaram para o modelo padrão.');
         redirect('/configuracoes/certificado.php');
@@ -56,32 +73,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // para pôr no certificado (assinatura, selo, logo).
     if ($acao === 'upload') {
         $ehFundo = input('tipo') === 'fundo';
+        if ($ehFundo && !$modelo) {
+            responderJson(['sucesso' => false, 'mensagem' => 'Abra um modelo para cadastrar o fundo.']);
+        }
+        // Rascunho: o arquivo sobe, mas o fundo só é gravado ao salvar o modelo.
+        if ($ehFundo && $ehNovo) {
+            $upload = salvarImagemPortal($_FILES['arquivo'] ?? [], 'certificado', 10);
+            if (!$upload['ok']) {
+                responderJson(['sucesso' => false, 'mensagem' => $upload['mensagem']]);
+            }
+            $nome = mb_substr(trim(input('nome')) ?: pathinfo((string) ($_FILES['arquivo']['name'] ?? ''), PATHINFO_FILENAME) ?: 'Fundo', 0, 100);
+            responderJson(['sucesso' => true, 'id' => 'novo-' . bin2hex(random_bytes(4)), 'nome' => $nome, 'url' => $upload['url']]);
+        }
         $upload = salvarImagemPortal($_FILES['arquivo'] ?? [], $ehFundo ? 'certificado' : 'certimg', $ehFundo ? 10 : 5);
         if (!$upload['ok']) {
             responderJson(['sucesso' => false, 'mensagem' => $upload['mensagem']]);
         }
         if ($ehFundo) {
             $nome = mb_substr(trim(input('nome')) ?: pathinfo((string) ($_FILES['arquivo']['name'] ?? ''), PATHINFO_FILENAME) ?: 'Fundo', 0, 100);
-            $pdo->prepare('INSERT INTO certificado_fundos (nome, imagem) VALUES (?, ?)')->execute([$nome, $upload['url']]);
+            $pdo->prepare('INSERT INTO certificado_fundos (modelo_id, nome, imagem) VALUES (?, ?, ?)')->execute([$modelo['id'], $nome, $upload['url']]);
+            $fundoId = (int) $pdo->lastInsertId();
             registrarAtividade('portal', 'criacao', 'Fundo de certificado cadastrado: ' . $nome);
-            responderJson(['sucesso' => true, 'id' => (int) $pdo->lastInsertId(), 'nome' => $nome, 'url' => $upload['url']]);
+            responderJson(['sucesso' => true, 'id' => $fundoId, 'nome' => $nome, 'url' => $upload['url']]);
         }
         responderJson(['sucesso' => true, 'url' => $upload['url']]);
     }
 
+    // Rascunho: fundo ainda não gravado — apaga o arquivo se ninguém usa.
+    if ($acao === 'excluir_fundo' && $ehNovo) {
+        $url = input('url');
+        if (imagemUploadValida($url) && str_starts_with(basename($url), 'certificado-')) {
+            apagarFundoSemUso($pdo, $url);
+        }
+        responderJson(['sucesso' => true]);
+    }
+
     if ($acao === 'excluir_fundo') {
-        $stmt = $pdo->prepare('SELECT * FROM certificado_fundos WHERE id = ?');
-        $stmt->execute([(int) ($_POST['id'] ?? 0)]);
+        $stmt = $pdo->prepare('SELECT * FROM certificado_fundos WHERE id = ? AND modelo_id = ?');
+        $stmt->execute([(int) ($_POST['id'] ?? 0), (int) ($modelo['id'] ?? 0)]);
         $fundo = $stmt->fetch();
         if (!$fundo) {
-            responderJson(['sucesso' => false, 'mensagem' => 'Fundo não encontrado.']);
+            responderJson(['sucesso' => false, 'mensagem' => 'Fundo não encontrado neste modelo.']);
         }
-        $emUso = array_column(array_filter(modelosCertificado($pdo), fn ($m) => in_array($fundo['imagem'], fundosDoModeloCertificado($m), true)), 'nome');
-        if ($emUso) {
-            responderJson(['sucesso' => false, 'mensagem' => 'Este fundo está em uso no(s) modelo(s): ' . implode(', ', $emUso) . '. Troque o fundo dele(s) e salve antes de excluir.']);
+        if (in_array($fundo['imagem'], fundosDoModeloCertificado($modelo), true)) {
+            responderJson(['sucesso' => false, 'mensagem' => 'Este fundo está em uso numa folha deste modelo. Troque o fundo da folha e salve antes de excluir.']);
         }
         $pdo->prepare('DELETE FROM certificado_fundos WHERE id = ?')->execute([$fundo['id']]);
-        apagarImagemPortal($fundo['imagem']);
+        apagarFundoSemUso($pdo, $fundo['imagem']);
         registrarAtividade('portal', 'exclusao', 'Fundo de certificado excluído: ' . $fundo['nome']);
         responderJson(['sucesso' => true]);
     }
@@ -94,9 +132,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($nomeModelo === '') {
             $erros[] = 'Dê um nome ao modelo.';
         }
-        $galeria = $pdo->query('SELECT imagem FROM certificado_fundos')->fetchAll(PDO::FETCH_COLUMN);
+        $galeria = array_column(fundosCertificado($pdo, (int) $modelo['id']), 'imagem');
+        // Rascunho: os fundos enviados nesta tela (ainda sem registro).
+        $fundosNovos = [];
+        if ($ehNovo) {
+            foreach ((array) json_decode((string) ($_POST['fundos_novos'] ?? '[]'), true) as $fn) {
+                if (is_array($fn) && imagemUploadValida($fn['url'] ?? null) && str_starts_with(basename((string) $fn['url']), 'certificado-')) {
+                    $fundosNovos[$fn['url']] = mb_substr(trim((string) ($fn['nome'] ?? '')) ?: 'Fundo', 0, 100);
+                }
+            }
+            $galeria = array_keys($fundosNovos);
+        }
         foreach ($paginas as $pagina) {
-            if ($pagina['fundo'] && !in_array($pagina['fundo'], $galeria, true)) {
+            if ($pagina['fundo'] && !in_array($pagina['fundo'], $galeria, true) && !in_array($pagina['fundo'], fundosDoModeloCertificado($modelo), true)) {
                 $erros[] = 'Um dos fundos escolhidos não está mais na galeria.';
                 break;
             }
@@ -107,10 +155,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($erros) {
             responderJson(['sucesso' => false, 'mensagem' => implode(' ', $erros)]);
         }
-        $pdo->prepare('UPDATE certificado_modelos SET nome = ?, layout = ?, fundo = ? WHERE id = ?')
-            ->execute([$nomeModelo, $jsonLayout($paginas), $paginas[0]['fundo'], $modelo['id']]);
+        $orientacao = input('orientacao') === 'vertical' ? 'vertical' : 'horizontal';
+        if ($ehNovo) {
+            $pdo->prepare('INSERT INTO certificado_modelos (nome, orientacao, layout, fundo) VALUES (?, ?, ?, ?)')
+                ->execute([$nomeModelo, $orientacao, $jsonLayout($paginas), $paginas[0]['fundo']]);
+            $novoId = (int) $pdo->lastInsertId();
+            $insereFundo = $pdo->prepare('INSERT INTO certificado_fundos (modelo_id, nome, imagem) VALUES (?, ?, ?)');
+            foreach ($fundosNovos as $url => $nomeFundo) {
+                $insereFundo->execute([$novoId, $nomeFundo, $url]);
+            }
+            $pdo->prepare('UPDATE configuracoes SET certificado_url_verificacao = ? WHERE id = 1')->execute([$urlVerificacao ?: null]);
+            registrarAtividade('portal', 'criacao', 'Modelo de documento criado: ' . $nomeModelo);
+            flash('success', 'Modelo "' . $nomeModelo . '" criado. Escolha-o no cadastro dos cursos.');
+            responderJson(['sucesso' => true, 'id' => $novoId]);
+        }
+        $pdo->prepare('UPDATE certificado_modelos SET nome = ?, orientacao = ?, layout = ?, fundo = ? WHERE id = ?')
+            ->execute([$nomeModelo, $orientacao, $jsonLayout($paginas), $paginas[0]['fundo'], $modelo['id']]);
         $pdo->prepare('UPDATE configuracoes SET certificado_url_verificacao = ? WHERE id = 1')->execute([$urlVerificacao ?: null]);
-        registrarAtividade('portal', 'edicao', 'Modelo de certificado alterado: ' . $nomeModelo);
+        registrarAtividade('portal', 'edicao', 'Modelo de documento alterado: ' . $nomeModelo);
         responderJson(['sucesso' => true]);
     }
     redirect($aqui);
@@ -124,10 +186,10 @@ $modulosCertificado = modulosExemploCertificado();
 // =====================================================================
 if (!$modelo):
     $modelos = modelosCertificado($pdo);
-    $pageTitle = 'Certificados';
+    $pageTitle = 'Modelos de documentos';
     $pageBreadcrumb = 'Acadêmico · Portal do aluno';
     $activeMenu = 'certificado';
-    $pageAction = '<form method="post" class="d-inline"><input type="hidden" name="acao" value="novo_modelo"><button class="btn btn-brand"><i class="bi bi-plus-lg"></i> Novo modelo</button></form>';
+    $pageAction = '<a href="/configuracoes/certificado.php?modelo=novo" class="btn btn-brand"><i class="bi bi-plus-lg"></i> Novo modelo</a>';
     require __DIR__ . '/../../includes/layout_header.php';
 ?>
 <link href="<?= e(assetUrl('/assets/css/certificado.css')) ?>" rel="stylesheet">
@@ -138,13 +200,15 @@ if (!$modelo):
     .modelo-card .corpo { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 </style>
 <p class="text-muted" style="max-width: 900px;">
-    Cada curso usa um modelo de certificado (escolhido no cadastro do curso, em Acadêmico › Cursos). Os cursos sem escolha usam o <strong>padrão</strong>.
+    Modelos dos documentos que o aluno recebe: certificado, declarações de módulo... Cada curso escolhe, em "Documentos emitidos" (Acadêmico › Cursos),
+    qual modelo usar em cada documento; sem escolha, vale o <strong>padrão</strong>. Cada modelo pode ser horizontal ou vertical.
     Clique num modelo para editar.
 </p>
 <div class="row g-3">
     <?php foreach ($modelos as $m):
         $paginas = paginasModeloCertificado($m);
-        $paginasCertificado = [$paginas[0]]; ?>
+        $paginasCertificado = [$paginas[0]];
+        $orientacaoCertificado = $m['orientacao'] ?? 'horizontal'; ?>
         <div class="col-md-6 col-xl-4">
             <div class="modelo-card">
                 <a class="miniatura" href="/configuracoes/certificado.php?modelo=<?= (int) $m['id'] ?>" title="Editar"><?php require __DIR__ . '/../../includes/certificado_render.php'; ?></a>
@@ -187,13 +251,14 @@ endif;
 // =====================================================================
 $paginas = paginasModeloCertificado($modelo);
 $paginasCertificado = [$paginas[0]];
-$fundos = fundosCertificado($pdo);
-$cursosDoModelo = $modelo['padrao']
+$orientacaoCertificado = $modelo['orientacao'] ?? 'horizontal';
+$fundos = fundosCertificado($pdo, (int) $modelo['id']);
+$cursosDoModelo = $ehNovo ? null : ($modelo['padrao']
     ? $pdo->query('SELECT GROUP_CONCAT(nome ORDER BY nome SEPARATOR ", ") FROM cursos WHERE certificado_modelo_id IS NULL OR certificado_modelo_id = ' . (int) $modelo['id'])->fetchColumn()
-    : (array_column(modelosCertificado($pdo), 'cursos', 'id')[$modelo['id']] ?? null);
+    : (array_column(modelosCertificado($pdo), 'cursos', 'id')[$modelo['id']] ?? null));
 
 $pageTitle = $modelo['nome'];
-$pageBreadcrumb = 'Acadêmico · Certificados';
+$pageBreadcrumb = 'Acadêmico · Documentos';
 $activeMenu = 'certificado';
 $pageAction = '<a href="/configuracoes/certificado.php" class="btn btn-outline-secondary" onclick="return confirmarSaida()"><i class="bi bi-arrow-left"></i> Modelos</a>'
     . '<span id="aviso-alterado" class="small text-warning mx-2 d-none"><i class="bi bi-dot"></i> Alterações não salvas</span>'
@@ -241,9 +306,18 @@ require __DIR__ . '/../../includes/layout_header.php';
             <label class="form-label small mb-1">Nome deste modelo</label>
             <input type="text" id="nome-modelo" class="form-control" maxlength="100" value="<?= e($modelo['nome']) ?>" oninput="marcarAlterado()">
         </div>
+        <div>
+            <label class="form-label small mb-1">Orientação</label>
+            <select id="orientacao-modelo" class="form-select" onchange="trocarOrientacao()">
+                <option value="horizontal" <?= $orientacaoCertificado === 'horizontal' ? 'selected' : '' ?>>Horizontal (A4 deitado)</option>
+                <option value="vertical" <?= $orientacaoCertificado === 'vertical' ? 'selected' : '' ?>>Vertical (A4 em pé)</option>
+            </select>
+        </div>
+        <?php if (!$ehNovo): ?>
         <form method="post" onsubmit="return confirmarSaida()"><input type="hidden" name="modelo_id" value="<?= (int) $modelo['id'] ?>"><input type="hidden" name="acao" value="duplicar">
             <button class="btn btn-outline-secondary" title="Cria um modelo novo a partir deste"><i class="bi bi-copy"></i> Duplicar</button></form>
-        <?php if (!$modelo['padrao']): ?>
+        <?php endif; ?>
+        <?php if (!$modelo['padrao'] && !$ehNovo): ?>
             <form method="post" onsubmit="return confirmarSaida() && confirm('Tornar este o modelo padrão? Ele passa a valer para os cursos sem modelo escolhido.')"><input type="hidden" name="modelo_id" value="<?= (int) $modelo['id'] ?>"><input type="hidden" name="acao" value="tornar_padrao">
                 <button class="btn btn-outline-secondary"><i class="bi bi-star"></i> Tornar padrão</button></form>
         <?php endif; ?>
@@ -280,7 +354,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <label class="btn btn-sm btn-outline-secondary mt-2"><i class="bi bi-upload"></i> Cadastrar fundo
                     <input type="file" accept="image/*" hidden onchange="enviarFundo(this)">
                 </label>
-                <div class="form-text">Arte sem os dados do aluno. Ideal: 3508 × 2480 px (A4 deitado), até 10 MB.</div>
+                <div class="form-text">Arte sem os dados do aluno. Ideal: 3508 × 2480 px (A4 deitado) ou 2480 × 3508 px (A4 em pé), até 10 MB.</div>
             </div>
 
             <div class="secao">
@@ -321,7 +395,7 @@ require __DIR__ . '/../../includes/layout_header.php';
 <script>
 let paginas = <?= json_encode($paginas, JSON_UNESCAPED_UNICODE) ?>;
 let fundos = <?= json_encode(array_map(fn ($f) => ['id' => (int) $f['id'], 'nome' => $f['nome'], 'url' => $f['imagem']], $fundos), JSON_UNESCAPED_UNICODE) ?>;
-const MODELO_ID = <?= (int) $modelo['id'] ?>;
+const MODELO_ID = <?= $ehNovo ? "'novo'" : (int) $modelo['id'] ?>;
 const EXEMPLO = <?= json_encode($valores, JSON_UNESCAPED_UNICODE) ?>;
 const MODULOS = <?= json_encode($modulosCertificado, JSON_UNESCAPED_UNICODE) ?>;
 const URL_PADRAO = <?= json_encode(urlAbsoluta('/portal/verificar.php')) ?>;
@@ -333,6 +407,13 @@ let folhaAtual = 0;
 let selecionado = paginas[0].elementos.length ? 0 : -1;
 let alterado = false;
 const folha = document.querySelector('#previa .cert-folha');
+// Fonte em cqw (% da largura): folha em pé é mais estreita, a conversão muda.
+const fatorFonte = () => (document.getElementById('orientacao-modelo').value === 'vertical' ? 5.953 : 8.418);
+function trocarOrientacao() {
+    folha.classList.toggle('cert-vertical', document.getElementById('orientacao-modelo').value === 'vertical');
+    marcarAlterado();
+    desenharPrevia();
+}
 const elementos = () => paginas[folhaAtual].elementos;
 
 // ---------------------------------------------------------------- utilidades
@@ -348,6 +429,17 @@ function preencher(t) {
 function marcarAlterado() { alterado = true; document.getElementById('aviso-alterado').classList.remove('d-none'); }
 function confirmarSaida() { return !alterado || confirm('Há alterações não salvas no certificado. Sair mesmo assim?'); }
 window.addEventListener('beforeunload', (e) => { if (alterado) { e.preventDefault(); e.returnValue = ''; } });
+// Rascunho abandonado: apaga os fundos que já tinham subido (o modelo não existe).
+let rascunhoSalvo = false;
+window.addEventListener('pagehide', () => {
+    if (MODELO_ID !== 'novo' || rascunhoSalvo || !navigator.sendBeacon) return;
+    const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    fundos.forEach((f) => {
+        const dados = new FormData();
+        dados.append('_csrf', token); dados.append('acao', 'excluir_fundo'); dados.append('modelo_id', 'novo'); dados.append('url', f.url);
+        navigator.sendBeacon('/configuracoes/certificado.php', dados);
+    });
+});
 function arred(n) { return Math.round(n * 10) / 10; }
 function limitar(n, min, max) { return Math.min(max, Math.max(min, n)); }
 function atualizarExemploLink() { const a = document.getElementById('exemplo-link'); a.textContent = linkVerificacao(); a.href = linkVerificacao(); }
@@ -420,7 +512,7 @@ function desenharPrevia(guias = []) {
         el.className = 'cert-campo' + (i === selecionado ? ' selecionado' : '') + (c.altura > 0 ? ' cert-caixa' : '');
         Object.assign(el.style, { left: c.x + '%', top: c.y + '%', width: c.largura + '%', height: c.altura > 0 ? c.altura + '%' : '' });
         if (c.tamanho) {
-            const fonte = c.tamanho / 8.418;
+            const fonte = c.tamanho / fatorFonte();
             el.dataset.fonte = fonte;
             Object.assign(el.style, { fontSize: fonte + 'cqw', color: c.cor, fontWeight: c.negrito ? 700 : 400, textAlign: c.alinhamento });
         }
@@ -660,7 +752,7 @@ function enviarArquivo(input, tipo) {
     input.value = '';
     if (!arquivo) return Promise.resolve(null);
     const dados = new FormData();
-    dados.append('acao', 'upload'); dados.append('tipo', tipo); dados.append('arquivo', arquivo);
+    dados.append('acao', 'upload'); dados.append('modelo_id', MODELO_ID); dados.append('tipo', tipo); dados.append('arquivo', arquivo);
     return fetch('/configuracoes/certificado.php', { method: 'POST', body: dados, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then((r) => r.json()).then((r) => { if (!r.sucesso) { alert(r.mensagem); return null; } return r; })
         .catch(() => { alert('Não foi possível enviar a imagem.'); return null; });
@@ -674,7 +766,7 @@ function desenharFundos() {
         const el = document.createElement('div');
         el.className = 'fundo' + (atual === f.url ? ' escolhido' : '');
         el.innerHTML = `<div class="miniatura" ${f.url ? `style="background-image:url('${escapar(f.url)}')"` : ''}>${f.url ? '' : '<i class="bi bi-slash-circle"></i>'}</div>
-            <div class="nome">${escapar(f.nome)}</div>${f.id ? '<button type="button" class="btn btn-sm btn-light excluir" title="Excluir da galeria"><i class="bi bi-x"></i></button>' : ''}`;
+            <div class="nome">${escapar(f.nome)}</div>${f.id ? '<button type="button" class="btn btn-sm btn-light excluir" title="Excluir este fundo"><i class="bi bi-x"></i></button>' : ''}`;
         el.addEventListener('click', (e) => {
             if (e.target.closest('.excluir')) return excluirFundo(f);
             paginas[folhaAtual].fundo = f.url; marcarAlterado(); desenharFundos(); desenharPrevia();
@@ -693,8 +785,8 @@ function enviarFundo(input) {
 
 function excluirFundo(f) {
     if (paginas.some((p) => p.fundo === f.url)) { alert('Este fundo está escolhido numa folha deste modelo. Troque antes de excluir.'); return; }
-    if (!confirm('Excluir o fundo "' + f.nome + '" da galeria?')) return;
-    fetch('/configuracoes/certificado.php', { method: 'POST', body: new URLSearchParams({ acao: 'excluir_fundo', id: f.id }), headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    if (!confirm('Excluir o fundo "' + f.nome + '" deste modelo?')) return;
+    fetch('/configuracoes/certificado.php', { method: 'POST', body: new URLSearchParams({ acao: 'excluir_fundo', modelo_id: MODELO_ID, id: f.id, url: f.url || '' }), headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then((r) => r.json()).then((r) => {
             if (!r.sucesso) { alert(r.mensagem); return; }
             fundos = fundos.filter((x) => x.id !== f.id); desenharFundos();
@@ -705,13 +797,16 @@ function excluirFundo(f) {
 function salvar() {
     const botao = document.getElementById('btn-salvar');
     botao.disabled = true;
-    const dados = new URLSearchParams({ acao: 'salvar', modelo_id: MODELO_ID, nome: document.getElementById('nome-modelo').value.trim(),
-        paginas: JSON.stringify(paginas), url_verificacao: document.getElementById('url_verificacao').value.trim() });
+    const dados = new URLSearchParams({ acao: 'salvar', modelo_id: MODELO_ID, nome: document.getElementById('nome-modelo').value.trim(), orientacao: document.getElementById('orientacao-modelo').value,
+        paginas: JSON.stringify(paginas), url_verificacao: document.getElementById('url_verificacao').value.trim(),
+        fundos_novos: MODELO_ID === 'novo' ? JSON.stringify(fundos.map((f) => ({ nome: f.nome, url: f.url }))) : '[]' });
     fetch('/configuracoes/certificado.php', { method: 'POST', body: dados, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then((r) => r.json())
         .then((r) => {
             if (!r.sucesso) { alert(r.mensagem); return; }
             alterado = false;
+            // Rascunho salvo: agora o modelo existe — abre a página dele.
+            if (MODELO_ID === 'novo' && r.id) { rascunhoSalvo = true; window.location.href = '/configuracoes/certificado.php?modelo=' + r.id; return; }
             document.getElementById('aviso-alterado').classList.add('d-none');
             botao.innerHTML = '<i class="bi bi-check2-all"></i> Salvo!';
             setTimeout(() => { botao.innerHTML = '<i class="bi bi-check-lg"></i> Salvar'; }, 2000);

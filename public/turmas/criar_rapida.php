@@ -17,7 +17,9 @@ $vagas = (int) ($_POST['vagas'] ?? 0);
 $dataInicio = input('data_inicio');
 $duracaoMeses = (int) ($_POST['duracao_meses'] ?? 0);
 $duracaoUnidade = input('duracao_unidade') === 'dia' ? 'dia' : 'mes';
-$valorMensalidade = decimalInput('valor_mensalidade', 0);
+// Valor do curso; a mensalidade sai de total ÷ parcelas (uma por mês; curso em dias: uma só).
+$valorTotal = decimalInput('valor_total', 0);
+$valorMensalidade = mensalidadeDoTotal($valorTotal, parcelasPadraoTurma(['duracao_meses' => max(1, $duracaoMeses), 'duracao_unidade' => $duracaoUnidade]));
 
 $erros = [];
 $stmt = $pdo->prepare('SELECT nome FROM cursos WHERE id = ? AND ativo = 1');
@@ -38,8 +40,8 @@ if (!$dataInicio) {
 if ($duracaoMeses < 1) {
     $erros[] = 'Informe a duração da turma.';
 }
-if ($valorMensalidade < 0) {
-    $erros[] = 'A mensalidade não pode ser negativa.';
+if ($valorTotal < 0) {
+    $erros[] = 'O valor do curso não pode ser negativo.';
 }
 
 // A turma nasce na situação padrão — que sempre aceita matrícula (regra do
@@ -54,10 +56,10 @@ if ($erros) {
 }
 
 $stmt = $pdo->prepare(
-    'INSERT INTO turmas (curso_id, professor_id, nome, vagas, data_inicio, duracao_meses, duracao_unidade, valor_mensalidade, situacao_id)
-     VALUES (?,?,?,?,?,?,?,?,?)'
+    'INSERT INTO turmas (curso_id, professor_id, nome, vagas, data_inicio, duracao_meses, duracao_unidade, valor_mensalidade, valor_total, situacao_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?)'
 );
-$stmt->execute([$cursoId, $professorId, $nome, $vagas, $dataInicio, $duracaoMeses, $duracaoUnidade, $valorMensalidade, $situacaoId]);
+$stmt->execute([$cursoId, $professorId, $nome, $vagas, $dataInicio, $duracaoMeses, $duracaoUnidade, $valorMensalidade, $valorTotal, $situacaoId]);
 $id = (int) $pdo->lastInsertId();
 
 registrarAtividade('turmas', 'criacao', 'Turma criada (cadastro rápido): ' . $nome);
@@ -79,5 +81,11 @@ responderJson([
         'unidade' => $duracaoUnidade,
         'duracao' => textoDuracaoTurma(['duracao_meses' => $duracaoMeses, 'duracao_unidade' => $duracaoUnidade]),
         'mensalidade' => $valorMensalidade,
+        'total' => $valorTotal,
+        'taxa' => 0,
+        'parcelas' => 0,
+        'dia' => 0,
+        'forma_taxa' => null,
+        'forma_mensalidade' => null,
     ],
 ]);

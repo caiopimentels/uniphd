@@ -8,7 +8,7 @@ exigirAlunos();
 // (para quem vê o financeiro) o resumo e as parcelas em aberto.
 $pdo = getDB();
 $id = (int) ($_GET['id'] ?? 0);
-$stmt = $pdo->prepare('SELECT * FROM alunos WHERE id = ?');
+$stmt = $pdo->prepare('SELECT a.*, tg.nome AS graduacao_nome FROM alunos a LEFT JOIN tipos_graduacao tg ON tg.id = a.graduacao_id WHERE a.id = ?');
 $stmt->execute([$id]);
 $aluno = $stmt->fetch();
 if (!$aluno) {
@@ -47,11 +47,15 @@ documentoCabecalho($doc, 'Ficha do aluno', 'Cadastro nº ' . str_pad((string) $i
     <div class="doc-secao">
         <h2>Dados pessoais</h2>
         <div class="doc-grade">
+            <div><div class="rotulo">RA</div><strong><?= e($aluno['ra'] ?: '-') ?></strong></div>
             <div class="dois"><div class="rotulo">Nome</div><strong><?= e($aluno['nome']) ?></strong></div>
             <div><div class="rotulo">Situação</div><?= $aluno['ativo'] ? 'Ativo' : 'Inativo' ?></div>
             <div><div class="rotulo">Nascimento</div><?= formatDate($aluno['data_nascimento']) ?></div>
             <div><div class="rotulo">CPF</div><?= e(cpfFormatado($aluno['cpf']) ?: '-') ?></div>
             <div><div class="rotulo">RG</div><?= e($aluno['rg'] ?: '-') ?></div>
+            <div class="dois"><div class="rotulo">Nome da mãe</div><?= e($aluno['nome_mae'] ?: '-') ?></div>
+            <div class="dois"><div class="rotulo">Nome do pai</div><?= e($aluno['nome_pai'] ?: '-') ?></div>
+            <div class="dois"><div class="rotulo">Graduação</div><?= $aluno['possui_graduacao'] === null ? '-' : ((int) $aluno['possui_graduacao'] === 1 ? e($aluno['graduacao_nome'] ?: 'Sim') : 'Não possui') ?></div>
             <div class="dois"><div class="rotulo">Acesso ao portal</div><?= $aluno['senha_hash'] ? ($aluno['senha_provisoria'] ? 'Senha provisória' : 'Criado') . ($aluno['portal_ultimo_acesso'] ? ' · último acesso ' . formatDateTime($aluno['portal_ultimo_acesso']) : '') : 'Não criado' ?></div>
         </div>
     </div>

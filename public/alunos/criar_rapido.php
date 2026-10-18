@@ -35,6 +35,7 @@ if ($cpf !== '') {
 $stmt = $pdo->prepare('INSERT INTO alunos (nome, cpf, telefone, email, ativo) VALUES (?,?,?,?,1)');
 $stmt->execute([$nome, $cpf ?: null, $telefone ?: null, $email ?: null]);
 $id = (int) $pdo->lastInsertId();
+atribuirRaAluno($pdo, $id);
 
 registrarAtividade('alunos', 'criacao', 'Aluno cadastrado (cadastro rápido): ' . $nome);
 registrarHistoricoAluno($pdo, $id, 'cadastro', 'Aluno cadastrado no sistema (cadastro rápido)');

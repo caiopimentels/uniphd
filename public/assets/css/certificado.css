@@ -1,7 +1,9 @@
-/* Folha do certificado: A4 deitada (297 x 210 mm). Fonte em "cqw" para
-   escalar junto com a folha em qualquer tamanho de tela. */
+/* Folha do documento: A4 deitada (297 x 210 mm) ou, com .cert-vertical, em
+   pé (210 x 297 mm). Fonte em "cqw" para escalar junto com a folha. */
 .cert-folha { position: relative; width: 100%; aspect-ratio: 297 / 210; container-type: inline-size; background: #fff center / cover no-repeat;
               font-family: Georgia, 'Times New Roman', serif; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.12); }
+.cert-folha.cert-vertical { aspect-ratio: 210 / 297; }
+.cert-moldura-vertical { max-width: 780px; }
 .cert-campo { position: absolute; transform: translate(-50%, -50%); line-height: 1.35; white-space: normal; overflow-wrap: break-word; }
 .cert-uma-linha { white-space: nowrap; overflow: hidden; }
 /* Caixa com altura definida: conteúdo centralizado na vertical; o que não
@@ -31,3 +33,5 @@
     .cert-folha { box-shadow: none; width: 297mm; height: 210mm; aspect-ratio: auto; -webkit-print-color-adjust: exact; print-color-adjust: exact; break-after: page; }
     .cert-folha:last-child { break-after: auto; }
 }
+/* Editor e miniaturas: a folha em pé não ocupa a largura toda. */
+.coluna-previa .cert-folha.cert-vertical, .modelo-card .cert-folha.cert-vertical { max-width: 62%; margin: 0 auto; }

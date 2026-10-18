@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
+exigirTelaPortal('cursos');
 
 $pdo = getDB();
 $tituloPagina = 'Cursos com inscrições abertas';

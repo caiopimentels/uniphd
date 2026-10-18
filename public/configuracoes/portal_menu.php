@@ -56,13 +56,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $corValida = fn ($c) => preg_match('/^#[0-9a-fA-F]{6}$/', (string) $c) ? strtolower($c) : null;
         $coresProprias = isset($_POST['portal_cores_proprias']);
         $pdo->prepare('UPDATE configuracoes SET portal_titulo = ?, portal_subtitulo = ?, portal_cadastro_aberto = ?, portal_rodape_texto = ?, portal_rodape_contatos = ?, portal_redes = ?,
-                portal_cor_primaria = ?, portal_cor_secundaria = ? WHERE id = 1')
+                portal_cor_primaria = ?, portal_cor_secundaria = ?, whatsapp_numero = ? WHERE id = 1')
             ->execute([
                 trim(input('portal_titulo')) ?: null, trim(input('portal_subtitulo')) ?: null, isset($_POST['portal_cadastro_aberto']) ? 1 : 0,
                 trim((string) ($_POST['portal_rodape_texto'] ?? '')) ?: null, isset($_POST['portal_rodape_contatos']) ? 1 : 0,
                 $redes ? json_encode($redes, JSON_UNESCAPED_SLASHES) : null,
                 $coresProprias ? $corValida($_POST['portal_cor_primaria'] ?? '') : null,
                 $coresProprias ? $corValida($_POST['portal_cor_secundaria'] ?? '') : null,
+                // wa.me precisa do código do país: só DDD + número ganha o 55.
+                ($zap = apenasDigitos((string) ($_POST['whatsapp_numero'] ?? ''))) !== '' ? (strlen($zap) <= 11 ? '55' . $zap : $zap) : null,
             ]);
         $pdo->commit();
         registrarAtividade('portal', 'edicao', 'Menu, rodapé e ajustes do portal alterados');
@@ -147,6 +149,11 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="secao-titulo"><i class="bi bi-layout-text-window-reverse"></i> Rodapé</div>
         <div class="row g-3">
             <div class="col-12 form-check form-switch ms-2"><input type="checkbox" class="form-check-input" role="switch" name="portal_rodape_contatos" id="contatos" <?= $config['portal_rodape_contatos'] ? 'checked' : '' ?>><label class="form-check-label" for="contatos">Mostrar endereço, telefone, e-mail e WhatsApp da empresa (de Configurações › Empresa)</label></div>
+            <div class="col-md-5">
+                <label class="form-label"><i class="bi bi-whatsapp"></i> WhatsApp da escola</label>
+                <input type="text" name="whatsapp_numero" class="form-control" inputmode="numeric" placeholder="Ex.: (77) 99999-9999" value="<?= e($config['whatsapp_numero'] ?? '') ?>">
+                <div class="form-text">Com DDD. Aparece o botão verde no canto da tela do portal (e no rodapé). Deixe vazio para não mostrar.</div>
+            </div>
             <div class="col-12"><label class="form-label">Texto do rodapé</label><textarea name="portal_rodape_texto" class="form-control" rows="2" placeholder="Ex.: Credenciada pelo MEC — Portaria nº ..."><?= e($config['portal_rodape_texto'] ?? '') ?></textarea></div>
             <?php foreach (redesSociaisPortal() as $rede => [$nomeRede, $iconeRede]): ?>
                 <div class="col-md-4"><label class="form-label"><i class="bi <?= $iconeRede ?>"></i> <?= $nomeRede ?></label><input type="url" name="redes[<?= $rede ?>]" class="form-control" placeholder="https://..." value="<?= e($redes[$rede] ?? '') ?>"></div>

@@ -196,7 +196,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <td><?= e($t['curso_nome']) ?></td>
                     <td class="col-secundaria"><?= e($t['professor_nome'] ?: '-') ?></td>
                     <td class="col-secundaria"><?= e(periodoTurma($t)) ?></td>
-                    <td class="text-end col-secundaria"><?= formatMoney($t['valor_mensalidade']) ?></td>
+                    <td class="text-end col-secundaria"><?= formatMoney($t['valor_mensalidade']) ?><?php if ($t['valor_total'] !== null && (float) $t['valor_total'] > 0): ?><div class="small text-muted">total <?= formatMoney($t['valor_total']) ?></div><?php endif; ?></td>
                     <td class="text-center">
                         <?= (int) $t['alunos_ativos'] ?>/<?= (int) $t['vagas'] ?>
                         <?php if ($t['reservas']): ?><div class="small text-muted" title="Vagas reservadas pela secretaria"><i class="bi bi-bookmark"></i> +<?= (int) $t['reservas'] ?> reserv.</div><?php endif; ?>

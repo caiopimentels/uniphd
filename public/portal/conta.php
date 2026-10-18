@@ -32,13 +32,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && input('acao') === 'senha') {
         $novo['cpf'] = apenasDigitos((string) $aluno['cpf']);
     }
     $erros = validarDadosAlunoPortal($novo, $cpfEditavel);
+    [$certificacao, $errosCertificacao] = lerDadosCertificacaoAluno($pdo, true, true, (int) ($aluno['graduacao_id'] ?? 0) ?: null);
+    $novo += $certificacao;
+    $erros = array_merge($erros, $errosCertificacao);
     if (!$erros && $cpfEditavel && ($outro = buscarAlunoPorCpf($pdo, $novo['cpf'])) && (int) $outro['id'] !== (int) $aluno['id']) {
         $erros[] = 'Este CPF já está em outro cadastro. Fale com a secretaria.';
     }
     if (!$erros) {
         $pdo->beginTransaction();
-        $stmt = $pdo->prepare('UPDATE alunos SET nome = ?, cpf = ?, data_nascimento = ?, telefone = ?, email = ? WHERE id = ?');
-        $stmt->execute([$novo['nome'], $novo['cpf'], $novo['data_nascimento'] ?: null, $novo['telefone'], $novo['email'], $aluno['id']]);
+        $stmt = $pdo->prepare('UPDATE alunos SET nome = ?, cpf = ?, data_nascimento = ?, telefone = ?, email = ?, nome_mae = ?, nome_pai = ?, possui_graduacao = ?, graduacao_id = ? WHERE id = ?');
+        $stmt->execute([$novo['nome'], $novo['cpf'], $novo['data_nascimento'] ?: null, $novo['telefone'], $novo['email'],
+            $novo['nome_mae'], $novo['nome_pai'] ?: null, $novo['possui_graduacao'], $novo['graduacao_id'], $aluno['id']]);
         salvarEnderecoPrincipalAluno($pdo, (int) $aluno['id'], $novo);
         $pdo->commit();
         $_SESSION['portal_aluno_nome'] = $novo['nome'];
@@ -55,6 +59,7 @@ require __DIR__ . '/../../includes/portal_header.php';
 ?>
 <div class="portal-acesso largo">
     <h1 class="portal-titulo">Meus dados</h1>
+    <?php if (!empty($aluno['ra'])): ?><p class="portal-sub mb-2">Seu RA (número de aluno): <strong><?= e($aluno['ra']) ?></strong></p><?php endif; ?>
     <p class="portal-sub">Mantenha seu contato e endereço em dia — o endereço vai impresso no boleto.</p>
 
     <form method="post" class="portal-card">

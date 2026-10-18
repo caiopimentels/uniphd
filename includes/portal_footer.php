@@ -47,6 +47,9 @@ $redes = redesConfiguradasPortal($configPortal);
     </div>
 </footer>
 
+<?php if (!empty($configPortal['whatsapp_numero']) && ($linkZapFlutuante = linkWhatsapp($configPortal['whatsapp_numero']))): ?>
+    <a href="<?= e($linkZapFlutuante) ?>" class="whatsapp-flutuante" target="_blank" rel="noopener" title="Fale com a gente pelo WhatsApp" aria-label="WhatsApp"><i class="bi bi-whatsapp"></i></a>
+<?php endif; ?>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= e(assetUrl('/assets/js/csrf.js')) ?>"></script>
 <script src="<?= e(assetUrl('/assets/js/portal.js')) ?>"></script>

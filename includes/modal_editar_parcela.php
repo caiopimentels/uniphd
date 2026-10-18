@@ -49,6 +49,16 @@
                         <div class="form-text">Em branco: até o vencimento.</div>
                     </div>
                     <div class="col-12">
+                        <label class="form-label">Forma de pagamento</label>
+                        <select name="forma_pagamento_id" id="ep-forma" class="form-select">
+                            <option value="">-</option>
+                            <?php foreach (getDB()->query("SELECT id, nome, instrumento FROM formas_pagamento WHERE ativo = 1 ORDER BY instrumento = 'manual', nome")->fetchAll() as $formaEp): ?>
+                                <option value="<?= (int) $formaEp['id'] ?>" data-online="<?= $formaEp['instrumento'] === 'manual' ? 0 : 1 ?>"><?= e($formaEp['nome']) ?><?= $formaEp['instrumento'] === 'manual' ? ' (na secretaria)' : '' ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div class="form-text" id="ep-forma-aviso"></div>
+                    </div>
+                    <div class="col-12">
                         <label class="form-label">Observação</label>
                         <input type="text" name="observacao" id="ep-observacao" class="form-control" maxlength="255" placeholder="Ex.: desconto combinado com a coordenação">
                     </div>
@@ -76,6 +86,7 @@ function editarParcela(botao) {
     document.getElementById('ep-valor').value = p.valor.toFixed(2).replace('.', ',');
     document.getElementById('ep-vencimento').value = p.vencimento;
     document.getElementById('ep-observacao').value = p.observacao;
+    document.getElementById('ep-forma').value = p.forma || '';
     document.getElementById('ep-aviso-banco').classList.toggle('d-none', !p.no_banco);
     const opcaoPadrao = document.getElementById('ep-opcao-padrao');
     opcaoPadrao.textContent = p.regra ? 'Regra da matrícula' : 'Sem desconto (padrão)';
@@ -108,5 +119,13 @@ function resumoParcela() {
         texto += '<br>Sem desconto.';
     }
     document.getElementById('ep-resumo').innerHTML = texto;
+    // Trocar para cartão/dinheiro com boleto no banco: o boleto é baixado.
+    const forma = document.getElementById('ep-forma');
+    const opcao = forma.options[forma.selectedIndex];
+    const mudou = String(forma.value) !== String(parcelaEmEdicao.forma || '');
+    document.getElementById('ep-forma-aviso').textContent = mudou && opcao && opcao.dataset.online === '0'
+        ? (parcelaEmEdicao.no_banco ? 'O boleto/Pix desta parcela será baixado no banco. No portal, o aluno verá "pague na secretaria".' : 'No portal, o aluno verá "pague na secretaria".')
+        : '';
 }
+document.getElementById('ep-forma').addEventListener('change', resumoParcela);
 </script>

@@ -36,7 +36,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $minimoAlunos = (int) ($_POST['minimo_alunos'] ?? 0) ?: null;
     $duracaoMeses = (int) ($_POST['duracao_meses'] ?? 0);
     $duracaoUnidade = input('duracao_unidade') === 'dia' ? 'dia' : 'mes';
-    $valorMensalidade = decimalInput('valor_mensalidade', 0);
+    // Valor do curso (sem a matrícula); a mensalidade sai de total ÷ parcelas.
+    $valorTotal = decimalInput('valor_total', 0);
+    $parceria = mb_substr(input('parceria'), 0, 255);
     $horario = input('horario');
     $local = input('local');
     $situacaoId = (int) ($_POST['situacao_id'] ?? 0);
@@ -73,7 +75,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'portal_num_parcelas' => (int) ($_POST['portal_num_parcelas'] ?? 0) ?: null,
         'portal_dia_vencimento' => (int) ($_POST['portal_dia_vencimento'] ?? 10),
         'portal_forma_pagamento_id' => (int) ($_POST['portal_forma_pagamento_id'] ?? 0) ?: null,
+        'forma_mensalidade_id' => (int) ($_POST['forma_mensalidade_id'] ?? 0) ?: null,
     ];
+    $parcelasTurma = $portal['portal_num_parcelas'] ?: parcelasPadraoTurma(['duracao_meses' => $duracaoMeses, 'duracao_unidade' => $duracaoUnidade]);
+    $valorMensalidade = mensalidadeDoTotal($valorTotal, max(1, $parcelasTurma));
     if ($diasSemana) {
         $horario = mb_substr(textoAgendaTurma(['agenda' => $agendaJson]), 0, 100);
     }
@@ -101,8 +106,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($duracaoMeses < 1) {
         $erros[] = 'Informe a duração da turma (pelo menos 1).';
     }
-    if ($valorMensalidade < 0) {
-        $erros[] = 'O valor não pode ser negativo.';
+    if ($valorTotal < 0) {
+        $erros[] = 'O valor do curso não pode ser negativo.';
     }
     $stmt = $pdo->prepare('SELECT * FROM situacoes_turma WHERE id = ?');
     $stmt->execute([$situacaoId]);
@@ -133,9 +138,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($portal['portal_prazo_pagamento_dias'] < 1 || $portal['portal_prazo_pagamento_dias'] > 30) {
             $erros[] = 'O prazo para pagar a inscrição vai de 1 a 30 dias.';
         }
-        $cobra = $portal['portal_taxa_matricula'] > 0 || $valorMensalidade > 0;
-        if ($cobra && !$portal['portal_forma_pagamento_id']) {
-            $erros[] = 'Escolha a forma de pagamento (boleto / Pix) das inscrições pelo portal.';
+        // No site, quem confirma a inscrição é a matrícula (ou, sem taxa, a
+        // 1ª mensalidade): essa precisa ser paga online (boleto / Pix).
+        if ($portal['portal_taxa_matricula'] > 0 && !formaCobraOnline($pdo, $portal['portal_forma_pagamento_id'])) {
+            $erros[] = 'Inscrição pelo portal: a matrícula precisa ser cobrada por boleto ou Pix (é o pagamento que confirma a vaga).';
+        } elseif ($portal['portal_taxa_matricula'] <= 0 && $valorTotal > 0 && !formaCobraOnline($pdo, $portal['forma_mensalidade_id'])) {
+            $erros[] = 'Inscrição pelo portal sem taxa de matrícula: a 1ª mensalidade confirma a vaga, então as mensalidades precisam ser por boleto ou Pix — ou cobre uma matrícula por boleto/Pix.';
         }
     }
     $novaImagem = null;
@@ -158,7 +166,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$erros) {
         $campos = [
             $cursoId, $professorId, $nome, $vagas, $dataInicio, $duracaoMeses, $valorMensalidade,
-            $horario ?: null, $local ?: null, $observacao ?: null,
+            $horario ?: null, $local ?: null, $observacao ?: null, $valorTotal, $parceria ?: null,
         ];
 
         $pdo->beginTransaction();
@@ -167,7 +175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($id) {
             $stmt = $pdo->prepare(
                 'UPDATE turmas SET curso_id=?, professor_id=?, nome=?, vagas=?, data_inicio=?, duracao_meses=?, valor_mensalidade=?,
-                    horario=?, local=?, observacao=?, duracao_unidade=? WHERE id=?'
+                    horario=?, local=?, observacao=?, valor_total=?, parceria=?, duracao_unidade=? WHERE id=?'
             );
             $stmt->execute([...$campos, $duracaoUnidade, $id]);
             $operacao = 'edicao';
@@ -182,8 +190,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         } else {
             $stmt = $pdo->prepare(
-                'INSERT INTO turmas (curso_id, professor_id, nome, vagas, data_inicio, duracao_meses, valor_mensalidade, horario, local, observacao, situacao_id, duracao_unidade)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+                'INSERT INTO turmas (curso_id, professor_id, nome, vagas, data_inicio, duracao_meses, valor_mensalidade, horario, local, observacao, valor_total, parceria, situacao_id, duracao_unidade)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
             );
             $stmt->execute([...$campos, $situacaoId, $duracaoUnidade]);
             $id = (int) $pdo->lastInsertId();
@@ -197,13 +205,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare(
             'UPDATE turmas SET dias_semana = ?, hora_inicio = ?, hora_fim = ?, agenda = ?, minimo_alunos = ?, portal_publicar = ?, portal_descricao = ?, portal_imagem = ?,
                 portal_inscricoes_ate = ?, portal_modo_vaga = ?, portal_prazo_pagamento_dias = ?, portal_taxa_matricula = ?,
-                portal_num_parcelas = ?, portal_dia_vencimento = ?, portal_forma_pagamento_id = ?, data_conclusao = ? WHERE id = ?'
+                portal_num_parcelas = ?, portal_dia_vencimento = ?, portal_forma_pagamento_id = ?, forma_mensalidade_id = ?, data_conclusao = ? WHERE id = ?'
         );
         $stmt->execute([
             $diasSemana ? implode(',', $diasSemana) : null, $horaInicio ?: null, $horaFim ?: null, $agendaJson, $minimoAlunos,
             $portal['portal_publicar'], $portal['portal_descricao'] ?: null, $imagem, $portal['portal_inscricoes_ate'] ?: null,
             $portal['portal_modo_vaga'], $portal['portal_prazo_pagamento_dias'], $portal['portal_taxa_matricula'],
-            $portal['portal_num_parcelas'], $portal['portal_dia_vencimento'], $portal['portal_forma_pagamento_id'],
+            $portal['portal_num_parcelas'], $portal['portal_dia_vencimento'], $portal['portal_forma_pagamento_id'], $portal['forma_mensalidade_id'],
             $situacao['comportamento'] === 'concluida' ? $dataConclusao : null, $id,
         ]);
         $pdo->commit();
@@ -219,7 +227,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $turma = [
         'curso_id' => $cursoId, 'professor_id' => $professorId, 'nome' => $nome, 'vagas' => $vagas,
-        'data_inicio' => $dataInicio, 'duracao_meses' => $duracaoMeses, 'duracao_unidade' => $duracaoUnidade, 'valor_mensalidade' => $valorMensalidade,
+        'data_inicio' => $dataInicio, 'duracao_meses' => $duracaoMeses, 'duracao_unidade' => $duracaoUnidade, 'valor_mensalidade' => $valorMensalidade, 'valor_total' => $valorTotal, 'parceria' => $parceria,
         'horario' => $horario, 'local' => $local, 'situacao_id' => $situacaoId, 'observacao' => $observacao, 'data_conclusao' => $dataConclusao,
         'dias_semana' => implode(',', $diasSemana), 'hora_inicio' => $horaInicio, 'hora_fim' => $horaFim,
         'agenda' => $agendaJson, 'minimo_alunos' => $minimoAlunos, 'sem_data' => $semData,
@@ -247,8 +255,22 @@ $stmt = $pdo->prepare('SELECT id, nome FROM professores WHERE ativo = 1 OR id = 
 $stmt->execute([(int) ($turma['professor_id'] ?? 0)]);
 $professores = $stmt->fetchAll();
 
-// Formas que geram cobrança no banco (boleto / boleto + Pix).
-$formasCobranca = $pdo->query("SELECT id, nome FROM formas_pagamento WHERE ativo = 1 AND instrumento IN ('boleto', 'boleto_pix') ORDER BY nome")->fetchAll();
+// Formas de pagamento: as de boleto/Pix o portal cobra sozinho; as outras
+// (cartão, dinheiro...) o aluno paga na secretaria.
+$formasCobranca = $pdo->query("SELECT id, nome, instrumento IN ('boleto', 'boleto_pix', 'pix') AS online FROM formas_pagamento WHERE ativo = 1 ORDER BY instrumento = 'manual', nome")->fetchAll();
+$temFormaOnline = (bool) array_filter($formasCobranca, fn ($f) => $f['online']);
+$opcoesForma = function (?int $escolhida) use ($formasCobranca): string {
+    $html = '<option value="">Selecione...</option>';
+    foreach ($formasCobranca as $f) {
+        $html .= '<option value="' . (int) $f['id'] . '"' . ((int) $escolhida === (int) $f['id'] ? ' selected' : '') . '>'
+            . e($f['nome']) . ($f['online'] ? '' : ' (na secretaria)') . '</option>';
+    }
+    return $html;
+};
+// Turma antiga (antes do valor total): total = mensalidade × parcelas.
+if ($turma && !isset($turma['valor_total']) && isset($turma['valor_mensalidade'])) {
+    $turma['valor_total'] = (float) $turma['valor_mensalidade'] * ((int) ($turma['portal_num_parcelas'] ?? 0) ?: parcelasPadraoTurma($turma + ['duracao_meses' => 1]));
+}
 $agendaAtual = agendaTurma($turma);
 $turmaSemData = $turma['sem_data'] ?? ($id && empty($turma['data_inicio']));
 $cursosJson = array_map(fn ($c) => ['id' => (int) $c['id'], 'nome' => $c['nome']], $cursos);
@@ -363,34 +385,42 @@ require __DIR__ . '/../../includes/layout_header.php';
             <label class="form-label">Término previsto</label>
             <input type="text" id="data_termino" class="form-control" disabled value="-">
         </div>
+        <div class="col-12"><hr class="my-1"><div class="fw-semibold">Matrícula</div></div>
         <div class="col-md-3">
-            <label class="form-label">Valor da mensalidade *</label>
-            <input type="text" name="valor_mensalidade" class="form-control" required value="<?= e(number_format((float) ($turma['valor_mensalidade'] ?? 0), 2, ',', '')) ?>">
+            <label class="form-label">Valor da matrícula</label>
+            <input type="text" name="portal_taxa_matricula" class="form-control" value="<?= e(number_format((float) ($turma['portal_taxa_matricula'] ?? 0), 2, ',', '')) ?>" oninput="atualizarValores()">
+            <div class="form-text">0 = sem taxa. Fica fora do valor do curso. No site, é ela que confirma a vaga.</div>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Matrícula paga com</label>
+            <select name="portal_forma_pagamento_id" class="form-select"><?= $opcoesForma(isset($turma['portal_forma_pagamento_id']) ? (int) $turma['portal_forma_pagamento_id'] : null) ?></select>
+        </div>
+        <div class="col-12"><hr class="my-1"><div class="fw-semibold">Curso (mensalidades)</div></div>
+        <div class="col-md-3">
+            <label class="form-label">Valor total do curso *</label>
+            <input type="text" name="valor_total" id="valor_total" class="form-control" required value="<?= e(number_format((float) ($turma['valor_total'] ?? 0), 2, ',', '')) ?>" oninput="atualizarValores()">
             <?php if ($id): ?><div class="form-text">Mudar aqui só vale para novas matrículas.</div><?php endif; ?>
         </div>
         <div class="col-md-3">
-            <label class="form-label">Valor da matrícula</label>
-            <input type="text" name="portal_taxa_matricula" class="form-control" value="<?= e(number_format((float) ($turma['portal_taxa_matricula'] ?? 0), 2, ',', '')) ?>">
-            <div class="form-text">0 = sem taxa. No site, é ela que confirma a matrícula (sem taxa, vale a 1ª mensalidade).</div>
+            <label class="form-label">Dividido em</label>
+            <div class="input-group">
+                <input type="number" name="portal_num_parcelas" id="portal_num_parcelas" class="form-control" min="1" max="120" placeholder="<?= !empty($turma['duracao_meses']) ? parcelasPadraoTurma($turma) : '' ?>" value="<?= e((string) ($turma['portal_num_parcelas'] ?? '')) ?>" oninput="atualizarValores()">
+                <span class="input-group-text">x</span>
+            </div>
+            <div class="form-text">Em branco: uma por mês de duração (curso em dias: uma só).</div>
         </div>
         <div class="col-md-3">
-            <label class="form-label">Nº de mensalidades</label>
-            <input type="number" name="portal_num_parcelas" class="form-control" min="1" max="120" placeholder="<?= !empty($turma['duracao_meses']) ? parcelasPadraoTurma($turma) : '' ?>" value="<?= e((string) ($turma['portal_num_parcelas'] ?? '')) ?>">
-            <div class="form-text">Em branco: uma por mês de duração (curso em dias: uma só).</div>
+            <label class="form-label">Mensalidades pagas com</label>
+            <select name="forma_mensalidade_id" class="form-select"><?= $opcoesForma(isset($turma['forma_mensalidade_id']) ? (int) $turma['forma_mensalidade_id'] : null) ?></select>
+            <div class="form-text">Cartão/dinheiro: no portal aparece "pague na secretaria".</div>
         </div>
         <div class="col-md-3">
             <label class="form-label">Dia de vencimento</label>
             <input type="number" name="portal_dia_vencimento" class="form-control" min="1" max="28" value="<?= (int) ($turma['portal_dia_vencimento'] ?? 10) ?>">
         </div>
-        <div class="col-md-3">
-            <label class="form-label">Cobrança por</label>
-            <select name="portal_forma_pagamento_id" class="form-select">
-                <option value="">Selecione...</option>
-                <?php foreach ($formasCobranca as $f): ?>
-                    <option value="<?= (int) $f['id'] ?>" <?= (int) ($turma['portal_forma_pagamento_id'] ?? 0) === (int) $f['id'] ? 'selected' : '' ?>><?= e($f['nome']) ?></option>
-                <?php endforeach; ?>
-            </select>
-            <?php if (!$formasCobranca): ?><div class="form-text text-danger">Cadastre uma forma de pagamento "Boleto" ou "Boleto + Pix" ligada à conta do Itaú.</div><?php endif; ?>
+        <div class="col-12">
+            <div class="small" id="resumo_valores"></div>
+            <?php if (!$temFormaOnline): ?><div class="form-text text-danger">Para cobrar pelo portal, cadastre uma forma de pagamento "Boleto", "Boleto + Pix" ou "Pix" ligada à conta do Itaú.</div><?php endif; ?>
         </div>
     </div>
 </div>
@@ -427,6 +457,11 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="col-12">
             <label class="form-label">Observação</label>
             <input type="text" name="observacao" class="form-control" maxlength="255" value="<?= e($turma['observacao'] ?? '') ?>">
+        </div>
+        <div class="col-12">
+            <label class="form-label">Parceria</label>
+            <input type="text" name="parceria" class="form-control" maxlength="255" placeholder="Ex.: em parceria com a Faculdade X (em branco = sem parceria)" value="<?= e($turma['parceria'] ?? '') ?>">
+            <div class="form-text">Sai no certificado onde o modelo tiver o marcador <code>{parceria}</code> (Acadêmico › Documentos). Sem parceria, o marcador fica em branco.</div>
         </div>
     </div>
 </div>
@@ -568,6 +603,24 @@ const EXPLICA_MODO = {
     apos_pagamento: 'Inscrever-se não segura vaga: entra quem pagar primeiro. Quem pagar com a turma já cheia fica na lista de espera e você é avisado.',
     inscricao: 'A vaga é do aluno assim que ele se inscreve; as cobranças são lançadas e ele paga depois, como numa matrícula feita pela secretaria.'
 };
+// Resumo: "Curso R$ 1.000,00 em 3x de R$ 333,33 (+ matrícula R$ 100,00)".
+function atualizarValores() {
+    const ler = (v) => parseFloat(String(v || '0').replace(/\./g, '').replace(',', '.')) || 0;
+    const moeda = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+    const total = ler(document.getElementById('valor_total').value);
+    const taxa = ler(document.querySelector('[name="portal_taxa_matricula"]').value);
+    const campo = document.getElementById('portal_num_parcelas');
+    const n = parseInt(campo.value || campo.placeholder, 10) || 1;
+    const parcela = Math.floor(Math.round(total * 100) / n) / 100;
+    const ultima = Math.round(total * 100 - Math.round(parcela * 100) * (n - 1)) / 100;
+    document.getElementById('resumo_valores').innerHTML = total > 0
+        ? 'Curso <strong>' + moeda(total) + '</strong> em <strong>' + n + 'x de ' + moeda(parcela) + '</strong>'
+            + (Math.abs(ultima - parcela) > 0.001 ? ' (a última de ' + moeda(ultima) + ')' : '')
+            + (taxa > 0 ? ' + matrícula de ' + moeda(taxa) + ' · total para o aluno ' + moeda(total + taxa) : '') + '.'
+        : (taxa > 0 ? 'Só a matrícula: ' + moeda(taxa) + '.' : 'Curso gratuito.');
+}
+atualizarValores();
+
 function atualizarPortal() {
     const ligado = document.getElementById('portal_publicar').checked;
     document.getElementById('bloco-portal').style.display = ligado ? '' : 'none';

@@ -42,6 +42,7 @@ if ($ocupadas >= (int) $matricula['vagas']) {
 }
 $pdo->prepare("UPDATE matriculas SET status = 'ativa' WHERE id = ?")->execute([$id]);
 $pdo->commit();
+sincronizarDocumentosMatricula($pdo, $id);
 avisarMinimoTurma($pdo, (int) $matricula['turma_id']);
 
 registrarHistoricoAluno($pdo, (int) $matricula['aluno_id'], 'reativacao', 'Turma ' . $matricula['turma_nome'] . ' — voltou a ficar ativo', (int) $matricula["id"]);

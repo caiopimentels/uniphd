@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
+exigirTelaPortal('turma');
 
 $pdo = getDB();
 expirarInscricoesPortal($pdo);
@@ -22,7 +23,10 @@ if (alunoLogado()) {
     }
 }
 $taxa = (float) $turma['portal_taxa_matricula'];
-$mensalidade = (float) $turma['valor_mensalidade'];
+$valorTotal = valorTotalTurma($turma);
+$mensalidade = mensalidadeDoTotal($valorTotal, $parcelas);
+// Mensalidades no cartão/dinheiro: o aluno paga na secretaria.
+$formaMensalidadeSecretaria = formaPagaNaSecretaria($pdo, ($turma['forma_mensalidade_id'] ?? null) ? (int) $turma['forma_mensalidade_id'] : null);
 $pagaNaInscricao = $turma['portal_modo_vaga'] !== 'inscricao' && ($taxa > 0 || $mensalidade > 0);
 $prazoDias = max(1, (int) $turma['portal_prazo_pagamento_dias']);
 
@@ -39,6 +43,7 @@ require __DIR__ . '/../../includes/portal_header.php';
         <?php endif; ?>
         <h1 class="portal-titulo"><?= e($turma['curso_nome']) ?></h1>
         <p class="portal-sub mb-3"><?= e($turma['nome']) ?></p>
+        <?php if (!empty($turma['parceria'])): ?><p class="mb-3"><i class="bi bi-people"></i> <?= e($turma['parceria']) ?></p><?php endif; ?>
 
         <?php $descricao = trim((string) ($turma['portal_descricao'] ?: $turma['curso_descricao'])); ?>
         <?php if ($descricao): ?><div class="portal-card mb-3" style="white-space: pre-line;"><?= e($descricao) ?></div><?php endif; ?>
@@ -74,6 +79,8 @@ require __DIR__ . '/../../includes/portal_header.php';
             <div class="small text-muted">Investimento</div>
             <?php if ($mensalidade > 0): ?>
                 <div class="fs-3 fw-bold" style="color: var(--accent-dark);"><?= $parcelas ?>x de <?= formatMoney($mensalidade) ?></div>
+                <?php if ($parcelas > 1): ?><div class="small text-muted">total do curso <?= formatMoney($valorTotal) ?></div><?php endif; ?>
+                <?php if ($formaMensalidadeSecretaria): ?><div class="small"><i class="bi bi-credit-card"></i> Mensalidades: <?= e(mb_strtolower($formaMensalidadeSecretaria)) ?>, pago na secretaria</div><?php endif; ?>
             <?php else: ?>
                 <div class="fs-3 fw-bold" style="color: var(--accent-dark);">Gratuito</div>
             <?php endif; ?>

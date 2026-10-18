@@ -100,6 +100,7 @@ $abrirLink = fn (array $c, string $chaveLink = 'botao_link') => !empty($c[$chave
                 $stmt = $pdo->prepare("SELECT COUNT(*) FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < CURDATE()");
                 $stmt->execute([alunoAtualId()]);
                 $vencidas = (int) $stmt->fetchColumn();
+                $faltamDocumentos = documentosParaEnviar(documentosDoAluno($pdo, alunoAtualId()));
             }
             ?>
             <?php foreach ($pendencias as $p): ?>
@@ -112,25 +113,33 @@ $abrirLink = fn (array $c, string $chaveLink = 'botao_link') => !empty($c[$chave
                             Sua inscrição em <strong><?= e($p['curso_nome']) ?></strong> espera o pagamento até <strong><?= formatDateTime($p['pagamento_ate']) ?></strong>.
                         <?php endif; ?>
                     </div>
-                    <?php if (!$p['lista_espera']): ?><a href="/portal/meus_cursos.php" class="btn btn-sm btn-warning">Pagar agora</a><?php endif; ?>
+                    <?php if (!$p['lista_espera'] && telaPortalVisivel('meus_cursos')): ?><a href="/portal/meus_cursos.php" class="btn btn-sm btn-warning">Pagar agora</a><?php endif; ?>
                 </div>
             <?php endforeach; ?>
             <?php if ($vencidas): ?>
                 <div class="alert alert-danger d-flex flex-wrap align-items-center gap-2 mb-2">
                     <i class="bi bi-exclamation-circle"></i><div class="flex-grow-1">Você tem <?= $vencidas ?> parcela(s) vencida(s).</div>
-                    <a href="/portal/financeiro.php" class="btn btn-sm btn-danger">Ver pagamentos</a>
+                    <?php if (telaPortalVisivel('financeiro')): ?><a href="/portal/financeiro.php" class="btn btn-sm btn-danger">Ver pagamentos</a><?php endif; ?>
                 </div>
             <?php endif; ?>
-            <?php if (!$pendencias && !$vencidas && emPreviaPortal()): ?>
+            <?php if (!empty($faltamDocumentos)): ?>
+                <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2 mb-2">
+                    <i class="bi bi-file-earmark-arrow-up"></i><div class="flex-grow-1">Você tem <?= $faltamDocumentos ?> documento(s) para enviar.</div>
+                    <a href="/portal/documentos.php" class="btn btn-sm btn-warning">Enviar documentos</a>
+                </div>
+            <?php endif; ?>
+            <?php if (!$pendencias && !$vencidas && empty($faltamDocumentos) && emPreviaPortal()): ?>
                 <div class="text-muted small border rounded p-2">Avisos do aluno aparecem aqui quando houver (pagamento pendente, parcela vencida).</div>
             <?php endif; ?>
 
         <?php elseif ($bloco['tipo'] === 'atalhos'): ?>
             <div class="atalhos">
-                <a class="atalho" href="/portal/meus_cursos.php"><i class="bi bi-journal-bookmark"></i>Meus cursos</a>
-                <a class="atalho" href="/portal/financeiro.php"><i class="bi bi-wallet2"></i>Pagamentos</a>
-                <a class="atalho" href="/portal/calendario.php"><i class="bi bi-calendar-week"></i>Calendário</a>
-                <a class="atalho" href="/portal/certificados.php"><i class="bi bi-award"></i>Certificados</a>
+                <?php foreach (['meus_cursos' => ['/portal/meus_cursos.php', 'bi-journal-bookmark', 'Meus cursos'], 'financeiro' => ['/portal/financeiro.php', 'bi-wallet2', 'Pagamentos'],
+                    'calendario' => ['/portal/calendario.php', 'bi-calendar-week', 'Calendário'], 'certificados' => ['/portal/certificados.php', 'bi-award', 'Certificados'],
+                    'documentos' => ['/portal/documentos.php', 'bi-folder2-open', 'Documentos']] as $chaveTela => [$hrefTela, $iconeTela, $rotuloTela]):
+                    if (!telaPortalVisivel($chaveTela)) continue; ?>
+                    <a class="atalho" href="<?= $hrefTela ?>"><i class="bi <?= $iconeTela ?>"></i><?= $rotuloTela ?></a>
+                <?php endforeach; ?>
             </div>
         <?php endif; ?>
 <?php

@@ -93,8 +93,8 @@ function prepararModalPix(parcelaId, modo) {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-pix')).show();
 }
 
-function gerarCobrancaPix(parcelaId, forcar) {
-    const dados = new URLSearchParams({ id: parcelaId, gerar: 1 });
+function gerarCobrancaPix(parcelaId, forcar, modo) {
+    const dados = new URLSearchParams({ id: parcelaId, gerar: 1, modo: modo || modoPixAtual });
     if (forcar) dados.append('forcar', 1);
     return fetch('/financeiro/pix.php', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: dados }).then((r) => r.json());
 }

@@ -20,7 +20,7 @@ $abaAtiva = $abaAtiva ?? 'sistema';
     </li>
     <li class="nav-item">
         <a class="nav-link <?= $abaAtiva === 'situacoes' ? 'active' : '' ?>" href="/situacoes_turma/listar.php">
-            <i class="bi bi-bookmark-check"></i> Situações de turma
+            <i class="bi bi-list-check"></i> Cadastros auxiliares
         </a>
     </li>
     <li class="nav-item">

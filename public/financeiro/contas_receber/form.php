@@ -8,6 +8,7 @@ $alunosJson = array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome']
 // Vindo do cadastro do aluno (?aluno_id=), o aluno já chega escolhido.
 $alunoEscolhido = (int) ($_POST['aluno_id'] ?? $_GET['aluno_id'] ?? 0) ?: '';
 $categorias = $pdo->query("SELECT id, nome FROM categorias_financeiras WHERE tipo = 'receita' AND ativo = 1 ORDER BY nome")->fetchAll();
+$formasPagamento = $pdo->query("SELECT id, nome, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY instrumento = 'manual', nome")->fetchAll();
 
 $erros = [];
 
@@ -18,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $valor = decimalInput('valor', 0);
     $dataEmissao = input('data_emissao') ?: date('Y-m-d');
     $dataVencimento = input('data_vencimento') ?: date('Y-m-d');
+    $formaPagamentoId = (int) ($_POST['forma_pagamento_id'] ?? 0) ?: null;
 
     if ($descricao === '') {
         $erros[] = 'A descrição é obrigatória.';
@@ -28,10 +30,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$erros) {
         $stmt = $pdo->prepare(
-            'INSERT INTO contas_receber (aluno_id, categoria_id, descricao, valor, data_emissao, data_vencimento, status, usuario_id)
-             VALUES (?,?,?,?,?,?,?,?)'
+            'INSERT INTO contas_receber (aluno_id, categoria_id, descricao, valor, data_emissao, data_vencimento, forma_pagamento_id, status, usuario_id)
+             VALUES (?,?,?,?,?,?,?,?,?)'
         );
-        $stmt->execute([$alunoId, $categoriaId, $descricao, $valor, $dataEmissao, $dataVencimento, 'pendente', usuarioAtualId()]);
+        $stmt->execute([$alunoId, $categoriaId, $descricao, $valor, $dataEmissao, $dataVencimento, $formaPagamentoId, 'pendente', usuarioAtualId()]);
         registrarAtividade('contas_receber', 'criacao', 'Conta a receber criada: ' . $descricao . ' - ' . formatMoney($valor));
         flash('success', 'Lançamento criado com sucesso.');
         redirect('/financeiro/contas_receber/listar.php');
@@ -75,6 +77,16 @@ require __DIR__ . '/../../../includes/layout_header.php';
                             <option value="<?= (int) $c['id'] ?>"><?= e($c['nome']) ?></option>
                         <?php endforeach; ?>
                     </select>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Forma de pagamento</label>
+                    <select name="forma_pagamento_id" class="form-select">
+                        <option value="">-</option>
+                        <?php foreach ($formasPagamento as $fp): ?>
+                            <option value="<?= (int) $fp['id'] ?>" <?= (int) ($_POST['forma_pagamento_id'] ?? 0) === (int) $fp['id'] ? 'selected' : '' ?>><?= e($fp['nome']) ?><?= $fp['na_secretaria'] ? ' (na secretaria)' : '' ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-text">Pix gera só QR Code; Boleto só boleto; Boleto + Pix os dois; cartão/dinheiro: pago na secretaria.</div>
                 </div>
                 <div class="col-md-4">
                     <label class="form-label">Valor *</label>

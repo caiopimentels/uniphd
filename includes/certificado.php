@@ -1,15 +1,15 @@
 <?php
 
-// Certificado de conclusão: modelos montados em Acadêmico › Certificado.
-// Cada curso escolhe o seu modelo; sem escolha, vale o modelo padrão.
+// Documentos emitidos (certificado, declaração de módulo): modelos montados
+// em Acadêmico › Documentos, deitados ou em pé. Cada curso diz quais emite e
+// com que modelo (ver documentos_emitidos.php); sem modelo, vale o padrão.
 // Um modelo tem uma ou mais folhas (frente, verso...), cada uma com a sua
 // arte de fundo e os seus elementos:
 //   texto   -> com marcadores ({aluno}, {curso}...) trocados pelos dados
 //   imagem  -> assinatura, selo, logo (arquivo em uploads/portal)
 //   qrcode  -> leva ao link de verificação do próprio certificado
 //   modulos -> os módulos cadastrados no curso (conteúdo programático)
-// Posição (x, y = centro do elemento), largura e altura em % da folha A4
-// deitada. Altura 0 = automática (cresce com o conteúdo); com altura
+// Posição (x, y = centro do elemento), largura e altura em % da folha A4. Altura 0 = automática (cresce com o conteúdo); com altura
 // definida, o texto que não cabe tem a letra reduzida até caber.
 //
 // Guardado em certificado_modelos.layout como {"paginas": [{"fundo": ...,
@@ -27,12 +27,18 @@ function marcadoresCertificado(): array
     return [
         '{aluno}' => 'Nome do aluno',
         '{cpf}' => 'CPF do aluno',
+        '{ra}' => 'RA do aluno',
+        '{documento}' => 'Nome do documento (ex.: Certificado de conclusão)',
         '{curso}' => 'Nome do curso',
         '{turma}' => 'Nome da turma',
+        '{parceria}' => 'Parceria da turma (em branco se não tiver)',
         '{carga_horaria}' => 'Carga horária (horas)',
         '{data_inicio}' => 'Início da turma',
         '{data_termino}' => 'Término da turma (data de conclusão)',
         '{data_conclusao}' => 'Data de conclusão da turma',
+        '{modulo}' => 'Módulo (documento de módulo)',
+        '{modulo_carga_horaria}' => 'Carga horária do módulo',
+        '{data_modulo}' => 'Data de conclusão do módulo',
         '{data_emissao}' => 'Data de emissão (por extenso)',
         '{cidade}' => 'Cidade da empresa',
         '{empresa}' => 'Nome da instituição',
@@ -182,7 +188,7 @@ function fundosDoModeloCertificado(array $modelo): array
 function modelosCertificado(PDO $pdo): array
 {
     return $pdo->query(
-        'SELECT cm.*, (SELECT GROUP_CONCAT(c.nome ORDER BY c.nome SEPARATOR ", ") FROM cursos c WHERE c.certificado_modelo_id = cm.id) AS cursos
+        'SELECT cm.*, (SELECT GROUP_CONCAT(DISTINCT c.nome ORDER BY c.nome SEPARATOR ", ") FROM curso_emissoes e JOIN cursos c ON c.id = e.curso_id WHERE e.modelo_id = cm.id AND e.ativo = 1 AND e.avulso = 0) AS cursos
          FROM certificado_modelos cm ORDER BY cm.padrao DESC, cm.nome'
     )->fetchAll();
 }
@@ -197,17 +203,6 @@ function buscarModeloCertificado(PDO $pdo, int $id): ?array
 function modeloPadraoCertificado(PDO $pdo): ?array
 {
     return $pdo->query('SELECT * FROM certificado_modelos ORDER BY padrao DESC, id LIMIT 1')->fetch() ?: null;
-}
-
-// Modelo do curso da matrícula, ou o padrão se o curso não escolheu nenhum.
-function modeloCertificadoDaMatricula(PDO $pdo, int $matriculaId): ?array
-{
-    $stmt = $pdo->prepare(
-        'SELECT cm.* FROM matriculas m JOIN turmas t ON t.id = m.turma_id JOIN cursos c ON c.id = t.curso_id
-         JOIN certificado_modelos cm ON cm.id = c.certificado_modelo_id WHERE m.id = ?'
-    );
-    $stmt->execute([$matriculaId]);
-    return $stmt->fetch() ?: modeloPadraoCertificado($pdo);
 }
 
 function modulosDoCurso(PDO $pdo, int $cursoId): array
@@ -249,62 +244,9 @@ function linkVerificacaoCertificado(array $config, string $codigoFormatado): str
     return $base . (str_contains($base, '?') ? '&' : '?') . 'codigo=' . rawurlencode($codigoFormatado);
 }
 
-/**
- * Emite (ou devolve o já emitido) o certificado de uma matrícula concluída.
- * Retorna a linha de certificados, ou null se a matrícula não está concluída.
- */
-function emitirCertificado(PDO $pdo, int $matriculaId): ?array
-{
-    $stmt = $pdo->prepare("SELECT id FROM matriculas WHERE id = ? AND status = 'concluida'");
-    $stmt->execute([$matriculaId]);
-    if (!$stmt->fetchColumn()) {
-        return null;
-    }
-    $stmt = $pdo->prepare('SELECT * FROM certificados WHERE matricula_id = ?');
-    $stmt->execute([$matriculaId]);
-    $certificado = $stmt->fetch();
-    if ($certificado) {
-        return $certificado;
-    }
-
-    // Sem 0/O/1/I, que confundem quem digita o código para conferir.
-    $alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    do {
-        $codigo = '';
-        for ($i = 0; $i < 12; $i++) {
-            $codigo .= $alfabeto[random_int(0, strlen($alfabeto) - 1)];
-        }
-        $stmt = $pdo->prepare('SELECT COUNT(*) FROM certificados WHERE codigo = ?');
-        $stmt->execute([$codigo]);
-    } while ($stmt->fetchColumn());
-
-    $pdo->prepare('INSERT INTO certificados (matricula_id, codigo) VALUES (?, ?)')->execute([$matriculaId, $codigo]);
-    $stmt = $pdo->prepare('SELECT * FROM certificados WHERE matricula_id = ?');
-    $stmt->execute([$matriculaId]);
-    return $stmt->fetch();
-}
-
 function formatarCodigoCertificado(string $codigo): string
 {
     return implode('-', str_split($codigo, 4));
-}
-
-// Dados da matrícula de um certificado emitido, para preencher o modelo.
-function buscarCertificadoCompleto(PDO $pdo, string $campo, $valor): ?array
-{
-    $coluna = $campo === 'codigo' ? 'ce.codigo' : 'ce.matricula_id';
-    $stmt = $pdo->prepare(
-        "SELECT ce.*, m.aluno_id, m.certificado_liberado, a.nome AS aluno_nome, a.cpf, c.id AS curso_id, c.nome AS curso_nome, c.carga_horaria,
-                t.nome AS turma_nome, t.data_inicio, t.data_termino, t.data_conclusao
-         FROM certificados ce
-         JOIN matriculas m ON m.id = ce.matricula_id
-         JOIN alunos a ON a.id = m.aluno_id
-         JOIN turmas t ON t.id = m.turma_id
-         JOIN cursos c ON c.id = t.curso_id
-         WHERE {$coluna} = ?"
-    );
-    $stmt->execute([$valor]);
-    return $stmt->fetch() ?: null;
 }
 
 function valoresCertificado(array $certificado, array $config): array
@@ -313,9 +255,15 @@ function valoresCertificado(array $certificado, array $config): array
     $codigo = formatarCodigoCertificado($certificado['codigo']);
     return [
         '{aluno}' => $certificado['aluno_nome'],
+        '{ra}' => (string) ($certificado['ra'] ?? ''),
+        '{documento}' => (string) ($certificado['documento_nome'] ?? 'Certificado'),
+        '{modulo}' => (string) ($certificado['modulo_nome'] ?? ''),
+        '{modulo_carga_horaria}' => !empty($certificado['modulo_carga']) ? (string) (int) $certificado['modulo_carga'] : '—',
+        '{data_modulo}' => !empty($certificado['modulo_concluido_em']) ? formatDate($certificado['modulo_concluido_em']) : '-',
         '{cpf}' => strlen($cpf) === 11 ? substr($cpf, 0, 3) . '.' . substr($cpf, 3, 3) . '.' . substr($cpf, 6, 3) . '-' . substr($cpf, 9) : $cpf,
         '{curso}' => $certificado['curso_nome'],
         '{turma}' => $certificado['turma_nome'],
+        '{parceria}' => (string) ($certificado['parceria'] ?? ''),
         '{carga_horaria}' => $certificado['carga_horaria'] ? (string) (int) $certificado['carga_horaria'] : '—',
         '{data_inicio}' => formatDate($certificado['data_inicio']),
         // Término = data de conclusão informada ao concluir a turma; turma
@@ -336,7 +284,8 @@ function valoresCertificado(array $certificado, array $config): array
 function valoresExemploCertificado(array $config): array
 {
     return [
-        '{aluno}' => 'Maria Aparecida da Silva Souza', '{cpf}' => '123.456.789-09', '{curso}' => 'Gestão de Projetos',
+        '{aluno}' => 'Maria Aparecida da Silva Souza', '{cpf}' => '123.456.789-09', '{ra}' => 'RA0000123', '{parceria}' => 'em parceria com a Faculdade Exemplo',
+        '{documento}' => 'Certificado de conclusão', '{modulo}' => 'Planejamento e escopo', '{modulo_carga_horaria}' => '60', '{data_modulo}' => '30/06/2026', '{curso}' => 'Gestão de Projetos',
         '{turma}' => '2026/1 - Noite', '{carga_horaria}' => '360', '{data_inicio}' => '02/03/2026', '{data_termino}' => '30/11/2026', '{data_conclusao}' => '30/11/2026',
         '{data_emissao}' => dataPorExtenso(date('Y-m-d')), '{cidade}' => $config['empresa_cidade'] ?: 'São Paulo',
         '{empresa}' => $config['empresa_razao_social'] ?: ($config['nome_sistema'] ?? 'Instituição'),
@@ -345,7 +294,25 @@ function valoresExemploCertificado(array $config): array
     ];
 }
 
-function fundosCertificado(PDO $pdo): array
+// Fundos de um modelo (cada modelo tem a sua galeria).
+function fundosCertificado(PDO $pdo, int $modeloId): array
 {
-    return $pdo->query('SELECT * FROM certificado_fundos ORDER BY criado_em DESC, id DESC')->fetchAll();
+    $stmt = $pdo->prepare('SELECT * FROM certificado_fundos WHERE modelo_id = ? ORDER BY criado_em DESC, id DESC');
+    $stmt->execute([$modeloId]);
+    return $stmt->fetchAll();
+}
+
+// Apaga o arquivo do fundo se nenhum modelo tem mais esse fundo (a cópia de
+// um modelo reaproveita os mesmos arquivos).
+function apagarFundoSemUso(PDO $pdo, string $imagem): void
+{
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM certificado_fundos WHERE imagem = ?');
+    $stmt->execute([$imagem]);
+    $usado = (int) $stmt->fetchColumn() > 0;
+    foreach (modelosCertificado($pdo) as $m) {
+        $usado = $usado || in_array($imagem, fundosDoModeloCertificado($m), true);
+    }
+    if (!$usado) {
+        apagarImagemPortal($imagem);
+    }
 }

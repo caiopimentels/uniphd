@@ -10,6 +10,17 @@ exigirInadimplencia();
 $pdo = getDB();
 $id = (int) ($_GET['id'] ?? $_POST['id'] ?? 0);
 $erroGeracao = null;
+// O botão diz o que quer (pix ou boleto): a forma de pagamento da parcela
+// precisa usar esse meio.
+$modo = in_array($_POST['modo'] ?? $_GET['modo'] ?? '', ['pix', 'boleto'], true) ? ($_POST['modo'] ?? $_GET['modo']) : null;
+if ($modo) {
+    $stmt = $pdo->prepare('SELECT forma_pagamento_id FROM contas_receber WHERE id = ?');
+    $stmt->execute([$id]);
+    $meios = meiosCobrancaForma($pdo, (int) $stmt->fetchColumn() ?: null);
+    if (!$meios[$modo]) {
+        responderJson(['sucesso' => false, 'mensagem' => 'A forma de pagamento desta parcela é ' . $meios['nome'] . ': não gera ' . ($modo === 'pix' ? 'Pix' : 'boleto') . '. Mude a forma de pagamento (lápis) se precisar.']);
+    }
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['gerar'])) {
     $stmt = $pdo->prepare('SELECT * FROM contas_receber WHERE id = ?');

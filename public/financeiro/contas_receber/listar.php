@@ -37,6 +37,8 @@ $temPendente = (bool) array_filter($contas, fn ($c) => $c['status'] === 'pendent
 $acoesMassa = array_values(array_filter([
     usuarioPodeBaixarReceber() ? ['Dar baixa nas selecionadas', 'bi-check2-all', '', '', '', '', 'abrirBaixaLote()'] : null,
     ['Gerar boleto + Pix das selecionadas', 'bi-upc-scan', '', '', '', '', "acaoLoteReceber('gerar_boletos', 'Gerar boleto + Pix no Itaú para {n} parcela(s)? As que já têm boleto ficam como estão.')"],
+    usuarioPodeEditarFinanceiroAluno() ? ['Mudar forma de pagamento', 'bi-credit-card', '', '', '', '', "abrirModalLote('modal-forma-lote')"] : null,
+    usuarioPodeEditarFinanceiroAluno() && usuarioPodeExcluirReceber() ? ['Reparcelar selecionadas', 'bi-calculator', '', '', '', '', 'abrirReparcelar()'] : null,
     usuarioPodeExcluirReceber() ? ['Excluir selecionadas', 'bi-trash3', '', '', '', 'text-danger', "acaoLoteReceber('excluir', 'Excluir {n} parcela(s)? As que têm boleto no Itaú recebem a baixa no banco e ficam como canceladas; as pagas pelo banco não saem.')"] : null,
 ]));
 $hoje = date('Y-m-d');
@@ -49,7 +51,7 @@ $informacoes = [
     ['Vencidas', count($vencidasLista) . ' · ' . formatMoney(array_sum(array_column($vencidasLista, 'valor'))), $vencidasLista ? 'estoque-baixo' : ''],
     ['Recebidas', count($pagasLista) . ' · ' . formatMoney(array_sum(array_map(fn ($c) => (float) ($c['valor_recebido'] ?? $c['valor']), $pagasLista))), ''],
 ];
-$formasPagamento = $pdo->query('SELECT id, nome FROM formas_pagamento WHERE ativo = 1 ORDER BY nome')->fetchAll();
+$formasPagamento = $pdo->query("SELECT id, nome, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY nome")->fetchAll();
 
 $labelTotal = match ($status) {
     'pendente' => 'Total pendente',
@@ -130,10 +132,10 @@ require __DIR__ . '/../../../includes/layout_header.php';
                 <tr <?= $agrupar ? 'data-linha-grupo="' . e($grupo['id']) . '" style="display:none"' : '' ?> class="cursor-pointer" onclick="abrirHistoricoParcela(<?= (int) $c['id'] ?>)" title="Clique para ver o histórico desta parcela">
                     <td onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $temPendente): ?>
-                            <input type="checkbox" class="form-check-input lote-item" value="<?= (int) $c['id'] ?>" data-grupo="<?= $indiceGrupo ?>" data-valor="<?= e((string) $c['valor']) ?>">
+                            <input type="checkbox" class="form-check-input lote-item" value="<?= (int) $c['id'] ?>" data-grupo="<?= $indiceGrupo ?>" data-valor="<?= e((string) $c['valor']) ?>" data-aluno="<?= (int) $c['aluno_id'] ?>">
                         <?php endif; ?>
                     </td>
-                    <td><?= e($c['descricao']) ?></td>
+                    <td><?= e($c['descricao']) ?><?php if ($c['forma_pagamento_id'] && ($nomeForma = meiosCobrancaForma($pdo, (int) $c['forma_pagamento_id'])['nome'])): ?><div class="small text-muted"><i class="bi bi-wallet2"></i> <?= e($nomeForma) ?></div><?php endif; ?></td>
                     <td><?= e($c['aluno_nome'] ?: $c['categoria_nome'] ?: '-') ?></td>
                     <td class="text-nowrap <?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($c['data_vencimento']) ?></td>
                     <td class="text-end text-nowrap">
@@ -147,8 +149,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                     <td><span class="badge <?= contaStatusBadgeClass($c['status']) ?>"><?= contaStatusLabel($c['status']) ?></span></td>
                     <td class="text-end text-nowrap" onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $c['aluno_id']): ?>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $c['id'] ?>)" title="Gerar / ver Pix (QR Code e copia e cola)"><i class="bi bi-qr-code"></i></button>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBoleto(<?= (int) $c['id'] ?>)" title="Gerar / abrir boleto"><i class="bi bi-upc-scan"></i></button>
+                            <?= botoesCobrancaParcela($pdo, $c) ?>
                         <?php endif; ?>
                         <?php if ($c['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
                             <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $c), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $c['boleto_no_banco'] ? 'Alterar (o boleto é alterado também no banco)' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
@@ -241,6 +242,85 @@ require __DIR__ . '/../../../includes/layout_header.php';
     </div>
 </div>
 
+<div class="modal fade" id="modal-forma-lote" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" action="/financeiro/contas_receber/massa.php" method="post" onsubmit="return enviarModalLote(this, 'mudar_forma');">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-credit-card"></i> Forma de pagamento de <span class="lote-qtd"></span> parcela(s)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label">Nova forma de pagamento</label>
+                <select name="forma_pagamento_id" class="form-select">
+                    <option value="">-</option>
+                    <?php foreach ($formasPagamento as $f): ?><option value="<?= (int) $f['id'] ?>"><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option><?php endforeach; ?>
+                </select>
+                <div class="small text-muted mt-2">Indo para cartão/dinheiro, o boleto/Pix que já estiver no banco é baixado (o aluno não paga duas vezes) e no portal aparece "pague na secretaria".</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-brand"><i class="bi bi-check-lg"></i> Mudar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modal-reparcelar" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <form class="modal-content" action="/financeiro/contas_receber/massa.php" method="post" onsubmit="return enviarModalLote(this, 'reparcelar');">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-calculator"></i> Reparcelar <span class="lote-qtd"></span> parcela(s)</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">As parcelas marcadas são trocadas pelas novas (as antigas são excluídas e o boleto delas, se houver, é baixado no banco). Ex.: R$ 1.000,00 em 3x no Pix.</p>
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label">Valor total</label>
+                        <input type="text" name="total" id="rp-total" class="form-control" required oninput="montarParcelasReparcelar()">
+                        <div class="form-text" id="rp-soma"></div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Dividir em</label>
+                        <div class="input-group">
+                            <input type="number" name="num_parcelas" id="rp-n" class="form-control" min="1" max="60" value="1" required oninput="montarParcelasReparcelar()">
+                            <span class="input-group-text">x</span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">1º vencimento</label>
+                        <input type="date" name="primeiro_vencimento" id="rp-venc" class="form-control" required oninput="montarParcelasReparcelar()">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label">Forma de pagamento</label>
+                        <select name="forma_pagamento_id" class="form-select">
+                            <option value="">-</option>
+                            <?php foreach ($formasPagamento as $f): ?><option value="<?= (int) $f['id'] ?>"><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option><?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Descrição</label>
+                        <input type="text" name="descricao" id="rp-descricao" class="form-control" maxlength="200" value="Renegociação">
+                        <div class="form-text">Vira "Renegociação 1/3", "Renegociação 2/3"...</div>
+                    </div>
+                </div>
+                <div class="fw-semibold mt-3 mb-1">Como fica o parcelamento</div>
+                <div class="form-text mt-0 mb-2">Dá para mudar a data e o valor de cada parcela; a soma precisa fechar exatamente no valor total.</div>
+                <table class="table table-sm align-middle mb-1">
+                    <thead><tr><th style="width: 70px;">Parcela</th><th>Vencimento</th><th class="text-end">Valor</th></tr></thead>
+                    <tbody id="rp-linhas"></tbody>
+                    <tfoot><tr><th colspan="2" class="text-end">Soma das parcelas</th><th class="text-end" id="rp-soma-parcelas"></th></tr></tfoot>
+                </table>
+                <div class="small" id="rp-previa"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-brand" id="rp-confirmar"><i class="bi bi-check-lg"></i> Reparcelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
 // Agrupado: cada grupo começa fechado e abre/fecha ao clicar no título. Os
 // abertos ficam lembrados neste navegador e vão junto para a impressão.
@@ -309,6 +389,82 @@ function abrirBaixaLote() {
     document.getElementById('lote-titulo').textContent = marcados.length;
     document.getElementById('lote-ids').innerHTML = marcados.map((c) => '<input type="hidden" name="ids[]" value="' + c.value + '">').join('');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-baixa-lote')).show();
+}
+// Mudar forma / reparcelar: modal com os campos; as marcadas vão junto.
+function abrirModalLote(idModal) {
+    const marcados = itensLote.filter((c) => c.checked);
+    if (!marcados.length) { alert('Marque ao menos uma parcela em aberto na lista.'); return false; }
+    document.querySelectorAll('#' + idModal + ' .lote-qtd').forEach((el) => { el.textContent = marcados.length; });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById(idModal)).show();
+    return true;
+}
+function enviarModalLote(form, acao) {
+    form.querySelectorAll('.lote-oculto').forEach((el) => el.remove());
+    const marcados = itensLote.filter((c) => c.checked);
+    [['acao', acao], ['voltar', window.location.pathname + window.location.search], ...marcados.map((c) => ['ids[]', c.value])].forEach(([nome, valor]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden'; input.name = nome; input.value = valor; input.className = 'lote-oculto';
+        form.appendChild(input);
+    });
+    return acao !== 'reparcelar' || confirm('Trocar as ' + marcados.length + ' parcela(s) marcadas pelas novas? As antigas serão excluídas.');
+}
+function abrirReparcelar() {
+    const marcados = itensLote.filter((c) => c.checked);
+    if (marcados.length && new Set(marcados.map((c) => c.dataset.aluno)).size > 1) { alert('Para reparcelar, marque parcelas de um aluno só.'); return; }
+    if (!abrirModalLote('modal-reparcelar')) return;
+    const soma = Math.round(marcados.reduce((s, c) => s + parseFloat(c.dataset.valor), 0) * 100) / 100;
+    document.getElementById('rp-total').value = soma.toFixed(2).replace('.', ',');
+    document.getElementById('rp-total').dataset.soma = soma;
+    document.getElementById('rp-soma').textContent = 'Soma das marcadas: ' + moedaLote(soma);
+    const hoje = new Date();
+    document.getElementById('rp-venc').value = hoje.getFullYear() + '-' + String(hoje.getMonth() + 1).padStart(2, '0') + '-' + String(hoje.getDate()).padStart(2, '0');
+    montarParcelasReparcelar();
+}
+// Parcelamento: monta as linhas (data e valor, mês a mês, última com a
+// diferença de centavos); cada uma pode ser mudada, mas a soma tem que
+// fechar no total — senão o botão fica bloqueado.
+const centavosRp = (t) => Math.round((parseFloat(String(t || '0').replace(/\./g, '').replace(',', '.')) || 0) * 100);
+function somarMesesRp(iso, meses) {
+    const [a, m, d] = iso.split('-').map(Number);
+    const alvo = new Date(a, m - 1 + meses, 1);
+    const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+    alvo.setDate(Math.min(d, ultimo));
+    return alvo.getFullYear() + '-' + String(alvo.getMonth() + 1).padStart(2, '0') + '-' + String(alvo.getDate()).padStart(2, '0');
+}
+function montarParcelasReparcelar() {
+    const total = centavosRp(document.getElementById('rp-total').value);
+    const n = Math.min(60, Math.max(1, parseInt(document.getElementById('rp-n').value, 10) || 1));
+    const primeiro = document.getElementById('rp-venc').value;
+    const parte = Math.floor(total / n);
+    let html = '';
+    for (let i = 0; i < n; i++) {
+        const valor = i === n - 1 ? total - parte * (n - 1) : parte;
+        html += '<tr><td>' + (i + 1) + '/' + n + '</td>'
+            + '<td><input type="date" name="parcela_venc[]" class="form-control form-control-sm" required value="' + (primeiro ? somarMesesRp(primeiro, i) : '') + '"></td>'
+            + '<td><input type="text" name="parcela_valor[]" class="form-control form-control-sm text-end rp-valor" required value="' + (valor / 100).toFixed(2).replace('.', ',') + '" oninput="conferirReparcelar()"></td></tr>';
+    }
+    document.getElementById('rp-linhas').innerHTML = html;
+    conferirReparcelar();
+}
+function conferirReparcelar() {
+    const total = centavosRp(document.getElementById('rp-total').value);
+    const soma = Math.round((parseFloat(document.getElementById('rp-total').dataset.soma) || 0) * 100);
+    const valores = [...document.querySelectorAll('.rp-valor')].map((c) => centavosRp(c.value));
+    const somaParcelas = valores.reduce((s, v) => s + v, 0);
+    const diferenca = total - somaParcelas;
+    const celula = document.getElementById('rp-soma-parcelas');
+    celula.textContent = moedaLote(somaParcelas / 100);
+    celula.className = 'text-end ' + (diferenca === 0 ? 'text-success' : 'text-danger');
+    const problemas = [];
+    if (total <= 0) problemas.push('Informe o valor total.');
+    if (total > soma) problemas.push('O total não pode passar da soma das parcelas marcadas (' + moedaLote(soma / 100) + ').');
+    if (valores.some((v) => v <= 0)) problemas.push('Toda parcela precisa ter valor.');
+    if (diferenca > 0) problemas.push('Faltam ' + moedaLote(diferenca / 100) + ' para fechar o total de ' + moedaLote(total / 100) + '.');
+    if (diferenca < 0) problemas.push('As parcelas passam ' + moedaLote(-diferenca / 100) + ' do total de ' + moedaLote(total / 100) + '.');
+    let texto = problemas.length ? '<span class="text-danger">' + problemas.join(' ') + '</span>' : '<span class="text-success"><i class="bi bi-check-circle"></i> Fecha certinho: ' + moedaLote(total / 100) + '.</span>';
+    if (!problemas.length && total < soma) texto += ' Desconto de <strong>' + moedaLote((soma - total) / 100) + '</strong> sobre a soma das marcadas.';
+    document.getElementById('rp-previa').innerHTML = texto;
+    document.getElementById('rp-confirmar').disabled = problemas.length > 0;
 }
 // Ações do painel lateral que vão direto ao servidor (gerar boletos, excluir).
 function acaoLoteReceber(acao, pergunta) {

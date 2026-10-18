@@ -52,7 +52,7 @@ $menus = [
             ['Cursos', '/cursos/listar.php', usuarioPodeVerCursos(), 'cursos'],
             ['Professores', '/professores/listar.php', usuarioPodeVerCursos(), 'professores'],
             ['Portal do aluno', '/configuracoes/portal.php', usuarioPodeGerenciarPortal(), 'portal'],
-            ['Certificados', '/configuracoes/certificado.php', usuarioPodeGerenciarPortal(), 'certificado'],
+            ['Documentos', '/configuracoes/certificado.php', usuarioPodeGerenciarPortal(), 'certificado'],
         ],
     ],
     'financeiro' => [
@@ -110,6 +110,7 @@ $menus = [
 // depois de a página ir para o navegador).
 if (usuarioLogado()) {
     agendarVerificacaoCertificados();
+    agendarLiberacaoDocumentos(); // libera os documentos de quem ficou em dia
 }
 ?>
 

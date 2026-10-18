@@ -38,6 +38,7 @@ $descontoValor = match ($modoDesconto) {
     default => null,
 };
 $descontoAte = $modoDesconto === 'personalizado' ? (input('desconto_ate') ?: null) : null;
+$formaNova = (int) ($_POST['forma_pagamento_id'] ?? 0) ?: null;
 
 $erros = [];
 if ($descricao === '') {
@@ -65,6 +66,21 @@ if ($conta['boleto_no_banco'] && $vencimento && $vencimento < date('Y-m-d') && $
 if ($erros) {
     flash('danger', implode(' ', $erros));
     redirect($voltar);
+}
+
+// Forma de pagamento: indo para cartão/dinheiro, o boleto do banco é baixado
+// antes (e aí não há mais boleto para alterar).
+$avisoForma = '';
+if (array_key_exists('forma_pagamento_id', $_POST) && (int) $conta['forma_pagamento_id'] !== (int) $formaNova) {
+    $troca = trocarFormaParcela($pdo, $id, $formaNova);
+    if (!$troca['ok']) {
+        flash('danger', $troca['mensagem']);
+        redirect($voltar);
+    }
+    $avisoForma = $troca['resumo'] ?? '';
+    $stmt = $pdo->prepare('SELECT ' . SQL_BOLETO_NO_BANCO . ' FROM contas_receber cr WHERE cr.id = ?');
+    $stmt->execute([$id]);
+    $conta['boleto_no_banco'] = (bool) $stmt->fetchColumn();
 }
 
 $avisoBanco = '';
@@ -109,9 +125,13 @@ if ($antes !== $depois) {
 if ($conta['descricao'] !== $descricao) {
     $mudancas[] = 'descrição alterada';
 }
+if ($avisoForma !== '') {
+    $mudancas[] = 'forma de pagamento ' . $avisoForma;
+}
 registrarAtividade('contas_receber', 'edicao', 'Parcela alterada: ' . $descricao . ($mudancas ? ' (' . implode('; ', $mudancas) . ')' : ''));
-if ($mudancas) {
-    registrarHistoricoParcela($pdo, $id, 'edicao', ucfirst(implode('; ', $mudancas)) . ($reemitir ? ' — boleto baixado e emitido de novo' : ''));
+$mudancasHistorico = array_values(array_filter($mudancas, fn ($m) => !str_starts_with($m, 'forma de pagamento')));
+if ($mudancasHistorico) {
+    registrarHistoricoParcela($pdo, $id, 'edicao', ucfirst(implode('; ', $mudancasHistorico)) . ($reemitir ? ' — boleto baixado e emitido de novo' : ''));
 }
 
 // Desconto mudou: o boleto antigo já foi baixado; emite o novo com a

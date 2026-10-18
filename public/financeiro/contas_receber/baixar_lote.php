@@ -53,6 +53,7 @@ foreach ($parcelas as $p) {
     $total += $valor;
     registrarHistoricoParcela($pdo, (int) $p['id'], 'baixa', formatMoney($valor) . ' recebido em ' . formatDate($dataRecebimento) . ' (baixa de várias de uma vez)');
     $confirmacao = confirmarMatriculaPorPagamento($pdo, (int) $p['id']);
+    sincronizarDocumentosPelaParcela($pdo, (int) $p['id']);
     $confirmadas += $confirmacao === 'confirmada' ? 1 : 0;
     $listaEspera += $confirmacao === 'lista_espera' ? 1 : 0;
 }

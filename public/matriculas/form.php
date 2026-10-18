@@ -37,6 +37,7 @@ $dados = [
     'primeiro_vencimento' => '',
     'taxa_matricula' => 0,
     'forma_pagamento_id' => 0,
+    'forma_mensalidade_id' => 0,
     'observacao' => '',
 ];
 
@@ -53,6 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'primeiro_vencimento' => input('primeiro_vencimento'),
         'taxa_matricula' => decimalInput('taxa_matricula', 0),
         'forma_pagamento_id' => (int) ($_POST['forma_pagamento_id'] ?? 0),
+        'forma_mensalidade_id' => (int) ($_POST['forma_mensalidade_id'] ?? 0),
         'observacao' => input('observacao'),
     ];
 
@@ -159,8 +161,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             // A pontualidade também é desconto concedido: entra na mesma
             // alçada do perfil, convertida em % da mensalidade já com bolsa.
+            // Valor do curso (o da turma) dividido nas parcelas escolhidas.
+            // Turma antiga sem valor total: mensalidade da turma × parcelas.
+            $valorTotalCurso = $turma ? ($turma['valor_total'] !== null ? (float) $turma['valor_total'] : (float) $turma['valor_mensalidade'] * max(1, $dados['num_parcelas'])) : 0.0;
+            $mensalidadeBase = mensalidadeDoTotal($valorTotalCurso, max(1, $dados['num_parcelas']));
             if ($turma && $dados['desconto_pontualidade_tipo'] !== 'nenhum') {
-                $mensalidadeFinal = valorMensalidadeComDesconto((float) $turma['valor_mensalidade'], $dados['desconto_percentual']);
+                $mensalidadeFinal = valorMensalidadeComDesconto($mensalidadeBase, $dados['desconto_percentual']);
                 $percentualPontualidade = $dados['desconto_pontualidade_tipo'] === 'percentual'
                     ? $dados['desconto_pontualidade_valor']
                     : ($mensalidadeFinal > 0 ? $dados['desconto_pontualidade_valor'] / $mensalidadeFinal * 100 : 100);
@@ -179,16 +185,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $stmt = $pdo->prepare(
                     'INSERT INTO matriculas
-                        (turma_id, aluno_id, data_matricula, valor_mensalidade, desconto_percentual,
+                        (turma_id, aluno_id, data_matricula, valor_mensalidade, valor_total, desconto_percentual,
                          desconto_pontualidade_tipo, desconto_pontualidade_valor, desconto_pontualidade_dias, num_parcelas,
-                         primeiro_vencimento, taxa_matricula, forma_pagamento_id, observacao, usuario_id)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+                         primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id, observacao, usuario_id)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
                 );
                 $stmt->execute([
-                    $turma['id'], $aluno['id'], $dados['data_matricula'], $turma['valor_mensalidade'],
+                    $turma['id'], $aluno['id'], $dados['data_matricula'], $mensalidadeBase, $valorTotalCurso,
                     $dados['desconto_percentual'], $dados['desconto_pontualidade_tipo'], $dados['desconto_pontualidade_valor'],
                     $dados['desconto_pontualidade_dias'], $dados['num_parcelas'], $dados['primeiro_vencimento'],
-                    $dados['taxa_matricula'], $dados['forma_pagamento_id'] ?: null, $dados['observacao'] ?: null,
+                    $dados['taxa_matricula'], $dados['forma_pagamento_id'] ?: null, $dados['forma_mensalidade_id'] ?: null, $dados['observacao'] ?: null,
                     usuarioAtualId(),
                 ]);
                 $matriculaId = (int) $pdo->lastInsertId();
@@ -225,8 +231,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Só turmas que ainda aceitam aluno; a escolhida via URL entra mesmo se
 // estiver lotada, para a mensagem de erro fazer sentido no formulário.
 $stmt = $pdo->prepare(
-    "SELECT t.id, t.nome, t.vagas, t.data_inicio, t.data_termino, t.duracao_meses, t.duracao_unidade, t.valor_mensalidade, c.nome AS curso_nome,
-            t.portal_taxa_matricula, t.portal_num_parcelas, t.portal_dia_vencimento,
+    "SELECT t.id, t.nome, t.vagas, t.data_inicio, t.data_termino, t.duracao_meses, t.duracao_unidade, t.valor_mensalidade, t.valor_total, c.nome AS curso_nome,
+            t.portal_taxa_matricula, t.portal_num_parcelas, t.portal_dia_vencimento, t.portal_forma_pagamento_id, t.forma_mensalidade_id,
             ((SELECT COUNT(*) FROM matriculas m WHERE m.turma_id = t.id AND " . SQL_MATRICULA_OCUPA_VAGA . ") + " . SQL_RESERVAS_TURMA . ") AS ocupadas
      FROM turmas t
      JOIN cursos c ON c.id = t.curso_id
@@ -249,7 +255,7 @@ $stmt = $pdo->prepare(
 $stmt->execute([$dados['aluno_id']]);
 $alunos = $stmt->fetchAll();
 
-$formasPagamento = $pdo->query('SELECT id, nome FROM formas_pagamento WHERE ativo = 1 ORDER BY nome')->fetchAll();
+$formasPagamento = $pdo->query("SELECT id, nome, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY nome")->fetchAll();
 
 // A busca de aluno e de turma roda no navegador sobre estas listas; os
 // cadastros rápidos acrescentam nelas o que for criado na hora.
@@ -274,6 +280,10 @@ $turmasJson = array_map(fn ($t) => [
     'unidade' => $t['duracao_unidade'],
     'duracao' => textoDuracaoTurma($t),
     'mensalidade' => (float) $t['valor_mensalidade'],
+    // Valor do curso; turma antiga sem ele: null (vale a mensalidade × parcelas).
+    'total' => $t['valor_total'] !== null ? (float) $t['valor_total'] : null,
+    'forma_taxa' => $t['portal_forma_pagamento_id'] ? (int) $t['portal_forma_pagamento_id'] : null,
+    'forma_mensalidade' => $t['forma_mensalidade_id'] ? (int) $t['forma_mensalidade_id'] : null,
     'taxa' => (float) $t['portal_taxa_matricula'],
     'parcelas' => (int) $t['portal_num_parcelas'],
     'dia' => (int) $t['portal_dia_vencimento'],
@@ -346,15 +356,18 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <label class="form-label">Data da matrícula</label>
                 <input type="date" name="data_matricula" class="form-control" value="<?= e($dados['data_matricula']) ?>">
             </div>
+            <?php foreach (['forma_pagamento_id' => 'Matrícula paga com', 'forma_mensalidade_id' => 'Mensalidades pagas com'] as $campoForma => $rotuloForma): ?>
             <div class="col-md-6">
-                <label class="form-label">Forma de pagamento prevista</label>
-                <select name="forma_pagamento_id" class="form-select">
+                <label class="form-label"><?= $rotuloForma ?></label>
+                <select name="<?= $campoForma ?>" id="<?= $campoForma ?>" class="form-select">
                     <option value="">-</option>
                     <?php foreach ($formasPagamento as $f): ?>
-                        <option value="<?= (int) $f['id'] ?>" <?= $dados['forma_pagamento_id'] === (int) $f['id'] ? 'selected' : '' ?>><?= e($f['nome']) ?></option>
+                        <option value="<?= (int) $f['id'] ?>" <?= $dados[$campoForma] === (int) $f['id'] ? 'selected' : '' ?>><?= e($f['nome']) ?><?= $f['na_secretaria'] ? ' (na secretaria)' : '' ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>
+            <?php endforeach; ?>
+            <div class="col-12"><div class="form-text mt-0">Vêm da turma; mude aqui se este aluno paga diferente. Depois, cada parcela pode mudar em Contas a receber (inclusive reparcelar).</div></div>
             <div class="col-12">
                 <label class="form-label">Observação</label>
                 <input type="text" name="observacao" class="form-control" maxlength="255" value="<?= e($dados['observacao']) ?>">
@@ -366,7 +379,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="secao-titulo"><i class="bi bi-cash-coin"></i> Condições financeiras</div>
         <div class="row g-3">
             <div class="col-md-4">
-                <label class="form-label">Mensalidade da turma</label>
+                <label class="form-label">Valor do curso</label>
                 <input type="text" id="mensalidade_turma" class="form-control" disabled value="-">
             </div>
             <div class="col-md-4">
@@ -456,6 +469,11 @@ const PARCELAS_DIGITADAS = <?= $dados['num_parcelas'] ? 'true' : 'false' ?>;
 const VENCIMENTO_DIGITADO = <?= $dados['primeiro_vencimento'] ? 'true' : 'false' ?>;
 const TAXA_DIGITADA = <?= $_SERVER['REQUEST_METHOD'] === 'POST' ? 'true' : 'false' ?>;
 
+// Valor do curso: o total da turma (turma antiga: mensalidade × parcelas).
+function totalDoCurso(turma, qtd) {
+    return turma.total !== null && turma.total !== undefined ? turma.total : (parseFloat(turma.mensalidade) || 0) * qtd;
+}
+
 function lerDecimal(valor) {
     return parseFloat(String(valor || '0').replace(/\./g, '').replace(',', '.')) || 0;
 }
@@ -517,6 +535,9 @@ function aoTrocarTurma(inicial) {
         restantes = Math.max(1, Math.min(restantes, turma.parcelas || parseInt(turma.meses, 10)));
         if (!(inicial && TAXA_DIGITADA)) {
             document.getElementById('taxa_matricula').value = (turma.taxa || 0).toFixed(2).replace('.', ',');
+            // Formas de pagamento da turma (matrícula e mensalidades).
+            if (turma.forma_taxa) document.getElementById('forma_pagamento_id').value = turma.forma_taxa;
+            if (turma.forma_mensalidade || turma.forma_taxa) document.getElementById('forma_mensalidade_id').value = turma.forma_mensalidade || turma.forma_taxa;
         }
 
         if (!(inicial && VENCIMENTO_DIGITADO)) {
@@ -544,14 +565,19 @@ function atualizarPrevia() {
         return;
     }
 
-    const mensalidade = parseFloat(turma.mensalidade) || 0;
-    const comDesconto = Math.round(mensalidade * (1 - desconto / 100) * 100) / 100;
+    // Mesma conta de gerarCobrancasMatricula() no PHP: total menos a bolsa,
+    // dividido nas parcelas (a última leva a diferença de centavos).
+    const total = totalDoCurso(turma, Math.max(1, qtd));
+    const totalComDesconto = Math.round(total * (1 - desconto / 100) * 100) / 100;
+    const n = Math.max(1, qtd);
+    const comDesconto = Math.floor(Math.round(totalComDesconto * 100) / n) / 100;
+    const ultima = Math.round(totalComDesconto * 100 - Math.round(comDesconto * 100) * (n - 1)) / 100;
 
-    document.getElementById('mensalidade_turma').value = formatarMoeda(mensalidade);
+    document.getElementById('mensalidade_turma').value = formatarMoeda(total);
     document.getElementById('previa_mensalidade').textContent = formatarMoeda(comDesconto);
-    document.getElementById('previa_qtd').textContent = qtd + ' × ' + formatarMoeda(comDesconto);
+    document.getElementById('previa_qtd').textContent = qtd + ' × ' + formatarMoeda(comDesconto) + (qtd > 1 && Math.abs(ultima - comDesconto) > 0.001 ? ' (última ' + formatarMoeda(ultima) + ')' : '');
     document.getElementById('previa_taxa').textContent = taxa > 0 ? formatarMoeda(taxa) : 'Sem taxa';
-    document.getElementById('previa_total').textContent = formatarMoeda(comDesconto * qtd + taxa);
+    document.getElementById('previa_total').textContent = formatarMoeda(totalComDesconto + taxa);
 
     // Mesma conta de descontoPontualidadeParcela() no PHP.
     const tipoPontualidade = document.getElementById('desconto_pontualidade_tipo').value;
@@ -710,7 +736,7 @@ function salvarNovoAluno() {
 
 function salvarNovaTurma() {
     enviarCadastroRapido('/turmas/criar_rapida.php',
-        ['curso_id', 'professor_id', 'nome', 'vagas', 'data_inicio', 'duracao_meses', 'duracao_unidade', 'valor_mensalidade'],
+        ['curso_id', 'professor_id', 'nome', 'vagas', 'data_inicio', 'duracao_meses', 'duracao_unidade', 'valor_total'],
         'modal-nova-turma', (r) => {
             turmas.push(r.turma);
             buscaTurma.escolher(r.turma.id);
@@ -827,8 +853,8 @@ document.getElementById('aluno-busca').value = <?= json_encode($reserva['nome'],
                         </div>
                     </div>
                     <div class="col-md-4">
-                        <label class="form-label">Mensalidade *</label>
-                        <input type="text" class="form-control" name="valor_mensalidade" placeholder="0,00">
+                        <label class="form-label">Valor total do curso *</label>
+                        <input type="text" class="form-control" name="valor_total" placeholder="0,00">
                     </div>
                 </div>
                 <div class="form-text mt-2">A turma é criada na situação padrão. Horário, sala e observações podem ser completados depois na tela da turma.</div>

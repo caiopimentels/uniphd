@@ -45,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt = $pdo->prepare("UPDATE contas_receber SET status = 'pago', data_recebimento = ?, valor_recebido = ?, forma_pagamento_id = ?, baixa_origem = 'manual' WHERE id = ?");
         $stmt->execute([$dataRecebimento, $valorRecebido, $formaPagamentoId, $id]);
         $confirmacao = confirmarMatriculaPorPagamento($pdo, $id);
+        sincronizarDocumentosPelaParcela($pdo, $id);
         // Na próxima tela aparece o atalho para imprimir o recibo.
         $_SESSION['recibo_disponivel'] = $id;
 

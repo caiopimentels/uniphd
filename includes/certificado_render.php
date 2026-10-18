@@ -6,15 +6,21 @@
 // impressão e a prévia do editor. Encaixe de texto e QR Code são feitos por
 // /assets/js/certificado.js.
 ?>
+<?php
+// Orientação do modelo: horizontal (A4 deitada) ou vertical (A4 em pé). A
+// fonte é em cqw (% da largura da folha), então a conversão muda com ela.
+$orientacaoCertificado = ($orientacaoCertificado ?? 'horizontal') === 'vertical' ? 'vertical' : 'horizontal';
+$fatorFonteCertificado = $orientacaoCertificado === 'vertical' ? 5.953 : 8.418;
+?>
 <?php foreach ($paginasCertificado as $pagina): ?>
-<div class="cert-folha" <?= $pagina['fundo'] ? 'style="background-image:url(\'' . e($pagina['fundo']) . '\')"' : '' ?>>
+<div class="cert-folha<?= $orientacaoCertificado === 'vertical' ? ' cert-vertical' : '' ?>" <?= $pagina['fundo'] ? 'style="background-image:url(\'' . e($pagina['fundo']) . '\')"' : '' ?>>
     <?php foreach ($pagina['elementos'] as $campo): ?>
         <?php
         $estilo = 'left: ' . (float) $campo['x'] . '%; top: ' . (float) $campo['y'] . '%; width: ' . (float) $campo['largura'] . '%;'
             . ($campo['altura'] > 0 ? ' height: ' . (float) $campo['altura'] . '%;' : '');
         $classeCaixa = $campo['altura'] > 0 ? ' cert-caixa' : '';
         if (isset($campo['tamanho'])) {
-            $fonte = round($campo['tamanho'] / 8.418, 3);
+            $fonte = round($campo['tamanho'] / $fatorFonteCertificado, 3);
             $estilo .= " font-size: {$fonte}cqw; color: " . e($campo['cor']) . '; font-weight: ' . ($campo['negrito'] ? 700 : 400) . '; text-align: ' . e($campo['alinhamento']) . ';';
         }
         ?>

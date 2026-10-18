@@ -272,6 +272,14 @@ function numParcelasPortal(array $turma): int
     return max(1, (int) ($turma['portal_num_parcelas'] ?: parcelasPadraoTurma($turma)));
 }
 
+// Valor do curso (sem a matrícula); turma antiga sem ele: mensalidade × parcelas.
+function valorTotalTurma(array $turma): float
+{
+    return isset($turma['valor_total']) && $turma['valor_total'] !== null
+        ? (float) $turma['valor_total']
+        : (float) $turma['valor_mensalidade'] * numParcelasPortal($turma);
+}
+
 /**
  * Primeira mensalidade: no dia de vencimento da turma, no mês de início
  * das aulas — ou no primeiro mês seguinte em que essa data ainda não
@@ -353,24 +361,28 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
         $pendente = $modo !== 'inscricao';
         $prazo = $pendente ? date('Y-m-d 23:59:59', strtotime('+' . max(1, (int) $turma['portal_prazo_pagamento_dias']) . ' days')) : null;
 
+        $numParcelas = numParcelasPortal($turma);
+        $valorTotal = valorTotalTurma($turma);
         $valores = [
             'data_matricula' => $hoje,
             'status' => $pendente ? 'pendente' : 'ativa',
             'pagamento_ate' => $prazo,
             'segura_vaga' => $modo === 'reserva' ? 1 : 0,
-            'valor_mensalidade' => $turma['valor_mensalidade'],
-            'num_parcelas' => numParcelasPortal($turma),
+            'valor_mensalidade' => mensalidadeDoTotal($valorTotal, $numParcelas),
+            'valor_total' => $valorTotal,
+            'num_parcelas' => $numParcelas,
             'primeiro_vencimento' => primeiroVencimentoPortal($turma, $hoje),
             'taxa_matricula' => $turma['portal_taxa_matricula'],
             'forma_pagamento_id' => $turma['portal_forma_pagamento_id'],
+            'forma_mensalidade_id' => $turma['forma_mensalidade_id'] ?: $turma['portal_forma_pagamento_id'],
         ];
 
         if ($existente) {
             // Reinscrição: as cobranças da tentativa anterior já estão canceladas.
             $stmt = $pdo->prepare(
                 "UPDATE matriculas SET data_matricula = ?, status = ?, origem = 'portal', pagamento_ate = ?, segura_vaga = ?, lista_espera = 0,
-                        valor_mensalidade = ?, desconto_percentual = 0, desconto_pontualidade_tipo = 'nenhum', desconto_pontualidade_valor = 0,
-                        desconto_pontualidade_dias = 0, num_parcelas = ?, primeiro_vencimento = ?, taxa_matricula = ?, forma_pagamento_id = ?,
+                        valor_mensalidade = ?, valor_total = ?, desconto_percentual = 0, desconto_pontualidade_tipo = 'nenhum', desconto_pontualidade_valor = 0,
+                        desconto_pontualidade_dias = 0, num_parcelas = ?, primeiro_vencimento = ?, taxa_matricula = ?, forma_pagamento_id = ?, forma_mensalidade_id = ?,
                         data_cancelamento = NULL, conta_receber_confirmacao_id = NULL, usuario_id = NULL
                  WHERE id = ?"
             );
@@ -379,8 +391,8 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
         } else {
             $stmt = $pdo->prepare(
                 "INSERT INTO matriculas (turma_id, aluno_id, origem, data_matricula, status, pagamento_ate, segura_vaga, valor_mensalidade,
-                                         num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id)
-                 VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                         valor_total, num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id)
+                 VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             $stmt->execute([$turmaId, $alunoId, ...array_values($valores)]);
             $matriculaId = (int) $pdo->lastInsertId();
@@ -771,6 +783,7 @@ function historicoAluno(PDO $pdo, int $alunoId, int $limite = 200): array
         'conclusao' => ['Matrícula concluída', 'bi-award', 'success'],
         'reativacao' => ['Matrícula reativada', 'bi-arrow-counterclockwise', 'warning'],
         'exclusao' => ['Matrícula excluída', 'bi-trash', 'danger'],
+        'documento' => ['Documento', 'bi-file-earmark-check', 'primary'],
     ];
     $item = fn ($quando, $quem, $titulo, $detalhe, $icone, $cor) => compact('quando', 'quem', 'titulo', 'detalhe', 'icone', 'cor');
     $itens = [];
@@ -812,4 +825,92 @@ function historicoAluno(PDO $pdo, int $alunoId, int $limite = 200): array
 
     usort($itens, fn ($a, $b) => strcmp((string) $b['quando'], (string) $a['quando']));
     return array_slice($itens, 0, $limite);
+}
+
+// ---------------------------------------------------------------------
+// Graduação do aluno (lista em Configurações › Cadastros auxiliares)
+// ---------------------------------------------------------------------
+
+// Tipos de graduação: $soSite = só os liberados no site (portal).
+function tiposGraduacao(PDO $pdo, bool $soSite = false, ?int $incluirId = null): array
+{
+    $sql = 'SELECT * FROM tipos_graduacao WHERE (ativo = 1' . ($soSite ? ' AND no_site = 1' : '') . ')';
+    $params = [];
+    if ($incluirId) {
+        // O que o aluno já escolheu continua aparecendo, mesmo desligado depois.
+        $sql .= ' OR id = ?';
+        $params[] = $incluirId;
+    }
+    $stmt = $pdo->prepare($sql . ' ORDER BY ordem, nome');
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+/**
+ * Lê e confere mãe, pai e graduação do formulário (portal ou sistema).
+ * Retorna [dados, erros]. $exigir: mãe e "possui graduação" obrigatórios.
+ * $graduacaoAtual: a que já está no cadastro (continua valendo mesmo se foi
+ * desligada depois); qualquer outra precisa estar ativa (e, no site, liberada).
+ */
+function lerDadosCertificacaoAluno(PDO $pdo, bool $exigir, bool $soSite, ?int $graduacaoAtual = null): array
+{
+    $possui = $_POST['possui_graduacao'] ?? '';
+    $d = [
+        'nome_mae' => mb_substr(trim(input('nome_mae')), 0, 150),
+        'nome_pai' => mb_substr(trim(input('nome_pai')), 0, 150),
+        'possui_graduacao' => $possui === '1' ? 1 : ($possui === '0' ? 0 : null),
+        'graduacao_id' => (int) ($_POST['graduacao_id'] ?? 0) ?: null,
+    ];
+    $erros = [];
+    if ($exigir && $d['nome_mae'] === '') {
+        $erros[] = 'Informe o nome da mãe.';
+    }
+    if ($exigir && $d['possui_graduacao'] === null) {
+        $erros[] = 'Diga se você possui graduação.';
+    }
+    if ($d['possui_graduacao'] !== 1) {
+        $d['graduacao_id'] = null;
+    } elseif (!$d['graduacao_id']) {
+        $erros[] = 'Escolha qual é a sua graduação.';
+    } else {
+        $validos = array_map('intval', array_column(tiposGraduacao($pdo, $soSite, $graduacaoAtual), 'id'));
+        if (!in_array($d['graduacao_id'], $validos, true)) {
+            $erros[] = 'Graduação inválida.';
+        }
+    }
+    return [$d, $erros];
+}
+
+// ---------------------------------------------------------------------
+// RA do aluno (RA + 7 dígitos)
+// ---------------------------------------------------------------------
+
+function raValido(string $ra): bool
+{
+    return (bool) preg_match('/^RA\d{7}$/', $ra);
+}
+
+// Próximo RA livre: o maior número já usado + 1.
+function proximoRaAluno(PDO $pdo): string
+{
+    $maior = (int) $pdo->query("SELECT MAX(CAST(SUBSTRING(ra, 3) AS UNSIGNED)) FROM alunos WHERE ra REGEXP '^RA[0-9]{7}$'")->fetchColumn();
+    return 'RA' . str_pad((string) ($maior + 1), 7, '0', STR_PAD_LEFT);
+}
+
+// Dá RA a um aluno recém-criado que ficou sem (portal, cadastro rápido).
+// Tenta de novo se outro cadastro pegar o mesmo número no mesmo instante.
+function atribuirRaAluno(PDO $pdo, int $alunoId): string
+{
+    for ($tentativa = 0; $tentativa < 5; $tentativa++) {
+        $ra = proximoRaAluno($pdo);
+        try {
+            $pdo->prepare('UPDATE alunos SET ra = ? WHERE id = ? AND ra IS NULL')->execute([$ra, $alunoId]);
+            return $ra;
+        } catch (PDOException $e) {
+            if ($e->getCode() !== '23000') {
+                throw $e;
+            }
+        }
+    }
+    throw new RuntimeException('Não foi possível gerar o RA do aluno.');
 }

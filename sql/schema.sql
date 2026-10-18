@@ -224,12 +224,27 @@ CREATE TABLE notificacoes_lidas (
 -- CADASTROS
 -- ======================================================================
 
+CREATE TABLE tipos_graduacao (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(120) NOT NULL,
+    no_site TINYINT(1) NOT NULL DEFAULT 1,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    ordem INT NOT NULL DEFAULT 0,
+    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE alunos (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    ra VARCHAR(9) DEFAULT NULL UNIQUE,
     nome VARCHAR(150) NOT NULL,
     data_nascimento DATE DEFAULT NULL,
     cpf VARCHAR(14) DEFAULT NULL,
     rg VARCHAR(20) DEFAULT NULL,
+    nome_mae VARCHAR(150) DEFAULT NULL,
+    nome_pai VARCHAR(150) DEFAULT NULL,
+    possui_graduacao TINYINT(1) DEFAULT NULL,
+    graduacao_id INT DEFAULT NULL,
+    termo_certificacao_em DATETIME DEFAULT NULL,
     telefone VARCHAR(20) DEFAULT NULL,
     email VARCHAR(150) DEFAULT NULL,
     -- Portal do aluno: entra com CPF + esta senha (password_hash).
@@ -395,6 +410,9 @@ CREATE TABLE cursos (
     -- Modelo de certificado do curso (NULL = o modelo padrão). A chave
     -- estrangeira é criada no fim, depois de certificado_modelos.
     certificado_modelo_id INT DEFAULT NULL,
+    liberar_documentos_auto TINYINT(1) NOT NULL DEFAULT 1,
+    bloquear_inadimplente TINYINT(1) NOT NULL DEFAULT 0,
+    bloquear_pendencia_documental TINYINT(1) NOT NULL DEFAULT 1,
     ativo TINYINT(1) NOT NULL DEFAULT 1,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -455,6 +473,8 @@ CREATE TABLE turmas (
     -- Informada ao concluir a turma; é a data de término no certificado.
     data_conclusao DATE DEFAULT NULL,
     valor_mensalidade DECIMAL(12,2) NOT NULL DEFAULT 0,
+    -- Valor do curso sem a matrícula; valor_mensalidade = total ÷ parcelas.
+    valor_total DECIMAL(12,2) DEFAULT NULL,
     horario VARCHAR(100) DEFAULT NULL,
     -- Agenda: dias da semana (1 = segunda ... 7 = domingo, separados por
     -- vírgula) e horário — de onde o calendário de aulas é gerado.
@@ -467,6 +487,8 @@ CREATE TABLE turmas (
     local VARCHAR(100) DEFAULT NULL,
     situacao_id INT NOT NULL,
     observacao VARCHAR(255) DEFAULT NULL,
+    -- Ex.: "em parceria com a Faculdade X" (marcador {parceria} no certificado).
+    parceria VARCHAR(255) DEFAULT NULL,
     -- Portal do aluno: divulgação e inscrição online. portal_modo_vaga:
     --   reserva        -> a inscrição segura a vaga até o prazo de pagamento
     --   apos_pagamento -> só conta vaga quem pagou (os outros esperam)
@@ -480,11 +502,14 @@ CREATE TABLE turmas (
     portal_taxa_matricula DECIMAL(12,2) NOT NULL DEFAULT 0,
     portal_num_parcelas INT DEFAULT NULL,
     portal_dia_vencimento TINYINT UNSIGNED NOT NULL DEFAULT 10,
+    -- Forma da matrícula (taxa) e das mensalidades (pode ser cartão).
     portal_forma_pagamento_id INT DEFAULT NULL,
+    forma_mensalidade_id INT DEFAULT NULL,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     KEY idx_turmas_situacao (situacao_id, data_inicio),
     CONSTRAINT fk_turma_portal_forma FOREIGN KEY (portal_forma_pagamento_id) REFERENCES formas_pagamento(id),
+    CONSTRAINT fk_turma_forma_mensalidade FOREIGN KEY (forma_mensalidade_id) REFERENCES formas_pagamento(id),
     CONSTRAINT fk_turma_situacao FOREIGN KEY (situacao_id) REFERENCES situacoes_turma(id),
     CONSTRAINT fk_turma_curso FOREIGN KEY (curso_id) REFERENCES cursos(id),
     CONSTRAINT fk_turma_professor FOREIGN KEY (professor_id) REFERENCES professores(id)
@@ -514,6 +539,7 @@ CREATE TABLE matriculas (
     -- O aluno só vê o certificado com a matrícula concluída E liberado.
     certificado_liberado TINYINT(1) NOT NULL DEFAULT 1,
     valor_mensalidade DECIMAL(12,2) NOT NULL,
+    valor_total DECIMAL(12,2) DEFAULT NULL,
     -- Desconto fixo (bolsa): reduz toda mensalidade, pague quando pagar.
     desconto_percentual DECIMAL(5,2) NOT NULL DEFAULT 0,
     -- Desconto condicional por pontualidade: só vale pagando até N dias
@@ -526,7 +552,9 @@ CREATE TABLE matriculas (
     num_parcelas INT NOT NULL,
     primeiro_vencimento DATE NOT NULL,
     taxa_matricula DECIMAL(12,2) NOT NULL DEFAULT 0,
+    -- forma_pagamento_id = da taxa de matrícula; forma_mensalidade_id = das mensalidades.
     forma_pagamento_id INT DEFAULT NULL,
+    forma_mensalidade_id INT DEFAULT NULL,
     data_cancelamento DATE DEFAULT NULL,
     observacao VARCHAR(255) DEFAULT NULL,
     usuario_id INT DEFAULT NULL,
@@ -536,6 +564,7 @@ CREATE TABLE matriculas (
     CONSTRAINT fk_matricula_turma FOREIGN KEY (turma_id) REFERENCES turmas(id),
     CONSTRAINT fk_matricula_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id),
     CONSTRAINT fk_matricula_forma_pagamento FOREIGN KEY (forma_pagamento_id) REFERENCES formas_pagamento(id),
+    CONSTRAINT fk_matricula_forma_mensalidade FOREIGN KEY (forma_mensalidade_id) REFERENCES formas_pagamento(id),
     CONSTRAINT fk_matricula_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -698,6 +727,75 @@ CREATE TABLE aluno_historico (
     KEY idx_aluno_historico (aluno_id, criado_em)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE curso_documentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    curso_id INT NOT NULL,
+    nome VARCHAR(120) NOT NULL,
+    instrucao VARCHAR(255) DEFAULT NULL,
+    aceita_pdf TINYINT(1) NOT NULL DEFAULT 1,
+    aceita_imagem TINYINT(1) NOT NULL DEFAULT 1,
+    trava_certificado TINYINT(1) NOT NULL DEFAULT 1,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    ordem INT NOT NULL DEFAULT 0,
+    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_curso_documentos (curso_id, ativo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE aluno_documentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    aluno_id INT NOT NULL,
+    curso_documento_id INT NOT NULL,
+    status ENUM('enviado', 'aprovado', 'recusado', 'dispensado') NOT NULL DEFAULT 'enviado',
+    arquivo VARCHAR(255) DEFAULT NULL,
+    nome_original VARCHAR(200) DEFAULT NULL,
+    mime VARCHAR(40) DEFAULT NULL,
+    tamanho_original INT DEFAULT NULL,
+    tamanho INT DEFAULT NULL,
+    motivo VARCHAR(255) DEFAULT NULL,
+    enviado_por VARCHAR(150) DEFAULT NULL,
+    enviado_em DATETIME DEFAULT NULL,
+    avaliado_por VARCHAR(150) DEFAULT NULL,
+    avaliado_em DATETIME DEFAULT NULL,
+    UNIQUE KEY uk_aluno_documento (aluno_id, curso_documento_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE aluno_anexos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    aluno_id INT NOT NULL,
+    nome VARCHAR(150) NOT NULL,
+    arquivo VARCHAR(255) NOT NULL,
+    nome_original VARCHAR(200) DEFAULT NULL,
+    mime VARCHAR(40) NOT NULL,
+    tamanho_original INT DEFAULT NULL,
+    tamanho INT DEFAULT NULL,
+    visivel_aluno TINYINT(1) NOT NULL DEFAULT 0,
+    enviado_por VARCHAR(150) DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_aluno_anexos (aluno_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE curso_emissoes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    curso_id INT NOT NULL,
+    nome VARCHAR(120) NOT NULL,
+    modelo_id INT DEFAULT NULL,
+    modulo_id INT DEFAULT NULL,
+    -- 1 = documento avulso (liberado só para alguns alunos; ver documentoAvulsoCurso).
+    avulso TINYINT(1) NOT NULL DEFAULT 0,
+    ordem INT NOT NULL DEFAULT 0,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_curso_emissoes (curso_id, ativo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE turma_modulos (
+    turma_id INT NOT NULL,
+    curso_modulo_id INT NOT NULL,
+    concluido_em DATE NOT NULL,
+    concluido_por VARCHAR(150) DEFAULT NULL,
+    PRIMARY KEY (turma_id, curso_modulo_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE parcela_historico (
     id INT AUTO_INCREMENT PRIMARY KEY,
     conta_receber_id INT NOT NULL,
@@ -845,6 +943,7 @@ CREATE TABLE turma_aulas (
 CREATE TABLE certificado_modelos (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
+    orientacao ENUM('horizontal', 'vertical') NOT NULL DEFAULT 'horizontal',
     fundo VARCHAR(255) DEFAULT NULL,
     layout TEXT DEFAULT NULL,
     padrao TINYINT(1) NOT NULL DEFAULT 0,
@@ -854,16 +953,24 @@ CREATE TABLE certificado_modelos (
 -- Galeria de artes de fundo, compartilhada entre os modelos.
 CREATE TABLE certificado_fundos (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    modelo_id INT NOT NULL,
     nome VARCHAR(100) NOT NULL,
     imagem VARCHAR(255) NOT NULL,
-    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_fundo_modelo (modelo_id),
+    CONSTRAINT fk_fundo_modelo FOREIGN KEY (modelo_id) REFERENCES certificado_modelos(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE certificados (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    matricula_id INT NOT NULL UNIQUE,
+    matricula_id INT NOT NULL,
+    curso_emissao_id INT DEFAULT NULL,
     codigo CHAR(12) NOT NULL UNIQUE,
+    liberado TINYINT(1) NOT NULL DEFAULT 1,
+    liberado_em DATETIME DEFAULT NULL,
+    liberado_por VARCHAR(150) DEFAULT NULL,
     emitido_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_certificado_documento (matricula_id, curso_emissao_id),
     CONSTRAINT fk_certificado_matricula FOREIGN KEY (matricula_id) REFERENCES matriculas(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -977,6 +1084,7 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('editar_aluno', 'Editar alunos (e criar/enviar o acesso ao portal)', 'Alunos', 12),
 ('ativar_aluno', 'Ativar e desativar alunos', 'Alunos', 13),
 ('excluir_aluno', 'Excluir alunos (só quem não tem matrícula nem lançamento financeiro)', 'Alunos', 14),
+('avaliar_documentos', 'Aprovar, recusar ou dispensar documentos dos alunos', 'Alunos', 15),
 ('ver_cursos', 'Ver cursos, turmas, professores e calendário de aulas', 'Cursos, turmas e professores', 20),
 ('criar_curso', 'Cadastrar cursos', 'Cursos, turmas e professores', 21),
 ('editar_curso', 'Editar cursos (e ativar/desativar)', 'Cursos, turmas e professores', 22),
@@ -990,7 +1098,7 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('excluir_professor', 'Excluir professores (só sem turmas)', 'Cursos, turmas e professores', 30),
 ('gerenciar_matriculas', 'Matricular, reservar vaga, confirmar inscrição e concluir/reativar matrícula', 'Matrículas', 40),
 ('cancelar_matricula', 'Cancelar matrícula, excluir matrícula e tirar aluno da turma', 'Matrículas', 41),
-('liberar_certificado', 'Liberar e bloquear o certificado do aluno', 'Matrículas', 42),
+('liberar_certificado', 'Liberar e bloquear documentos dos alunos (certificados e declarações)', 'Matrículas', 42),
 ('ver_inadimplencia', 'Ver a situação financeira dos alunos (aba Financeiro, Inadimplência, boleto e Pix)', 'Financeiro dos alunos', 50),
 ('lancar_receber', 'Lançar cobranças (contas a receber)', 'Financeiro dos alunos', 51),
 ('editar_financeiro_aluno', 'Alterar parcelas (valor, vencimento, desconto) e o desconto por pontualidade', 'Financeiro dos alunos', 52),
@@ -1017,7 +1125,7 @@ SELECT 1, id FROM permissoes;
 INSERT INTO perfil_permissoes (perfil_id, permissao_id)
 SELECT 2, id FROM permissoes
 WHERE chave IN ('ver_dashboard', 'ver_alunos', 'cadastrar_aluno', 'editar_aluno', 'ativar_aluno', 'ver_cursos', 'gerenciar_matriculas',
-                'liberar_certificado', 'ver_inadimplencia', 'baixar_receber');
+                'liberar_certificado', 'avaliar_documentos', 'ver_inadimplencia', 'baixar_receber');
 
 -- Usuário padrão: email admin@sistema.com / senha admin123
 -- (troque a senha após o primeiro acesso)

@@ -13,6 +13,9 @@ if ($id) {
     $stmt = $pdo->prepare('SELECT * FROM alunos WHERE id = ?');
     $stmt->execute([$id]);
     $aluno = $stmt->fetch();
+    if ($aluno) {
+        sincronizarDocumentosAluno($pdo, (int) $aluno['id']);
+    }
     if (!$aluno) {
         flash('danger', 'Aluno não encontrado.');
         redirect('/alunos/listar.php');
@@ -63,6 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $telefone = input('telefone');
     $email = input('email');
     $observacao = input('observacao');
+    // Mãe, pai e graduação: na secretaria não são obrigatórios.
+    [$certificacao, $errosCertificacao] = lerDadosCertificacaoAluno($pdo, false, false, (int) ($aluno['graduacao_id'] ?? 0) ?: null);
     // Sem a permissão de ativar, o campo fica como estava (aluno novo: ativo).
     $ativo = $podeAtivarAluno ? (isset($_POST['ativo']) ? 1 : 0) : (int) ($aluno['ativo'] ?? 1);
     $telefonesExtrasPost = array_filter(array_map('trim', $_POST['telefones_extra'] ?? []));
@@ -93,6 +98,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($nome === '') {
         $erros[] = 'O nome é obrigatório.';
     }
+    $erros = array_merge($erros, $errosCertificacao);
+    // RA: escolhido só no cadastro (vem sugerido); depois não muda mais.
+    $ra = $id ? (string) $aluno['ra'] : strtoupper(trim(input('ra')));
+    if (!$id) {
+        if ($ra === '') {
+            $ra = proximoRaAluno($pdo);
+        } elseif (!raValido($ra)) {
+            $erros[] = 'O RA deve ter o formato RA0000000 (RA e 7 números).';
+        } else {
+            $stmt = $pdo->prepare('SELECT nome FROM alunos WHERE ra = ?');
+            $stmt->execute([$ra]);
+            if ($outro = $stmt->fetchColumn()) {
+                $erros[] = 'O RA ' . $ra . ' já é de ' . $outro . '.';
+            }
+        }
+    }
     if ($cpf !== '' && !validarCpf($cpf)) {
         $erros[] = 'O CPF informado é inválido.';
     }
@@ -114,19 +135,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $campos = [
             $nome, $dataNascimento ?: null, $cpf ?: null, $rg ?: null,
             $telefone ?: null, $email ?: null, $observacao ?: null, $ativo,
+            $certificacao['nome_mae'] ?: null, $certificacao['nome_pai'] ?: null, $certificacao['possui_graduacao'], $certificacao['graduacao_id'],
         ];
 
         if ($id) {
             $stmt = $pdo->prepare(
-                'UPDATE alunos SET nome=?, data_nascimento=?, cpf=?, rg=?, telefone=?, email=?, observacao=?, ativo=? WHERE id=?'
+                'UPDATE alunos SET nome=?, data_nascimento=?, cpf=?, rg=?, telefone=?, email=?, observacao=?, ativo=?, nome_mae=?, nome_pai=?, possui_graduacao=?, graduacao_id=? WHERE id=?'
             );
             $stmt->execute([...$campos, $id]);
         } else {
             $stmt = $pdo->prepare(
-                'INSERT INTO alunos (nome, data_nascimento, cpf, rg, telefone, email, observacao, ativo)
-                 VALUES (?,?,?,?,?,?,?,?)'
+                'INSERT INTO alunos (nome, data_nascimento, cpf, rg, telefone, email, observacao, ativo, nome_mae, nome_pai, possui_graduacao, graduacao_id, ra)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)'
             );
-            $stmt->execute($campos);
+            $stmt->execute([...$campos, $ra]);
             $id = (int) $pdo->lastInsertId();
         }
 
@@ -179,11 +201,10 @@ $resumo = null;
 if ($id) {
     $stmt = $pdo->prepare(
         "SELECT m.*, t.nome AS turma_nome, t.data_inicio, t.data_termino, t.minimo_alunos, t.duracao_unidade, c.nome AS curso_nome,
-                ce.codigo AS certificado_codigo, u.nome AS matriculado_por
+                u.nome AS matriculado_por
          FROM matriculas m
          JOIN turmas t ON t.id = m.turma_id
          JOIN cursos c ON c.id = t.curso_id
-         LEFT JOIN certificados ce ON ce.matricula_id = m.id
          LEFT JOIN usuarios u ON u.id = m.usuario_id
          WHERE m.aluno_id = ?
          ORDER BY m.status = 'ativa' DESC, t.data_inicio DESC"
@@ -203,6 +224,25 @@ if ($id) {
         );
         $stmt->execute([$id]);
         $parcelas = $stmt->fetchAll();
+    }
+}
+
+// Documentos dos cursos em que o aluno está (só cursos que pedem documento).
+$documentosPorCurso = [];
+$documentosAguardando = 0;
+if ($id) {
+    $stmt = $pdo->prepare(
+        "SELECT DISTINCT c.id, c.nome FROM matriculas m JOIN turmas t ON t.id = m.turma_id JOIN cursos c ON c.id = t.curso_id
+         WHERE m.aluno_id = ? AND m.status IN ('ativa', 'pendente', 'concluida')
+           AND EXISTS (SELECT 1 FROM curso_documentos cd WHERE cd.curso_id = c.id AND cd.ativo = 1)
+         ORDER BY c.nome"
+    );
+    $stmt->execute([$id]);
+    foreach ($stmt->fetchAll() as $cursoDoc) {
+        $documentosPorCurso[] = ['curso' => $cursoDoc, 'documentos' => documentosAlunoCurso($pdo, (int) $id, (int) $cursoDoc['id'])];
+    }
+    foreach ($documentosPorCurso as $grupoDoc) {
+        $documentosAguardando += count(array_filter($grupoDoc['documentos'], fn ($d) => $d['status'] === 'enviado'));
     }
 }
 
@@ -231,6 +271,9 @@ require __DIR__ . '/../../includes/layout_header.php';
         </a>
     </li>
     <?php endif; ?>
+    <li class="nav-item"><a class="nav-link <?= $tabAtiva === 'documentos' ? 'active' : '' ?>" href="#" data-tab="documentos">Documentos
+        <?php if ($documentosAguardando): ?><span class="badge text-bg-warning"><?= $documentosAguardando ?> para analisar</span><?php endif; ?></a></li>
+    <li class="nav-item"><a class="nav-link <?= $tabAtiva === 'historico' ? 'active' : '' ?>" href="#" data-tab="historico">Histórico</a></li>
     <?php endif; ?>
 </ul>
 
@@ -239,7 +282,15 @@ require __DIR__ . '/../../includes/layout_header.php';
             <div class="secao">
             <div class="secao-titulo"><i class="bi bi-person"></i> Dados pessoais</div>
             <div class="row g-3">
-                <div class="col-md-6">
+                <div class="col-md-2">
+                    <label class="form-label">RA</label>
+                    <?php if ($id): ?>
+                        <input type="text" class="form-control fw-semibold" value="<?= e($aluno['ra'] ?: '-') ?>" readonly title="O RA não muda depois do cadastro">
+                    <?php else: ?>
+                        <input type="text" name="ra" class="form-control text-uppercase" maxlength="9" pattern="[Rr][Aa][0-9]{7}" value="<?= e($_POST['ra'] ?? proximoRaAluno($pdo)) ?>" title="Formato RA0000000 — sugerido o próximo número; pode trocar agora (depois de salvo não muda)">
+                    <?php endif; ?>
+                </div>
+                <div class="col-md-5">
                     <label class="form-label">Nome *</label>
                     <input type="text" name="nome" class="form-control" required value="<?= e($aluno['nome'] ?? '') ?>">
                 </div>
@@ -247,7 +298,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <label class="form-label">Data de nascimento</label>
                     <input type="date" name="data_nascimento" class="form-control" value="<?= e($aluno['data_nascimento'] ?? '') ?>">
                 </div>
-                <div class="col-md-3"></div>
+                <div class="col-md-2"></div>
 
                 <div class="col-md-3">
                     <label class="form-label">CPF</label>
@@ -258,6 +309,17 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <div class="col-md-3">
                     <label class="form-label">RG</label>
                     <input type="text" name="rg" class="form-control" value="<?= e($aluno['rg'] ?? '') ?>">
+                </div>
+                <div class="col-12">
+                    <?php
+                    $dc = $aluno ?? [];
+                    $tiposGraduacaoCampo = tiposGraduacao($pdo, false, (int) ($dc['graduacao_id'] ?? 0) ?: null);
+                    $obrigatorioCertificacao = false;
+                    require __DIR__ . '/../../includes/campos_certificacao_aluno.php';
+                    ?>
+                    <?php if (!empty($aluno['termo_certificacao_em'])): ?>
+                        <div class="small text-muted mt-1"><i class="bi bi-shield-check"></i> Concordou com o uso das informações para fins de certificação em <?= formatDateTime($aluno['termo_certificacao_em']) ?> (cadastro pelo portal).</div>
+                    <?php endif; ?>
                 </div>
             </div>
             </div>
@@ -361,33 +423,6 @@ require __DIR__ . '/../../includes/layout_header.php';
             </div>
         </div>
 
-        <?php $historicoAluno = historicoAluno($pdo, (int) $id, 200); ?>
-        <div class="secao">
-            <div class="secao-titulo"><i class="bi bi-clock-history"></i> Histórico do aluno</div>
-            <?php if (!$historicoAluno): ?>
-                <p class="text-muted mb-0">Nada registrado ainda.</p>
-            <?php else: ?>
-                <ul class="list-unstyled mb-0">
-                    <?php foreach ($historicoAluno as $i => $h): ?>
-                        <li class="d-flex gap-2 py-2 border-bottom <?= $i >= 10 ? 'd-none historico-aluno-mais' : '' ?>">
-                            <i class="bi <?= e($h['icone']) ?> text-<?= e($h['cor']) ?>"></i>
-                            <div class="flex-grow-1 lh-sm">
-                                <div class="d-flex justify-content-between gap-2">
-                                    <strong><?= e($h['titulo']) ?></strong>
-                                    <span class="small text-muted text-nowrap"><?= formatDateTime($h['quando']) ?></span>
-                                </div>
-                                <div class="small text-muted"><?= $h['detalhe'] !== '' ? e($h['detalhe']) . ' · ' : '' ?>por <?= e($h['quem']) ?></div>
-                            </div>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-                <?php if (count($historicoAluno) > 10): ?>
-                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="document.querySelectorAll('.historico-aluno-mais').forEach((li) => li.classList.remove('d-none')); this.remove();">
-                        Ver tudo (<?= count($historicoAluno) ?>)
-                    </button>
-                <?php endif; ?>
-            <?php endif; ?>
-        </div>
         <?php endif; ?>
 </div>
 
@@ -427,7 +462,7 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="card">
         <div class="table-responsive">
             <table class="table table-hover mb-0 align-middle">
-                <thead><tr><th>Turma</th><th>Curso</th><th>Período</th><th class="text-end">Mensalidade</th><th>Matrícula</th><th>Situação</th><th>Certificado</th></tr></thead>
+                <thead><tr><th>Turma</th><th>Curso</th><th>Período</th><th class="text-end">Mensalidade</th><th>Matrícula</th><th>Situação</th><th>Documentos</th></tr></thead>
                 <tbody>
                 <?php if (!$matriculas): ?>
                     <tr><td colspan="7" class="text-center text-muted py-3">Este aluno ainda não está matriculado em nenhuma turma.</td></tr>
@@ -449,13 +484,12 @@ require __DIR__ . '/../../includes/layout_header.php';
                         </td>
                         <td><span class="badge <?= matriculaStatusBadgeClass($m['status']) ?>"><?= matriculaStatusLabel($m['status']) ?></span></td>
                         <td onclick="event.stopPropagation();">
-                            <?php if ($m['status'] === 'concluida'): ?>
-                                <a href="/portal/certificado.php?matricula=<?= (int) $m['id'] ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Abrir / imprimir o certificado"><i class="bi bi-award"></i> Abrir</a>
-                                <div class="small <?= $m['certificado_liberado'] ? 'text-success' : 'text-danger' ?>">
-                                    <?= $m['certificado_liberado'] ? 'liberado no portal' : 'bloqueado no portal' ?><?= $m['certificado_codigo'] ? ' · ' . e(formatarCodigoCertificado($m['certificado_codigo'])) : '' ?>
-                                </div>
-                            <?php elseif ($m['status'] === 'ativa'): ?>
-                                <span class="small text-muted">sai ao concluir</span>
+                            <?php $docsMatricula = in_array($m['status'], ['ativa', 'concluida'], true) ? documentosMatricula($pdo, (int) $m['id']) : []; ?>
+                            <?php if ($docsMatricula): ?>
+                                <a href="/matriculas/visualizar.php?id=<?= (int) $m['id'] ?>#documentos" class="small text-decoration-none" title="<?= e(implode("\n", array_map(fn ($d) => $d['nome'] . ': ' . $d['texto'], $docsMatricula))) ?>">
+                                    <i class="bi bi-award"></i> <?= count(array_filter($docsMatricula, fn ($d) => $d['situacao'] === 'liberado')) ?>/<?= count($docsMatricula) ?> liberado(s)
+                                </a>
+                                <?php if ($pendentes = array_filter($docsMatricula, fn ($d) => $d['situacao'] === 'pendente')): ?><div class="small text-danger"><?= e(reset($pendentes)['texto']) ?></div><?php endif; ?>
                             <?php else: ?>
                                 <span class="text-muted">—</span>
                             <?php endif; ?>
@@ -467,6 +501,146 @@ require __DIR__ . '/../../includes/layout_header.php';
         </div>
     </div>
 </div>
+
+<?php if ($id): ?>
+<div class="tab-pane" id="pane-documentos" style="<?= $tabAtiva === 'documentos' ? '' : 'display:none;' ?>">
+    <?php $statusDocumento = statusDocumentoAluno(); $podeAvaliarDocumento = usuarioTemPermissao('avaliar_documentos'); ?>
+    <?php if (!$documentosPorCurso): ?>
+        <p class="text-muted small">Nenhum curso deste aluno pede documentos (isso se define no cadastro do curso › Documentos obrigatórios).</p>
+    <?php endif; ?>
+    <?php foreach ($documentosPorCurso as $grupoDoc): ?>
+        <div class="secao">
+            <div class="secao-titulo"><i class="bi bi-folder2-open"></i> <?= e($grupoDoc['curso']['nome']) ?></div>
+            <div class="card">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead><tr><th>Documento</th><th>Situação</th><th>Arquivo</th><th class="text-end">Ações</th></tr></thead>
+                        <tbody>
+                        <?php foreach ($grupoDoc['documentos'] as $d): [$corDoc, $rotuloDoc] = $statusDocumento[$d['status']]; ?>
+                            <tr>
+                                <td>
+                                    <div class="fw-semibold"><?= e($d['nome']) ?></div>
+                                    <div class="small text-muted"><?= e(textoTiposDocumento($d)) ?><?= $d['trava_certificado'] ? ' · <i class="bi bi-lock"></i> trava o certificado' : '' ?></div>
+                                </td>
+                                <td>
+                                    <span class="badge text-bg-<?= $corDoc ?>"><?= e($rotuloDoc) ?></span>
+                                    <?php if ($d['motivo']): ?><div class="small text-muted"><?= e($d['motivo']) ?></div><?php endif; ?>
+                                    <?php if ($d['avaliado_em']): ?><div class="small text-muted"><?= e($d['avaliado_por']) ?> · <?= formatDateTime($d['avaliado_em']) ?></div><?php endif; ?>
+                                </td>
+                                <td class="small">
+                                    <?php if ($d['arquivo']): ?>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" onclick="verDocumento(<?= (int) $d['envio_id'] ?>, <?= $d['mime'] === 'application/pdf' ? 'true' : 'false' ?>, <?= e(json_encode($d['nome'])) ?>)"><i class="bi bi-eye"></i> Ver</button>
+                                        <div class="text-muted mt-1"><?= $d['mime'] === 'application/pdf' ? 'PDF' : 'Imagem' ?> · <?= formatarTamanhoArquivo((int) $d['tamanho']) ?>
+                                            <?php if ($d['tamanho_original'] > $d['tamanho']): ?><span title="Tamanho enviado: <?= formatarTamanhoArquivo((int) $d['tamanho_original']) ?>">(comprimido)</span><?php endif; ?>
+                                            · <?= e($d['enviado_por']) ?> em <?= formatDateTime($d['enviado_em']) ?></div>
+                                    <?php else: ?>
+                                        <span class="text-muted">—</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <?php $formAcao = fn (string $acao, string $html, string $extra = '') => '<form method="post" action="/alunos/documento_acao.php" class="d-inline"' . $extra . '><input type="hidden" name="aluno_id" value="' . (int) $id . '"><input type="hidden" name="curso_documento_id" value="' . (int) $d['id'] . '"><input type="hidden" name="acao" value="' . $acao . '">' . $html . '</form>'; ?>
+                                    <?php if ($podeAvaliarDocumento): ?>
+                                        <?php if ($d['arquivo'] && $d['status'] !== 'aprovado'): ?><?= $formAcao('aprovar', '<button class="btn btn-sm btn-outline-success" title="Aprovar"><i class="bi bi-check-lg"></i></button>') ?><?php endif; ?>
+                                        <?php if ($d['arquivo'] && $d['status'] !== 'recusado'): ?><?= $formAcao('recusar', '<input type="hidden" name="motivo"><button class="btn btn-sm btn-outline-danger" title="Recusar"><i class="bi bi-x-lg"></i></button>', ' onsubmit="const m = prompt(\'Motivo da recusa (o aluno vê no portal):\'); if (!m) return false; this.motivo.value = m;"') ?><?php endif; ?>
+                                        <?php if (!in_array($d['status'], ['dispensado', 'aprovado'], true)): ?><?= $formAcao('dispensar', '<input type="hidden" name="motivo"><button class="btn btn-sm btn-outline-info" title="Dispensar (não precisa enviar)"><i class="bi bi-slash-circle"></i></button>', ' onsubmit="const m = prompt(\'Dispensar este documento? Motivo (opcional):\', \'\'); if (m === null) return false; this.motivo.value = m;"') ?><?php endif; ?>
+                                        <?php if (in_array($d['status'], ['aprovado', 'recusado', 'dispensado'], true)): ?><?= $formAcao('reabrir', '<button class="btn btn-sm btn-outline-secondary" title="Desfazer a avaliação"><i class="bi bi-arrow-counterclockwise"></i></button>', ' onsubmit="return confirm(\'Desfazer a avaliação deste documento?\');"') ?><?php endif; ?>
+                                    <?php endif; ?>
+                                    <?php if ($podeEditarAluno): ?>
+                                        <?= $formAcao('enviar', '<label class="btn btn-sm btn-outline-secondary mb-0" title="Enviar o arquivo pelo aluno"><i class="bi bi-upload"></i><input type="file" name="arquivo" accept="' . e(acceptDocumento($d)) . '" class="d-none" onchange="this.form.submit()"></label>', ' enctype="multipart/form-data"') ?>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    <?php endforeach; ?>
+    <?php $anexos = anexosAluno($pdo, (int) $id); ?>
+    <div class="secao">
+        <div class="secao-titulo"><i class="bi bi-paperclip"></i> Anexos da ficha</div>
+        <?php if ($podeEditarAluno): ?>
+            <form method="post" action="/alunos/anexo_acao.php" enctype="multipart/form-data" class="row g-2 align-items-end mb-3" onsubmit="this.querySelector('button').disabled = true;">
+                <input type="hidden" name="aluno_id" value="<?= (int) $id ?>"><input type="hidden" name="acao" value="enviar">
+                <div class="col-md-4"><label class="form-label small mb-1">Nome</label><input type="text" name="nome" class="form-control form-control-sm" maxlength="150" required placeholder="Ex.: Contrato assinado"></div>
+                <div class="col-md-4"><label class="form-label small mb-1">Arquivo (PDF, JPG ou PNG)</label><input type="file" name="arquivo" class="form-control form-control-sm" required accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"></div>
+                <div class="col-md-2 form-check form-switch ms-2 mb-1"><input type="checkbox" class="form-check-input" role="switch" name="visivel_aluno" id="anexo-visivel"><label class="form-check-label small" for="anexo-visivel">Liberar ao aluno</label></div>
+                <div class="col-md-auto"><button type="submit" class="btn btn-sm btn-brand"><i class="bi bi-upload"></i> Anexar</button></div>
+            </form>
+        <?php endif; ?>
+        <?php if (!$anexos): ?>
+            <p class="text-muted small mb-0">Nenhum anexo. Guarde aqui contrato, declarações, comprovantes — e escolha se o aluno pode ver no portal.</p>
+        <?php else: ?>
+            <div class="card"><div class="table-responsive">
+                <table class="table table-sm mb-0 align-middle">
+                    <thead><tr><th>Anexo</th><th>Aluno vê no portal?</th><th>Guardado</th><th class="text-end">Ações</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($anexos as $ax): ?>
+                        <tr>
+                            <td>
+                                <button type="button" class="btn btn-link p-0 text-start" onclick="verDocumento('anexo=<?= (int) $ax['id'] ?>', <?= $ax['mime'] === 'application/pdf' ? 'true' : 'false' ?>, <?= e(json_encode($ax['nome'])) ?>)"><i class="bi bi-eye"></i> <?= e($ax['nome']) ?></button>
+                                <div class="small text-muted"><?= $ax['mime'] === 'application/pdf' ? 'PDF' : 'Imagem' ?> · <?= formatarTamanhoArquivo((int) $ax['tamanho']) ?></div>
+                            </td>
+                            <td>
+                                <?php if ($podeEditarAluno): ?>
+                                    <form method="post" action="/alunos/anexo_acao.php" class="d-inline">
+                                        <input type="hidden" name="aluno_id" value="<?= (int) $id ?>"><input type="hidden" name="acao" value="visivel"><input type="hidden" name="anexo_id" value="<?= (int) $ax['id'] ?>">
+                                        <div class="form-check form-switch"><input type="checkbox" class="form-check-input" role="switch" <?= $ax['visivel_aluno'] ? 'checked' : '' ?> onchange="this.form.submit()"><span class="small"><?= $ax['visivel_aluno'] ? 'Liberado' : 'Só a secretaria' ?></span></div>
+                                    </form>
+                                <?php else: ?>
+                                    <span class="small"><?= $ax['visivel_aluno'] ? 'Liberado' : 'Só a secretaria' ?></span>
+                                <?php endif; ?>
+                            </td>
+                            <td class="small text-muted"><?= e($ax['enviado_por']) ?> · <?= formatDateTime($ax['criado_em']) ?></td>
+                            <td class="text-end">
+                                <?php if ($podeEditarAluno): ?>
+                                    <form method="post" action="/alunos/anexo_acao.php" class="d-inline" onsubmit="return confirm(<?= e(json_encode('Excluir o anexo "' . $ax['nome'] . '"? O arquivo é apagado.')) ?>);">
+                                        <input type="hidden" name="aluno_id" value="<?= (int) $id ?>"><input type="hidden" name="acao" value="excluir"><input type="hidden" name="anexo_id" value="<?= (int) $ax['id'] ?>">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div></div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php require __DIR__ . '/../../includes/modal_documento.php'; ?>
+
+<div class="tab-pane" id="pane-historico" style="<?= $tabAtiva === 'historico' ? '' : 'display:none;' ?>">
+        <?php $historicoAluno = historicoAluno($pdo, (int) $id, 200); ?>
+        <div class="secao">
+            <div class="secao-titulo"><i class="bi bi-clock-history"></i> Histórico do aluno</div>
+            <?php if (!$historicoAluno): ?>
+                <p class="text-muted mb-0">Nada registrado ainda.</p>
+            <?php else: ?>
+                <ul class="list-unstyled mb-0">
+                    <?php foreach ($historicoAluno as $i => $h): ?>
+                        <li class="d-flex gap-2 py-2 border-bottom <?= $i >= 10 ? 'd-none historico-aluno-mais' : '' ?>">
+                            <i class="bi <?= e($h['icone']) ?> text-<?= e($h['cor']) ?>"></i>
+                            <div class="flex-grow-1 lh-sm">
+                                <div class="d-flex justify-content-between gap-2">
+                                    <strong><?= e($h['titulo']) ?></strong>
+                                    <span class="small text-muted text-nowrap"><?= formatDateTime($h['quando']) ?></span>
+                                </div>
+                                <div class="small text-muted"><?= $h['detalhe'] !== '' ? e($h['detalhe']) . ' · ' : '' ?>por <?= e($h['quem']) ?></div>
+                            </div>
+                        </li>
+                    <?php endforeach; ?>
+                </ul>
+                <?php if (count($historicoAluno) > 10): ?>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="document.querySelectorAll('.historico-aluno-mais').forEach((li) => li.classList.remove('d-none')); this.remove();">
+                        Ver tudo (<?= count($historicoAluno) ?>)
+                    </button>
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+</div>
+<?php endif; ?>
 
 <?php if ($podeVerFinanceiro): ?>
 <div class="tab-pane" id="pane-financeiro" style="<?= $tabAtiva === 'financeiro' ? '' : 'display:none;' ?>">
@@ -531,8 +705,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                         </td>
                         <td class="text-end">
                             <?php if ($p['status'] === 'pendente'): ?>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirPix(<?= (int) $p['id'] ?>)" title="Gerar / ver Pix (QR Code e copia e cola)"><i class="bi bi-qr-code"></i></button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBoleto(<?= (int) $p['id'] ?>)" title="Gerar / abrir boleto"><i class="bi bi-upc-scan"></i></button>
+                                <?= botoesCobrancaParcela($pdo, $p) ?>
                             <?php endif; ?>
                             <?php if ($p['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $p), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $p['boleto_no_banco'] ? 'Alterar (o boleto é alterado também no banco)' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>

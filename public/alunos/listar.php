@@ -24,9 +24,9 @@ $where = '1=1';
 $params = [];
 
 if ($busca !== '') {
-    $where .= ' AND (a.nome LIKE ? OR a.cpf LIKE ? OR a.telefone LIKE ? OR a.email LIKE ?)';
+    $where .= ' AND (a.nome LIKE ? OR a.cpf LIKE ? OR a.telefone LIKE ? OR a.email LIKE ? OR a.ra LIKE ?)';
     $like = "%{$busca}%";
-    $params = [$like, $like, $like, $like];
+    $params = [$like, $like, $like, $like, $like];
 }
 
 if ($situacao === 'ativo') {
@@ -81,7 +81,7 @@ require __DIR__ . '/../../includes/layout_header.php';
 <div class="filtros">
     <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
         <input type="text" name="busca" class="form-control filtro-controle" style="width:280px;"
-               placeholder="Nome, CPF, telefone ou e-mail" value="<?= e($busca) ?>">
+               placeholder="Nome, RA, CPF, telefone ou e-mail" value="<?= e($busca) ?>">
 
         <select name="situacao" class="form-select filtro-controle" style="width:170px" onchange="this.form.submit()">
             <option value="">Todas as situações</option>
@@ -118,18 +118,19 @@ require __DIR__ . '/../../includes/layout_header.php';
             <thead>
                 <tr>
                     <th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th>
-                    <th>Nome</th><th>CPF</th><th>Telefone</th><th class="text-center">Matrículas ativas</th>
+                    <th>RA</th><th>Nome</th><th>CPF</th><th>Telefone</th><th class="text-center">Matrículas ativas</th>
                     <?php if ($podeVerFinanceiro): ?><th>Financeiro</th><?php endif; ?>
                     <th>Situação</th><th class="text-end">Ações</th>
                 </tr>
             </thead>
             <tbody>
             <?php if (!$alunos): ?>
-                <tr><td colspan="8" class="text-center text-muted py-4">Nenhum aluno encontrado.</td></tr>
+                <tr><td colspan="9" class="text-center text-muted py-4">Nenhum aluno encontrado.</td></tr>
             <?php endif; ?>
             <?php foreach ($alunos as $a): ?>
                 <tr class="cursor-pointer" onclick="window.location='/alunos/form.php?id=<?= (int) $a['id'] ?>'">
                     <td style="width: 36px;" onclick="event.stopPropagation();"><input type="checkbox" class="form-check-input selecao-item" value="<?= (int) $a['id'] ?>"></td>
+                    <td class="text-nowrap small text-muted"><?= e($a['ra'] ?: '-') ?></td>
                     <td><?= e($a['nome']) ?></td>
                     <td><?= e($a['cpf']) ?: '-' ?></td>
                     <td><?= e($a['telefone']) ?: '-' ?></td>

@@ -16,6 +16,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->execute([$blocoId, $pagina['id']]);
     $bloco = $stmt->fetch();
 
+    // Ocultar/mostrar a página (o Início não: é a capa do portal).
+    if ($acao === 'alternar_pagina' && $pagina['tipo'] !== 'inicio') {
+        $pdo->prepare('UPDATE portal_paginas SET ativo = 1 - ativo WHERE id = ?')->execute([$pagina['id']]);
+        registrarAtividade('portal', 'edicao', ($pagina['ativo'] ? 'Página ocultada do portal: ' : 'Página mostrada no portal: ') . $pagina['titulo']);
+        flash('success', $pagina['ativo'] ? '"' . $pagina['titulo'] . '" está oculta: saiu do menu e não abre mais no portal.' : '"' . $pagina['titulo'] . '" voltou a aparecer no portal.');
+        redirect($aqui);
+    }
     if ($acao === 'ordenar') {
         // Arrastar e soltar (fetch): a ordem nova de cada região.
         $atualiza = $pdo->prepare('UPDATE portal_blocos SET regiao = ?, ordem = ? WHERE id = ? AND pagina_id = ?');
@@ -120,7 +127,11 @@ $cartaoBloco = function (array $bloco, int $posicao) use ($tipos, $hoje) {
         . '<input type="hidden" name="acao" value="' . $acao . '"><input type="hidden" name="bloco_id" value="' . (int) $bloco['id'] . '">' . $extra . $conteudo . '</form>';
     ob_start(); ?>
     <div class="editor-bloco <?= e($bloco['largura']) ?> <?= !$bloco['ativo'] || $foraDoPeriodo ? 'desligado' : '' ?>" data-id="<?= (int) $bloco['id'] ?>">
-        <div class="miniatura<?= $capa ? '' : ' sem-imagem' ?>" <?= $capa ? 'style="background-image:url(\'' . e($capa) . '\')"' : '' ?>>
+        <?php // Mesma proporção do banner no site (portal.css), para a miniatura não cortar.
+        $proporcaoBanner = $bloco['tipo'] === 'banner' ? (($bloco['largura'] === 'inteira'
+            ? ['baixa' => '6 / 1', 'media' => '3 / 1', 'alta' => '2 / 1']
+            : ['baixa' => '3 / 1', 'media' => '16 / 9', 'alta' => '4 / 5'])[$bloco['altura'] ?? ''] ?? null) : null; ?>
+        <div class="miniatura<?= $capa ? '' : ' sem-imagem' ?><?= $capa && $proporcaoBanner ? ' inteira' : '' ?>" <?= $capa ? 'style="background-image:url(\'' . e($capa) . '\');' . ($proporcaoBanner ? ' --proporcao: ' . $proporcaoBanner : '') . '"' : '' ?>>
             <?php if (!$capa): ?><i class="bi <?= e($tipo[1]) ?>"></i><?php endif; ?>
             <?php if (count($bloco['imagens']) > 1): ?><span class="qtd"><i class="bi bi-images"></i> <?= count($bloco['imagens']) ?></span><?php endif; ?>
             <span class="arrastar" title="Arraste para mudar de lugar"><i class="bi bi-grip-vertical"></i></span>
@@ -140,8 +151,9 @@ $cartaoBloco = function (array $bloco, int $posicao) use ($tipos, $hoje) {
                 <a href="/configuracoes/portal_bloco.php?id=<?= (int) $bloco['id'] ?>" class="btn btn-sm btn-brand"><i class="bi bi-pencil"></i> Editar</a>
                 <?= $form('mover', '<button class="btn btn-sm btn-outline-secondary" title="Subir"><i class="bi bi-arrow-up"></i></button>', '<input type="hidden" name="direcao" value="cima">') ?>
                 <?= $form('mover', '<button class="btn btn-sm btn-outline-secondary" title="Descer"><i class="bi bi-arrow-down"></i></button>', '<input type="hidden" name="direcao" value="baixo">') ?>
+                <?= $form('excluir', '<button class="btn btn-sm btn-outline-danger" title="Excluir este bloco"><i class="bi bi-trash"></i></button>', '', 'Excluir este bloco? As imagens dele também serão apagadas.') ?>
                 <div class="dropdown d-inline">
-                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" title="Mais"><i class="bi bi-three-dots"></i></button>
+                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' title="Mais"><i class="bi bi-three-dots"></i></button>
                     <ul class="dropdown-menu">
                         <li><a class="dropdown-item" href="#" onclick="abrirNovoBloco('<?= e($bloco['regiao']) ?>', <?= $posicao ?>); return false;"><i class="bi bi-arrow-bar-up"></i> Inserir bloco antes deste</a></li>
                         <li><a class="dropdown-item" href="#" onclick="abrirNovoBloco('<?= e($bloco['regiao']) ?>', <?= $posicao + 1 ?>); return false;"><i class="bi bi-arrow-bar-down"></i> Inserir bloco depois deste</a></li>
@@ -169,6 +181,8 @@ $cartaoBloco = function (array $bloco, int $posicao) use ($tipos, $hoje) {
     .editor-bloco.desligado { opacity: .5; }
     .editor-bloco .miniatura { height: 90px; background: #eef1f4 center / cover no-repeat; display: flex; align-items: center; justify-content: center; color: #8a94a0; font-size: 1.8rem; position: relative; }
     .editor-bloco .miniatura.sem-imagem { height: 34px; font-size: 1.1rem; }
+    /* Banner: a miniatura mostra a imagem inteira, na proporção dela. */
+    .editor-bloco .miniatura.inteira { height: auto; aspect-ratio: var(--proporcao, 6 / 1); background-size: contain; }
     .editor-bloco .miniatura .qtd { position: absolute; right: 8px; bottom: 8px; background: rgba(0,0,0,.6); color: #fff; font-size: 11px; padding: 2px 7px; border-radius: 999px; }
     .editor-bloco .arrastar { position: absolute; left: 6px; top: 6px; background: rgba(255,255,255,.9); border-radius: 6px; padding: 0 4px; font-size: 1rem; color: #555; cursor: grab; }
     .editor-bloco .corpo { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
@@ -191,7 +205,7 @@ $cartaoBloco = function (array $bloco, int $posicao) use ($tipos, $hoje) {
                 <a href="/configuracoes/portal.php?pagina=<?= (int) $p['id'] ?>" class="list-group-item list-group-item-action <?= (int) $p['id'] === (int) $pagina['id'] ? 'active' : '' ?>">
                     <i class="bi <?= $p['tipo'] === 'inicio' ? 'bi-house' : 'bi-file-earmark-text' ?>"></i>
                     <span class="flex-grow-1 text-truncate"><?= e($p['titulo']) ?></span>
-                    <?php if (!$p['ativo']): ?><span class="badge text-bg-secondary">rascunho</span><?php endif; ?>
+                    <?php if (!$p['ativo']): ?><span class="badge text-bg-secondary">oculta</span><?php endif; ?>
                     <?php if ($p['publico'] === 'alunos'): ?><i class="bi bi-lock" title="Só alunos logados"></i><?php endif; ?>
                 </a>
             <?php endforeach; ?>
@@ -203,6 +217,7 @@ $cartaoBloco = function (array $bloco, int $posicao) use ($tipos, $hoje) {
             <?php foreach ($paginas as $p): if ($p['tipo'] !== 'sistema') continue; ?>
                 <a href="/configuracoes/portal.php?pagina=<?= (int) $p['id'] ?>" class="list-group-item list-group-item-action <?= (int) $p['id'] === (int) $pagina['id'] ? 'active' : '' ?>">
                     <i class="bi bi-window"></i><span class="flex-grow-1 text-truncate"><?= e($p['titulo']) ?></span>
+                    <?php if (!$p['ativo']): ?><span class="badge text-bg-secondary">oculta</span><?php endif; ?>
                 </a>
             <?php endforeach; ?>
         </div>
@@ -218,7 +233,24 @@ $cartaoBloco = function (array $bloco, int $posicao) use ($tipos, $hoje) {
                 <a href="/configuracoes/portal_pagina.php?id=<?= (int) $pagina['id'] ?>" class="btn btn-sm btn-outline-secondary ms-auto"><i class="bi bi-gear"></i> Nome, endereço e menu</a>
             <?php endif; ?>
             <?php if ($urlPrevia): ?><a href="<?= e($urlPrevia) ?>" target="_blank" class="btn btn-sm btn-outline-secondary <?= $pagina['tipo'] === 'personalizada' ? '' : 'ms-auto' ?>"><i class="bi bi-box-arrow-up-right"></i> Abrir</a><?php endif; ?>
+            <?php if ($pagina['tipo'] !== 'inicio'): ?>
+                <form method="post" class="d-inline <?= $urlPrevia || $pagina['tipo'] === 'personalizada' ? '' : 'ms-auto' ?>">
+                    <input type="hidden" name="acao" value="alternar_pagina">
+                    <button type="submit" class="btn btn-sm <?= $pagina['ativo'] ? 'btn-outline-secondary' : 'btn-warning' ?>" title="<?= $pagina['ativo'] ? 'Tira do menu e não deixa abrir no portal' : 'Volta a aparecer no portal' ?>">
+                        <i class="bi bi-<?= $pagina['ativo'] ? 'eye-slash' : 'eye' ?>"></i> <?= $pagina['ativo'] ? 'Ocultar do portal' : 'Mostrar no portal' ?>
+                    </button>
+                </form>
+            <?php endif; ?>
+            <?php if ($pagina['tipo'] === 'personalizada'): ?>
+                <form method="post" action="/configuracoes/portal_pagina.php" class="d-inline" onsubmit="return confirm(<?= e(json_encode('Excluir a página "' . $pagina['titulo'] . '"? Os blocos e as imagens dela também serão apagados.')) ?>);">
+                    <input type="hidden" name="id" value="<?= (int) $pagina['id'] ?>"><input type="hidden" name="acao" value="excluir">
+                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir esta página"><i class="bi bi-trash"></i></button>
+                </form>
+            <?php endif; ?>
         </div>
+        <?php if (!$pagina['ativo'] && $pagina['tipo'] !== 'inicio'): ?>
+            <div class="alert alert-warning py-2 small"><i class="bi bi-eye-slash"></i> Esta página está <strong>oculta</strong>: não aparece no menu nem abre no portal. Só você vê pela prévia.</div>
+        <?php endif; ?>
         <p class="small text-muted">Cada caixa é um bloco, na mesma largura e ordem em que aparece no site. <strong>Arraste</strong> pelo <i class="bi bi-grip-vertical"></i> para mudar de lugar. As mudanças entram no ar na hora.</p>
 
         <?php foreach ($regioes as $regiao => $rotuloRegiao):

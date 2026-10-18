@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
+exigirTelaPortal('financeiro');
 exigirAluno();
 
 $pdo = getDB();
@@ -92,7 +93,11 @@ unset($g);
                                 <div class="valor"><?= formatMoney($p['valor']) ?></div>
                                 <?php if ($p['vencida']): ?><div class="small text-danger">+ multa e juros</div><?php endif; ?>
                             <?php endif; ?>
-                            <a href="/portal/pagar.php?id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-brand mt-1">Pagar</a>
+                            <?php if (!$p['tem_boleto'] && ($formaSecretaria = formaPagaNaSecretaria($pdo, $p['forma_pagamento_id'] ? (int) $p['forma_pagamento_id'] : null))): ?>
+                                <div class="small text-muted mt-1"><i class="bi bi-credit-card"></i> <?= e($formaSecretaria) ?> — pague na secretaria</div>
+                            <?php else: ?>
+                                <a href="/portal/pagar.php?id=<?= (int) $p['id'] ?>" class="btn btn-sm btn-brand mt-1">Pagar</a>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </div>
                 </div>

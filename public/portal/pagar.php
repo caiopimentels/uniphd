@@ -12,6 +12,13 @@ if ($parcela['status'] === 'pago') {
     flash('success', 'Esta parcela já está paga.');
     redirect('/portal/financeiro.php');
 }
+// Parcela no cartão/dinheiro (sem boleto já gerado): paga na secretaria.
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM cobrancas_bancarias WHERE conta_receber_id = ? AND status IN ('pendente_envio', 'registrada')");
+$stmt->execute([$parcela['id']]);
+if (!(int) $stmt->fetchColumn() && ($formaSecretaria = formaPagaNaSecretaria($pdo, $parcela['forma_pagamento_id'] ? (int) $parcela['forma_pagamento_id'] : null))) {
+    flash('info', 'Esta parcela é paga com ' . mb_strtolower($formaSecretaria) . ' na secretaria.');
+    redirect('/portal/financeiro.php');
+}
 
 // Registra o boleto + Pix no banco na primeira vez que o aluno abre.
 $garantia = garantirCobrancaParcelaPortal($pdo, $parcela);
@@ -49,7 +56,8 @@ require __DIR__ . '/../../includes/portal_header.php';
             <?php if (str_contains($garantia['mensagem'], 'Meus dados')): ?><a href="/portal/conta.php?voltar=<?= urlencode('/portal/pagar.php?id=' . (int) $parcela['id']) ?>" class="alert-link">Completar agora</a><?php endif; ?>
         </div>
     <?php else: ?>
-        <?php if ($dados['pix_copia_cola']): ?>
+        <?php $meiosParcela = meiosCobrancaForma($pdo, $parcela['forma_pagamento_id'] ? (int) $parcela['forma_pagamento_id'] : null); ?>
+        <?php if ($dados['pix_copia_cola'] && $meiosParcela['pix']): ?>
             <div class="portal-card mt-3 text-center">
                 <div class="fw-semibold mb-2"><i class="bi bi-qr-code"></i> Pague com Pix — cai na hora</div>
                 <div id="qr-pix" class="d-inline-block p-2 bg-white rounded-3 border mb-3"></div>
@@ -61,9 +69,9 @@ require __DIR__ . '/../../includes/portal_header.php';
             </div>
         <?php endif; ?>
 
-        <?php if ($dados['linha_digitavel']): ?>
+        <?php if ($dados['linha_digitavel'] && $meiosParcela['boleto']): ?>
             <div class="portal-card mt-3">
-                <div class="fw-semibold mb-2"><i class="bi bi-upc"></i> Ou pague o boleto</div>
+                <div class="fw-semibold mb-2"><i class="bi bi-upc"></i> <?= $meiosParcela['pix'] ? 'Ou pague o boleto' : 'Pague o boleto' ?></div>
                 <label class="small text-muted">Linha digitável</label>
                 <div class="input-group mb-3">
                     <input type="text" id="linha-digitavel" class="form-control font-monospace" readonly value="<?= e($dados['linha_digitavel']) ?>">
@@ -76,7 +84,7 @@ require __DIR__ . '/../../includes/portal_header.php';
     <?php endif; ?>
 </div>
 
-<?php if ($dados && $dados['pix_copia_cola']): ?>
+<?php if ($dados && $dados['pix_copia_cola'] && $meiosParcela['pix']): ?>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>new QRCode(document.getElementById('qr-pix'), { text: <?= json_encode($dados['pix_copia_cola']) ?>, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });</script>
 <?php endif; ?>
