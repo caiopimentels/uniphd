@@ -17,7 +17,7 @@ if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_f
         'data_fim' => $_GET['data_fim'] ?? '',
         'agrupar' => $_GET['agrupar'] ?? '',
         'busca' => trim((string) ($_GET['busca'] ?? '')),
-        'boleto' => array_key_exists((string) ($_GET['boleto'] ?? ''), opcoesFiltroBoletoReceber()) ? (string) $_GET['boleto'] : '',
+        'boleto' => array_key_exists((string) ($_GET['boleto'] ?? ''), opcoesFiltroBoletoReceber()) ? (string) ($_GET['boleto'] ?? '') : '',
     ];
 }
 $opcoesAgrupar = opcoesAgruparReceber();
@@ -56,6 +56,7 @@ $formasPagamento = $pdo->query("SELECT id, nome, instrumento, instrumento = 'man
 
 $labelTotal = match ($status) {
     'pendente' => 'Total pendente',
+    'vencido' => 'Total vencido',
     'pago' => 'Total recebido',
     'cancelado' => 'Total cancelado',
     'excluido' => 'Total excluído',
@@ -83,6 +84,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
     <form method="get">
         <select name="status" class="form-select filtro-controle" style="width:170px" onchange="this.form.submit()">
             <option value="pendente" <?= $status === 'pendente' ? 'selected' : '' ?>>Pendentes</option>
+            <option value="vencido" <?= $status === 'vencido' ? 'selected' : '' ?>>Vencidas</option>
             <option value="pago" <?= $status === 'pago' ? 'selected' : '' ?>>Recebidas</option>
             <option value="cancelado" <?= $status === 'cancelado' ? 'selected' : '' ?>>Canceladas</option>
             <option value="" <?= $status === '' ? 'selected' : '' ?>>Todas</option>
@@ -153,7 +155,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                 </td>
                     <td class="text-nowrap"><?= $c['status'] === 'pago' && $c['data_recebimento'] ? formatDate($c['data_recebimento']) : '-' ?></td>
                     <td class="text-end text-nowrap"><?= $c['status'] === 'pago' ? '<span class="text-success fw-semibold">' . formatMoney($c['valor_recebido'] ?? $c['valor']) . '</span>' : '-' ?></td>
-                    <td><span class="badge <?= contaStatusBadgeClass($c['status']) ?>"><?= contaStatusLabel($c['status']) ?></span></td>
+                    <td><span class="badge <?= contaStatusBadgeClass($vencida ? 'vencido' : $c['status']) ?>"><?= contaStatusLabel($vencida ? 'vencido' : $c['status']) ?></span></td>
                     <td class="text-end text-nowrap" onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $c['aluno_id']): ?>
                             <?= botoesCobrancaParcela($pdo, $c) ?>

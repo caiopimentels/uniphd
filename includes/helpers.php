@@ -176,6 +176,7 @@ function contaStatusBadgeClass(string $status): string
 {
     return match ($status) {
         'pendente' => 'text-bg-warning',
+        'vencido' => 'text-bg-danger', // pendente com vencimento passado (só na tela)
         'pago' => 'text-bg-success',
         'cancelado' => 'text-bg-secondary',
         default => 'text-bg-light',
@@ -186,6 +187,7 @@ function contaStatusLabel(string $status): string
 {
     return match ($status) {
         'pendente' => 'Pendente',
+        'vencido' => 'Vencido',
         'pago' => 'Pago',
         'cancelado' => 'Cancelado',
         default => ucfirst($status),

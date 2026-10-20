@@ -25,12 +25,14 @@ $grupos = agruparContasReceber($contas, $agrupar);
 $totalExibido = array_sum(array_map('valorExibidoReceber', $contas));
 $labelStatus = match ($status) {
     'pendente' => 'Pendentes',
+    'vencido' => 'Vencidas',
     'pago' => 'Recebidas',
     'cancelado' => 'Canceladas',
     default => 'Todas',
 };
 $labelTotal = match ($status) {
     'pendente' => 'Total pendente',
+    'vencido' => 'Total vencido',
     'pago' => 'Total recebido',
     'cancelado' => 'Total cancelado',
     default => 'Total geral',
@@ -110,7 +112,7 @@ $labelTotal = match ($status) {
                 </td>
                 <td><?= $c['status'] === 'pago' && $c['data_recebimento'] ? formatDate($c['data_recebimento']) : '-' ?></td>
                 <td class="text-end"><?= $c['status'] === 'pago' ? formatMoney($c['valor_recebido'] ?? $c['valor']) : '-' ?></td>
-                <td><?= e(contaStatusLabel($c['status'])) ?></td>
+                <td><?= e(contaStatusLabel($c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d') ? 'vencido' : $c['status'])) ?></td>
             </tr>
             <?php endforeach; endif; ?>
         <?php endforeach; ?>

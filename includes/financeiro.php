@@ -681,6 +681,9 @@ function buscarContasReceber(PDO $pdo, array $filtros): array
         if (in_array($filtros['status'] ?? '', ['pendente', 'pago', 'cancelado'], true)) {
             $where .= ' AND cr.status = ?';
             $params[] = $filtros['status'];
+        } elseif (($filtros['status'] ?? '') === 'vencido') {
+            // Vencidas: pendentes com vencimento já passado (também aparecem em Pendentes).
+            $where .= " AND cr.status = 'pendente' AND cr.data_vencimento < CURDATE()";
         }
     }
     if (($filtros['data_inicio'] ?? '') !== '') {
