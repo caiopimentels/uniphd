@@ -461,6 +461,8 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
             ? 'Inscrição feita! Pague até ' . formatDateTime($prazo) . ' para confirmar sua matrícula.'
             : 'Matrícula confirmada! Bem-vindo(a) à turma.',
         'matricula_id' => $matriculaId,
+        // Parcela que confirma a vaga (a inscrição leva direto para pagá-la).
+        'confirmacao_id' => $pendente ? $confirmacaoId : null,
     ];
 }
 

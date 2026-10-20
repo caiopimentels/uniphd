@@ -27,12 +27,36 @@ if ($dados && !$dados['registrada']) {
     $dados = null;
 }
 
+// É o pagamento que confirma uma inscrição? Mostra as etapas e o prazo.
+$stmt = $pdo->prepare(
+    "SELECT m.pagamento_ate, m.segura_vaga, t.nome AS turma_nome, c.nome AS curso_nome
+     FROM matriculas m JOIN turmas t ON t.id = m.turma_id JOIN cursos c ON c.id = t.curso_id
+     WHERE m.conta_receber_confirmacao_id = ? AND m.status = 'pendente' AND m.aluno_id = ?"
+);
+$stmt->execute([$parcela['id'], alunoAtualId()]);
+$inscricaoPendente = $stmt->fetch() ?: null;
+
 $tituloPagina = 'Pagamento';
 require __DIR__ . '/../../includes/portal_header.php';
 ?>
 <a href="/portal/financeiro.php" class="small"><i class="bi bi-arrow-left"></i> Pagamentos</a>
 
 <div class="portal-acesso largo mt-2">
+    <?php if ($inscricaoPendente): ?>
+        <div class="portal-card mb-3">
+            <div class="d-flex justify-content-between text-center small fw-semibold etapas-inscricao">
+                <div class="text-success"><i class="bi bi-check-circle-fill fs-4 d-block"></i>Inscrição feita</div>
+                <div style="color: var(--accent-dark);"><i class="bi bi-2-circle-fill fs-4 d-block"></i>Pagamento</div>
+                <div class="text-muted"><i class="bi bi-3-circle fs-4 d-block"></i>Matrícula confirmada</div>
+            </div>
+            <div class="mt-3">
+                <strong><?= e($inscricaoPendente['curso_nome']) ?></strong> · <?= e($inscricaoPendente['turma_nome']) ?><br>
+                Falta só pagar: <strong><?= e($parcela['descricao']) ?></strong>, até <strong><?= formatDateTime($inscricaoPendente['pagamento_ate']) ?></strong>.
+                <?= $inscricaoPendente['segura_vaga'] ? 'Sua vaga fica reservada até lá.' : 'A vaga é garantida assim que o pagamento for confirmado.' ?>
+                Pelo Pix a confirmação chega em poucos minutos.
+            </div>
+        </div>
+    <?php endif; ?>
     <div class="portal-card text-center">
         <div class="text-muted"><?= e($parcela['descricao']) ?></div>
         <?php // Com boleto gerado, valem a data e o valor dele (parcela vencida ganha vencimento novo).

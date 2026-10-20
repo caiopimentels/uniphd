@@ -421,7 +421,10 @@ function pdfDocumentoEmitido(int $documentoId, string $html): ?string
     $saida = $arquivo . '.tmp';
     $argumentos = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--hide-scrollbars',
         '--allow-file-access-from-files', '--user-data-dir=' . $perfil, '--virtual-time-budget=8000',
-        '--no-pdf-header-footer', '--print-to-pdf=' . $saida];
+        '--no-pdf-header-footer', '--print-to-pdf=' . $saida,
+        // Sem cofre de senhas do sistema: no Mac evita o pedido de acesso às
+        // "Chaves" a cada PDF; no Linux, a procura por um chaveiro que não existe.
+        '--use-mock-keychain', '--password-store=basic', '--disable-extensions', '--disable-sync'];
     if (PHP_OS_FAMILY === 'Linux') {
         $argumentos[] = '--no-sandbox'; // usuário do Apache (www-data) não tem sandbox do Chrome
     }

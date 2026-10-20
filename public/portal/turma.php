@@ -91,14 +91,18 @@ require __DIR__ . '/../../includes/portal_header.php';
                 <div class="alert alert-<?= $minhaMatricula['status'] === 'pendente' ? 'warning' : 'success' ?> mb-2">
                     <?= $minhaMatricula['status'] === 'pendente' ? 'Você já se inscreveu — falta o pagamento.' : 'Você já está matriculado nesta turma.' ?>
                 </div>
-                <a href="/portal/meus_cursos.php" class="btn btn-brand btn-lg w-100"><?= $minhaMatricula['status'] === 'pendente' ? 'Ir para o pagamento' : 'Ver meus cursos' ?></a>
+                <a href="<?= $minhaMatricula['status'] === 'pendente' && $minhaMatricula['conta_receber_confirmacao_id'] ? '/portal/pagar.php?id=' . (int) $minhaMatricula['conta_receber_confirmacao_id'] : '/portal/meus_cursos.php' ?>" class="btn btn-brand btn-lg w-100"><?= $minhaMatricula['status'] === 'pendente' ? 'Ir para o pagamento' : 'Ver meus cursos' ?></a>
             <?php elseif (!$restam): ?>
                 <button class="btn btn-secondary btn-lg w-100" disabled>Vagas esgotadas</button>
             <?php else: ?>
-                <form method="post" action="/portal/inscrever.php" onsubmit="this.querySelector('button').disabled = true;">
-                    <input type="hidden" name="turma_id" value="<?= (int) $turma['id'] ?>">
-                    <button type="submit" class="btn btn-brand btn-lg w-100"><?= alunoLogado() ? 'Quero me inscrever' : 'Inscrever-me' ?></button>
-                </form>
+                <?php if (alunoLogado()): ?>
+                    <button type="button" class="btn btn-brand btn-lg w-100" data-bs-toggle="modal" data-bs-target="#modal-inscricao">Quero me inscrever</button>
+                <?php else: ?>
+                    <form method="post" action="/portal/inscrever.php">
+                        <input type="hidden" name="turma_id" value="<?= (int) $turma['id'] ?>">
+                        <button type="submit" class="btn btn-brand btn-lg w-100">Inscrever-me</button>
+                    </form>
+                <?php endif; ?>
                 <ul class="small text-muted mt-3 mb-0 ps-3">
                     <?php if ($pagaNaInscricao): ?>
                         <li>Para confirmar a matrícula, pague <?= $taxa > 0 ? 'a taxa de matrícula' : 'a primeira mensalidade' ?> por Pix ou boleto em até <?= $prazoDias ?> dia(s).</li>
@@ -114,4 +118,60 @@ require __DIR__ . '/../../includes/portal_header.php';
         </div>
     </div>
 </div>
+<?php if (alunoLogado() && !$minhaMatricula && $restam): ?>
+<?php
+    $primeiroVencimento = primeiroVencimentoPortal($turma, date('Y-m-d'));
+    $prazoPagamento = date('d/m/Y', strtotime('+' . $prazoDias . ' days'));
+?>
+<div class="modal fade" id="modal-inscricao" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" method="post" action="/portal/inscrever.php" onsubmit="this.querySelector('[type=submit]').disabled = true; this.querySelector('[type=submit]').innerHTML = 'Inscrevendo...';">
+            <input type="hidden" name="turma_id" value="<?= (int) $turma['id'] ?>">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirme sua inscrição</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="fw-semibold fs-5"><?= e($turma['curso_nome']) ?></div>
+                <div class="text-muted mb-3"><?= e($turma['nome']) ?></div>
+                <div class="small mb-3">
+                    <div><i class="bi bi-calendar-event"></i> Início: <?= $turma['data_inicio'] ? formatDate($turma['data_inicio']) : 'a definir' ?></div>
+                    <?php if ($agenda = textoAgendaTurma($turma)): ?><div><i class="bi bi-clock"></i> <?= e($agenda) ?></div><?php endif; ?>
+                    <?php if ($turma['local']): ?><div><i class="bi bi-geo-alt"></i> <?= e($turma['local']) ?></div><?php endif; ?>
+                </div>
+                <div class="border rounded p-3 mb-3">
+                    <?php if ($taxa > 0): ?>
+                        <div class="d-flex justify-content-between"><span>Matrícula <span class="text-muted small">(paga agora)</span></span><strong><?= formatMoney($taxa) ?></strong></div>
+                    <?php endif; ?>
+                    <?php if ($mensalidade > 0): ?>
+                        <div class="d-flex justify-content-between mt-1"><span>Curso <span class="text-muted small">(<?= $parcelas ?>x de <?= formatMoney($mensalidade) ?>)</span></span><strong><?= formatMoney($valorTotal) ?></strong></div>
+                        <div class="small text-muted">1ª mensalidade em <?= formatDate($primeiroVencimento) ?><?= $formaMensalidadeSecretaria ? ' · ' . e(mb_strtolower($formaMensalidadeSecretaria)) . ', pago na secretaria' : '' ?></div>
+                    <?php endif; ?>
+                    <?php if ($taxa <= 0 && $mensalidade <= 0): ?><div class="fw-semibold">Curso gratuito</div><?php endif; ?>
+                </div>
+                <?php if ($pagaNaInscricao): ?>
+                    <div class="alert alert-info small mb-0">
+                        <i class="bi bi-qr-code"></i>
+                        Ao confirmar, você vai direto para o pagamento <?= $taxa > 0 ? 'da matrícula' : 'da 1ª mensalidade' ?> por <strong>Pix ou boleto</strong>.
+                        Pague até <strong><?= $prazoPagamento ?></strong> —
+                        <?= $turma['portal_modo_vaga'] === 'reserva' ? 'sua vaga fica reservada até lá.' : 'a vaga é garantida quando o pagamento for confirmado.' ?>
+                    </div>
+                <?php else: ?>
+                    <div class="alert alert-success small mb-0"><i class="bi bi-check-circle"></i> Sua vaga é garantida na hora da inscrição.</div>
+                <?php endif; ?>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Voltar</button>
+                <button type="submit" class="btn btn-brand"><?= $pagaNaInscricao ? 'Confirmar e ir para o pagamento' : 'Confirmar inscrição' ?></button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php if (isset($_GET['inscrever'])): ?>
+<script>
+// Voltou do login / dos dados: abre a confirmação para não precisar clicar de novo.
+document.addEventListener('DOMContentLoaded', () => bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-inscricao')).show());
+</script>
+<?php endif; ?>
+<?php endif; ?>
 <?php require __DIR__ . '/../../includes/portal_footer.php'; ?>

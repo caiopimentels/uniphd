@@ -70,7 +70,7 @@ $fatorFonteCertificado = $orientacaoCertificado === 'vertical' ? 5.953 : 8.418;
     <?php if ($logoMarcaDagua !== ''): ?>
         <div class="cert-marca-dagua" aria-hidden="true" data-logo="<?= e($logoMarcaDagua) ?>"
              data-tamanho="<?= $marcaDaguaCertificado['tamanho'] ?>" data-espaco="<?= $marcaDaguaCertificado['espaco'] ?>"
-             style="--opacidade-marca: <?= $marcaDaguaCertificado['opacidade'] / 100 ?>;"<?= $marcaDaguaCertificado['ativa'] ? '' : ' hidden' ?>></div>
+             data-opacidade="<?= $marcaDaguaCertificado['opacidade'] / 100 ?>"<?= $marcaDaguaCertificado['ativa'] ? '' : ' hidden' ?>></div>
     <?php endif; ?>
     <?php foreach ($pagina['elementos'] as $campo): ?>
         <?php

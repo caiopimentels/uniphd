@@ -445,7 +445,7 @@ function atualizarMarcaDagua() {
         camada.hidden = !v.ativa;
         camada.dataset.tamanho = v.tamanho;
         camada.dataset.espaco = v.espaco;
-        camada.style.setProperty('--opacidade-marca', v.opacidade / 100);
+        camada.dataset.opacidade = v.opacidade / 100;
         desenharMarcaDagua(folha);
     }
     marcarAlterado();

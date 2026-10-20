@@ -29,12 +29,14 @@ if (!$turma) {
 $podeVerFinanceiro = usuarioPodeVerInadimplencia();
 $podeLiberarCertificado = usuarioPodeLiberarCertificado();
 
-// Situação financeira considera só as parcelas DESTA turma: o aluno pode
-// estar devendo em outra e em dia aqui.
+// Atraso: o selo do aluno mostra o atraso GERAL dele (outras turmas e
+// cobranças avulsas também); o card "Em atraso" soma só o desta turma.
 $stmt = $pdo->prepare(
     "SELECT m.*, a.nome AS aluno_nome, a.telefone AS aluno_telefone,
             (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr
-              WHERE cr.matricula_id = m.id AND cr.status = 'pendente' AND cr.data_vencimento < CURDATE()) AS valor_vencido,
+              WHERE cr.matricula_id = m.id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < CURDATE()) AS valor_vencido,
+            (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr
+              WHERE cr.aluno_id = m.aluno_id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < CURDATE()) AS valor_vencido_aluno,
             (SELECT COALESCE(SUM(COALESCE(cr.valor_recebido, cr.valor)), 0) FROM contas_receber cr
               WHERE cr.matricula_id = m.id AND cr.status = 'pago') AS valor_pago,
             EXISTS (SELECT 1 FROM contas_receber cr WHERE cr.matricula_id = m.id AND cr.status = 'pago') AS tem_pago,
@@ -66,7 +68,7 @@ $receitaMensalPrevista = array_sum(array_map(
     $ativas
 ));
 $totalVencido = array_sum(array_column($matriculas, 'valor_vencido'));
-$inadimplentes = count(array_filter($matriculas, fn ($m) => (float) $m['valor_vencido'] > 0));
+$inadimplentes = count(array_filter($matriculas, fn ($m) => (float) $m['valor_vencido_aluno'] > 0));
 
 // Despesas da turma (professor, palestrante, material...) e o resultado.
 $podeLancarDespesa = usuarioTemAcessoFinanceiro();
@@ -351,7 +353,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="card h-100"><div class="card-body">
             <div class="kpi-rotulo">Em atraso</div>
             <div class="kpi-valor <?= $totalVencido > 0 ? 'estoque-baixo' : '' ?>"><?= formatMoney($totalVencido) ?></div>
-            <?php if ($inadimplentes): ?><div class="small text-muted"><?= $inadimplentes ?> aluno(s)</div><?php endif; ?>
+            <?php if ($inadimplentes): ?><div class="small text-muted"><?= $inadimplentes ?> aluno(s) com atraso (contando outras cobranças)</div><?php endif; ?>
         </div></div>
     </div>
     <?php endif; ?>
@@ -507,8 +509,10 @@ require __DIR__ . '/../../includes/layout_header.php';
                         <?php if ($podeVerFinanceiro): ?>
                         <td class="text-end"><?= formatMoney($m['valor_pago']) ?></td>
                         <td>
-                            <?php if ((float) $m['valor_vencido'] > 0): ?>
-                                <span class="badge text-bg-danger">Em atraso · <?= formatMoney($m['valor_vencido']) ?></span>
+                            <?php if ((float) $m['valor_vencido_aluno'] > 0): ?>
+                                <a href="/alunos/form.php?id=<?= (int) $m['aluno_id'] ?>&tab=financeiro" class="badge text-bg-danger text-decoration-none" onclick="event.stopPropagation();"
+                                   title="<?= (float) $m['valor_vencido'] > 0 ? 'Desta turma: ' . formatMoney($m['valor_vencido']) : 'Nada atrasado nesta turma — o atraso é de outra turma ou cobrança avulsa' ?>">Em atraso · <?= formatMoney($m['valor_vencido_aluno']) ?></a>
+                                <?php if ((float) $m['valor_vencido'] < (float) $m['valor_vencido_aluno']): ?><div class="small text-muted"><?= (float) $m['valor_vencido'] > 0 ? 'nesta turma: ' . formatMoney($m['valor_vencido']) : 'em outra cobrança' ?></div><?php endif; ?>
                             <?php else: ?>
                                 <span class="badge text-bg-success">Em dia</span>
                             <?php endif; ?>

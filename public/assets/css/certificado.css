@@ -70,8 +70,6 @@
     pointer-events: none;
     background-repeat: repeat;
     background-position: center;
-    opacity: var(--opacidade-marca, 0.1);
-    filter: grayscale(1);
     transform: rotate(-25deg);
 }
 .cert-marca-dagua[hidden] { display: none; }
