@@ -9,14 +9,15 @@ agendarBaixaBoletosCancelados();
 // Lembra o último filtro usado nesta tela entre uma visita e outra — sem
 // isso, todo acesso pelo menu resetava pra "Pendentes" e perdia o período
 // escolhido, obrigando a escolher tudo de novo só pra ajustar a data.
-$_SESSION['filtro_contas_receber'] = array_merge(['status' => 'pendente', 'data_inicio' => '', 'data_fim' => '', 'agrupar' => '', 'busca' => ''], $_SESSION['filtro_contas_receber'] ?? []);
-if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim']) || isset($_GET['agrupar']) || isset($_GET['busca'])) {
+$_SESSION['filtro_contas_receber'] = array_merge(['status' => 'pendente', 'data_inicio' => '', 'data_fim' => '', 'agrupar' => '', 'busca' => '', 'boleto' => ''], $_SESSION['filtro_contas_receber'] ?? []);
+if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim']) || isset($_GET['agrupar']) || isset($_GET['busca']) || isset($_GET['boleto'])) {
     $_SESSION['filtro_contas_receber'] = [
         'status' => $_GET['status'] ?? '',
         'data_inicio' => $_GET['data_inicio'] ?? '',
         'data_fim' => $_GET['data_fim'] ?? '',
         'agrupar' => $_GET['agrupar'] ?? '',
         'busca' => trim((string) ($_GET['busca'] ?? '')),
+        'boleto' => array_key_exists((string) ($_GET['boleto'] ?? ''), opcoesFiltroBoletoReceber()) ? (string) $_GET['boleto'] : '',
     ];
 }
 $opcoesAgrupar = opcoesAgruparReceber();
@@ -67,6 +68,7 @@ $queryImpressao = http_build_query([
     'data_fim' => $dataFim,
     'agrupar' => $agrupar,
     'busca' => $busca,
+    'boleto' => $_SESSION['filtro_contas_receber']['boleto'] ?? '',
 ]);
 
 $pageTitle = 'Contas a receber';
@@ -85,6 +87,11 @@ require __DIR__ . '/../../../includes/layout_header.php';
             <option value="cancelado" <?= $status === 'cancelado' ? 'selected' : '' ?>>Canceladas</option>
             <option value="" <?= $status === '' ? 'selected' : '' ?>>Todas</option>
             <option value="excluido" <?= $status === 'excluido' ? 'selected' : '' ?>>Excluídas</option>
+        </select>
+        <select name="boleto" class="form-select filtro-controle" style="width:190px" onchange="this.form.submit()" title="Situação do boleto no banco">
+            <?php foreach (opcoesFiltroBoletoReceber() as $valorBoleto => $rotuloBoleto): ?>
+                <option value="<?= e($valorBoleto) ?>" <?= ($_SESSION['filtro_contas_receber']['boleto'] ?? '') === $valorBoleto ? 'selected' : '' ?>><?= e($rotuloBoleto) ?></option>
+            <?php endforeach; ?>
         </select>
         <div class="input-group filtro-busca">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
@@ -135,7 +142,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                             <input type="checkbox" class="form-check-input lote-item" value="<?= (int) $c['id'] ?>" data-grupo="<?= $indiceGrupo ?>" data-valor="<?= e((string) $c['valor']) ?>" data-aluno="<?= (int) $c['aluno_id'] ?>">
                         <?php endif; ?>
                     </td>
-                    <td><?= e($c['descricao']) ?><?php if ($c['forma_pagamento_id'] && ($nomeForma = meiosCobrancaForma($pdo, (int) $c['forma_pagamento_id'])['nome'])): ?><div class="small text-muted"><i class="bi bi-wallet2"></i> <?= e($nomeForma) ?></div><?php endif; ?></td>
+                    <td><?= e($c['descricao']) ?><?php if ($c['forma_pagamento_id'] && ($nomeForma = meiosCobrancaForma($pdo, (int) $c['forma_pagamento_id'])['nome'])): ?><div class="small text-muted"><i class="bi bi-wallet2"></i> <?= e($nomeForma) ?></div><?php endif; ?><?php if ($seloBanco = seloBancoParcela($pdo, (int) $c['id'])): ?><div class="mt-1"><?= $seloBanco ?></div><?php endif; ?></td>
                     <td><?= e($c['aluno_nome'] ?: $c['categoria_nome'] ?: '-') ?></td>
                     <td class="text-nowrap <?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($c['data_vencimento']) ?></td>
                     <td class="text-end text-nowrap">

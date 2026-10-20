@@ -1313,8 +1313,12 @@ function instrucaoBoletoItau(PDO $pdo, array $cobranca, string $instrucao, array
     if (!$idBoleto) {
         return ['ok' => false, 'status' => 0, 'mensagem' => 'Confira agência, conta e dígito da conta bancária.', 'resposta' => null];
     }
-    // As instruções ficam na Cobrança v2 (cash_management).
-    $base = ehApiCobrancaV2Itau($conta) ? rtrim($conta['api_url_base'], '/') : 'https://api.itau.com.br/cash_management/v2';
+    // As instruções (baixa, valor, vencimento...) ficam na Cobrança v2
+    // (cash_management): no endereço escolhido na conta bancária ou, sem
+    // escolha, no da URL base da conta (como era antes).
+    $base = !empty($conta['itau_url_instrucoes']) && isset(urlsInstrucoesItau()[$conta['itau_url_instrucoes']])
+        ? $conta['itau_url_instrucoes']
+        : (ehApiCobrancaV2Itau($conta) ? rtrim($conta['api_url_base'], '/') : 'https://api.itau.com.br/cash_management/v2');
     contextoChamadaBanco(['conta_receber_id' => (int) $cobranca['conta_receber_id']]);
     $resultado = chamarApiNotificacoesItau($pdo, $conta, 'PATCH', '/boletos/' . $idBoleto . '/' . $instrucao, $corpo, $base, $operacao);
     // 204 = feito. 200 com "Aguardando aprovação" = o banco guardou a
@@ -1325,7 +1329,17 @@ function instrucaoBoletoItau(PDO $pdo, array $cobranca, string $instrucao, array
     return $resultado;
 }
 
-const AVISO_APROVACAO_ITAU = 'Atenção: o Itaú deixou a instrução aguardando aprovação — ela só vale depois de aprovada no internet banking/app do Itaú (área de cobrança).';
+// Endereços possíveis para as instruções de boleto (PATCH
+// /boletos/{id_boleto}/baixa e demais) — escolhidos na conta bancária.
+function urlsInstrucoesItau(): array
+{
+    return [
+        'https://api.itau.com.br/cash_management/v2' => 'api.itau.com.br (o que o sistema usava)',
+        'https://api.gateway.itau.com.br/cash_management/v2' => 'api.gateway.itau.com.br (indicado pelo Itaú)',
+    ];
+}
+
+const AVISO_APROVACAO_ITAU ='Atenção: o Itaú deixou a instrução aguardando aprovação — ela só vale depois de aprovada no internet banking/app do Itaú (área de cobrança).';
 
 /**
  * O que o Itaú tem registrado de um boleto (GET /boletos?id_beneficiario=

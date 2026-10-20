@@ -53,6 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'api_client_id' => input('api_client_id'),
         'api_url_token' => input('api_url_token'),
         'api_url_base' => input('api_url_base'),
+        'itau_url_instrucoes' => isset(urlsInstrucoesItau()[input('itau_url_instrucoes')]) ? input('itau_url_instrucoes') : null,
         'padrao' => isset($_POST['padrao']) ? 1 : 0,
         'ativo' => isset($_POST['ativo']) ? 1 : 0,
     ];
@@ -377,6 +378,16 @@ if ($id) {
         <div class="col-md-6">
             <label class="form-label">URL base da API</label>
             <input type="url" name="api_url_base" class="form-control" placeholder="https://..." value="<?= e($valor('api_url_base')) ?>">
+        </div>
+        <div class="col-md-6">
+            <label class="form-label">Endereço para baixa e alterações de boleto</label>
+            <select name="itau_url_instrucoes" class="form-select">
+                <option value="">Mesmo da URL base da API (como era antes)</option>
+                <?php foreach (urlsInstrucoesItau() as $urlInstrucao => $rotuloInstrucao): ?>
+                    <option value="<?= e($urlInstrucao) ?>" <?= $valor('itau_url_instrucoes') === $urlInstrucao ? 'selected' : '' ?>><?= e($rotuloInstrucao) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <div class="form-text">Usado ao baixar (cancelar) e ao mudar valor ou vencimento de um boleto no banco. Se um não funcionar, troque e salve.</div>
         </div>
         <div class="col-12"><div class="form-text mt-0">
             Copie as URLs da documentação do devportal do Itaú — mudam entre sandbox e produção.

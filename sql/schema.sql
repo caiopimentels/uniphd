@@ -347,6 +347,8 @@ CREATE TABLE contas_bancarias (
     api_client_secret_cripto TEXT DEFAULT NULL,
     api_url_token VARCHAR(255) DEFAULT NULL,
     api_url_base VARCHAR(255) DEFAULT NULL,
+    -- Endereço das instruções de boleto (baixa, valor, vencimento); vazio = a URL base.
+    itau_url_instrucoes VARCHAR(255) DEFAULT NULL,
     api_certificado_arquivo VARCHAR(255) DEFAULT NULL,
     api_chave_arquivo VARCHAR(255) DEFAULT NULL,
     api_chave_senha_cripto TEXT DEFAULT NULL,

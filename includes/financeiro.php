@@ -691,6 +691,14 @@ function buscarContasReceber(PDO $pdo, array $filtros): array
         $where .= ' AND cr.data_vencimento <= ?';
         $params[] = $filtros['data_fim'];
     }
+    // Situação do boleto: pela última cobrança da parcela no banco.
+    $ultimaCobranca = '(SELECT cbf.status FROM cobrancas_bancarias cbf WHERE cbf.conta_receber_id = cr.id ORDER BY cbf.id DESC LIMIT 1)';
+    $where .= match ($filtros['boleto'] ?? '') {
+        'enviado' => " AND {$ultimaCobranca} IN ('pendente_envio', 'registrada', 'paga')",
+        'erro' => " AND {$ultimaCobranca} = 'erro'",
+        'nao_enviado' => " AND COALESCE({$ultimaCobranca}, 'baixada') = 'baixada'",
+        default => '',
+    };
     if (($filtros['busca'] ?? '') !== '') {
         [$sqlBusca, $paramsBusca] = filtroBuscaAlunoReceber($filtros['busca']);
         $where .= $sqlBusca;
@@ -1060,4 +1068,31 @@ function rotuloFormaPagamento(array $forma): string
         default => 'na secretaria',
     };
     return $tipo === '' ? $nome : $nome . ' (' . $tipo . ')';
+}
+
+/**
+ * Selo da parcela no banco (Itaú), para as listas de parcelas: "Boleto
+ * enviado · nº ..." (registrado, pago ou enviando) ou "Boleto com erro" (a
+ * última tentativa falhou). Sem boleto valendo (nunca enviado ou baixado):
+ * vazio.
+ */
+function seloBancoParcela(PDO $pdo, int $parcelaId): string
+{
+    static $consulta = null;
+    $consulta ??= $pdo->prepare('SELECT status, nosso_numero, mensagem_erro FROM cobrancas_bancarias WHERE conta_receber_id = ? ORDER BY id DESC LIMIT 1');
+    $consulta->execute([$parcelaId]);
+    $c = $consulta->fetch();
+    if (!$c || $c['status'] === 'baixada') {
+        return '';
+    }
+    if ($c['status'] === 'erro') {
+        return '<span class="badge text-bg-danger fw-normal" title="' . e((string) ($c['mensagem_erro'] ?: 'Veja a Auditoria do banco.')) . '"><i class="bi bi-exclamation-triangle"></i> Boleto com erro</span>';
+    }
+    return '<span class="badge text-bg-success fw-normal" title="Enviado ao Itaú"><i class="bi bi-bank"></i> Boleto enviado · nº ' . e(formatarNossoNumeroItau((int) $c['nosso_numero'])) . '</span>';
+}
+
+// Filtro de contas a receber pela situação do boleto no banco.
+function opcoesFiltroBoletoReceber(): array
+{
+    return ['' => 'Boleto: todos', 'enviado' => 'Boleto enviado', 'nao_enviado' => 'Boleto não enviado', 'erro' => 'Boleto com erro'];
 }

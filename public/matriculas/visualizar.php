@@ -128,7 +128,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <?php foreach ($parcelas as $p): ?>
                         <?php $vencida = $p['status'] === 'pendente' && $p['data_vencimento'] < $hoje; ?>
                         <tr>
-                            <td><a href="#" onclick="abrirHistoricoParcela(<?= (int) $p['id'] ?>); return false;" title="Ver o histórico desta parcela"><?= e($p['descricao']) ?></a> <i class="bi bi-clock-history text-muted small"></i></td>
+                            <td><a href="#" onclick="abrirHistoricoParcela(<?= (int) $p['id'] ?>); return false;" title="Ver o histórico desta parcela"><?= e($p['descricao']) ?></a> <i class="bi bi-clock-history text-muted small"></i><?php if ($seloBanco = seloBancoParcela($pdo, (int) $p['id'])): ?><div class="mt-1"><?= $seloBanco ?></div><?php endif; ?></td>
                             <td class="<?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($p['data_vencimento']) ?></td>
                             <td class="text-end"><?= formatMoney($p['valor']) ?></td>
                             <td>

@@ -9,6 +9,7 @@ $filtros = [
     'data_inicio' => $_GET['data_inicio'] ?? '',
     'data_fim' => $_GET['data_fim'] ?? '',
     'busca' => trim((string) ($_GET['busca'] ?? '')),
+    'boleto' => (string) ($_GET['boleto'] ?? ''),
 ];
 $status = $filtros['status'];
 $dataInicio = $filtros['data_inicio'];
