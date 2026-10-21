@@ -8,6 +8,8 @@ $dataInicio = trim($_GET['data_inicio'] ?? '');
 $dataFim = trim($_GET['data_fim'] ?? '');
 $modulo = trim($_GET['modulo'] ?? '');
 $usuarioId = (int) ($_GET['usuario_id'] ?? 0);
+$operacao = trim($_GET['operacao'] ?? '');
+$busca = trim($_GET['busca'] ?? '');
 $pagina = max(1, (int) ($_GET['pagina'] ?? 1));
 
 $resultado = buscarLogAtividades($pdo, [
@@ -15,15 +17,27 @@ $resultado = buscarLogAtividades($pdo, [
     'data_fim' => $dataFim,
     'modulo' => $modulo,
     'usuario_id' => $usuarioId ?: null,
+    'operacao' => $operacao,
+    'busca' => $busca,
 ], $pagina, 50);
 
 $usuarios = $pdo->query('SELECT id, nome FROM usuarios ORDER BY nome')->fetchAll();
+
+// Operações: as conhecidas e as que já apareceram no registro (ex.: as do
+// portal), com o nome amigável quando houver.
+$operacoes = operacoesAuditoria();
+foreach ($pdo->query('SELECT DISTINCT operacao FROM log_atividades')->fetchAll(PDO::FETCH_COLUMN) as $op) {
+    $operacoes[$op] ??= ucfirst(str_replace('_', ' ', $op));
+}
+asort($operacoes);
 
 $queryBase = [
     'data_inicio' => $dataInicio,
     'data_fim' => $dataFim,
     'modulo' => $modulo,
     'usuario_id' => $usuarioId ?: '',
+    'operacao' => $operacao,
+    'busca' => $busca,
 ];
 
 $pageTitle = 'Auditoria';
@@ -61,6 +75,19 @@ require __DIR__ . '/../../includes/abas_configuracoes.php';
                     <option value="<?= (int) $u['id'] ?>" <?= $usuarioId === (int) $u['id'] ? 'selected' : '' ?>><?= e($u['nome']) ?></option>
                 <?php endforeach; ?>
             </select>
+        </div>
+        <div class="col-auto">
+            <label class="form-label small mb-1">Operação</label>
+            <select name="operacao" class="form-select form-select-sm">
+                <option value="">Todas</option>
+                <?php foreach ($operacoes as $chave => $nome): ?>
+                    <option value="<?= e($chave) ?>" <?= $operacao === $chave ? 'selected' : '' ?>><?= e($nome) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-auto">
+            <label class="form-label small mb-1">Pesquisar</label>
+            <input type="search" name="busca" class="form-control form-control-sm" style="width:240px" placeholder="Aluno, nº do boleto, turma, IP..." value="<?= e($busca) ?>">
         </div>
         <div class="col-auto">
             <button class="btn btn-sm btn-outline-secondary" type="submit"><i class="bi bi-search"></i> Filtrar</button>

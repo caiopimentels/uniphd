@@ -10,7 +10,6 @@ if (alunoLogado() && !empty($_SESSION['portal_trocar_senha']) && !in_array(basen
 // Acadêmico › Portal do aluno › Menu e rodapé.
 $pdo = getDB();
 $configPortal = buscarConfiguracoes($pdo);
-agendarLiberacaoDocumentos(); // libera os documentos de quem ficou em dia
 $nomePortal = $configPortal['portal_titulo'] ?: nomeSistema();
 // Cores próprias do portal (Portal do aluno › Menu, rodapé e ajustes) ou,
 // sem elas, as do sistema.

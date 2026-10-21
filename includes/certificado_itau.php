@@ -209,13 +209,24 @@ function avisarAdministradorCertificado(PDO $pdo, array $conta, string $titulo, 
 function verificarCertificadosItau(PDO $pdo): void
 {
     $contas = $pdo->query("SELECT * FROM contas_bancarias WHERE integracao = 'itau' AND ativo = 1 AND api_ambiente = 'producao' AND api_certificado_validade IS NOT NULL")->fetchAll();
+    if (!$contas) {
+        registrarAtividadeSistema('rotinas', 'verificacao', 'Verificação do certificado do Itaú: nenhuma conta Itaú em produção com certificado instalado.');
+    }
     foreach ($contas as $conta) {
         $dias = (int) floor((strtotime($conta['api_certificado_validade']) - strtotime(date('Y-m-d'))) / 86400);
+        // Registro na auditoria a cada vez que a rotina passa, para constar
+        // que ela está rodando.
+        registrarAtividadeSistema('rotinas', 'verificacao', 'Verificação do certificado do Itaú — ' . $conta['apelido'] . ': '
+            . ($dias < 0 ? 'VENCIDO em ' . formatDate($conta['api_certificado_validade'])
+                : 'válido até ' . formatDate($conta['api_certificado_validade']) . ' (' . $dias . ' dia(s))'
+                    . ($dias <= DIAS_RENOVACAO_CERTIFICADO ? '; tentando renovar' : '; tudo certo')));
 
         if ($dias <= DIAS_RENOVACAO_CERTIFICADO && $dias >= 0
-            && (!$conta['api_certificado_renovacao_em'] || strtotime($conta['api_certificado_renovacao_em']) < time() - 20 * 3600)) {
+            && (!$conta['api_certificado_renovacao_em'] || substr((string) $conta['api_certificado_renovacao_em'], 0, 10) < date('Y-m-d'))) {
             $pdo->prepare('UPDATE contas_bancarias SET api_certificado_renovacao_em = NOW() WHERE id = ?')->execute([$conta['id']]);
             $resultado = solicitarCertificadoItau($pdo, $conta, null);
+            registrarAtividadeSistema('rotinas', 'verificacao', 'Renovação automática do certificado do Itaú — ' . $conta['apelido'] . ': '
+                . ($resultado['ok'] ? 'renovado' : 'não renovou. ' . $resultado['mensagem']));
             if ($resultado['ok']) {
                 criarNotificacao($pdo, 'sistema', 'Certificado do Itaú renovado', $conta['apelido'] . ' — ' . $resultado['mensagem'], '/contas_bancarias/form.php?id=' . (int) $conta['id'], (int) $conta['id']);
                 continue;
@@ -244,23 +255,3 @@ function verificarCertificadosItau(PDO $pdo): void
     }
 }
 
-// Roda a verificação no fim de uma requisição, no máximo a cada 12 horas
-// (sem cron: aproveita o uso normal do sistema).
-function agendarVerificacaoCertificados(): void
-{
-    $marca = caminhoStorage('certificados/.ultima_verificacao');
-    if (is_file($marca) && filemtime($marca) > time() - 12 * 3600) {
-        return;
-    }
-    @touch($marca);
-    register_shutdown_function(function () {
-        if (function_exists('fastcgi_finish_request')) {
-            fastcgi_finish_request();
-        }
-        try {
-            verificarCertificadosItau(getDB());
-        } catch (Throwable $e) {
-            error_log('[Certificado Itaú] ' . $e->getMessage());
-        }
-    });
-}

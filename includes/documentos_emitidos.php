@@ -333,24 +333,3 @@ function sincronizarDocumentosTodos(PDO $pdo): int
     }
     return $total;
 }
-
-// Roda a conferência geral no fim de uma requisição, no máximo de hora em
-// hora (sem cron: aproveita o uso do sistema e do portal).
-function agendarLiberacaoDocumentos(): void
-{
-    $marca = caminhoStorage('.ultima_liberacao_documentos');
-    if (is_file($marca) && filemtime($marca) > time() - 3600) {
-        return;
-    }
-    @touch($marca);
-    register_shutdown_function(function () {
-        if (function_exists('fastcgi_finish_request')) {
-            fastcgi_finish_request();
-        }
-        try {
-            sincronizarDocumentosTodos(getDB());
-        } catch (Throwable $e) {
-            error_log('[Liberação de documentos] ' . $e->getMessage());
-        }
-    });
-}

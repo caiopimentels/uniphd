@@ -22,6 +22,7 @@ function modulosAuditoria(): array
         'perfis'                 => 'Perfis de acesso',
         'configuracoes'          => 'Configurações',
         'portal'                 => 'Portal do aluno',
+        'rotinas'                => 'Rotinas automáticas',
     ];
 }
 
@@ -38,6 +39,7 @@ function operacoesAuditoria(): array
         'login' => 'Login',
         'logout' => 'Logout',
         'login_falha' => 'Falha no login',
+        'verificacao' => 'Verificação',
     ];
 }
 
@@ -94,6 +96,17 @@ function registrarAtividadeUsuario(?int $usuarioId, string $usuarioNome, string 
         $_SERVER['REMOTE_ADDR'] ?? null,
         substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255) ?: null,
     ]);
+}
+
+// Atividade feita pelo próprio sistema (rotina automática): sem usuário e
+// sem IP/aparelho — ela roda no fim da requisição de quem estava usando,
+// e o IP dessa pessoa não tem nada a ver com a rotina.
+function registrarAtividadeSistema(string $modulo, string $operacao, string $descricao): void
+{
+    getDB()->prepare(
+        "INSERT INTO log_atividades (usuario_id, usuario_nome, modulo, operacao, descricao, criado_em)
+         VALUES (NULL, 'Sistema', ?, ?, ?, NOW())"
+    )->execute([$modulo, $operacao, mb_strimwidth($descricao, 0, 255, '…', 'UTF-8')]);
 }
 
 // Tentativa de login que falhou: não existe usuário autenticado, então
@@ -169,6 +182,19 @@ function buscarLogAtividades(PDO $pdo, array $filtros, int $pagina = 1, int $por
     if (!empty($filtros['usuario_id'])) {
         $condicoes[] = 'usuario_id = ?';
         $parametros[] = $filtros['usuario_id'];
+    }
+
+    if (!empty($filtros['operacao'])) {
+        $condicoes[] = 'operacao = ?';
+        $parametros[] = $filtros['operacao'];
+    }
+
+    // Busca livre: qualquer referência que apareça na descrição (nome do
+    // aluno, nosso número, turma...), no nome de quem fez ou no IP.
+    if (($filtros['busca'] ?? '') !== '') {
+        $condicoes[] = '(descricao LIKE ? OR usuario_nome LIKE ? OR ip LIKE ?)';
+        $termo = '%' . $filtros['busca'] . '%';
+        array_push($parametros, $termo, $termo, $termo);
     }
 
     $where = $condicoes ? 'WHERE ' . implode(' AND ', $condicoes) : '';
