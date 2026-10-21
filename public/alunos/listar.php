@@ -20,40 +20,10 @@ $busca = trim($filtro['busca']);
 $situacao = $filtro['situacao'];
 $financeiro = $podeVerFinanceiro ? $filtro['financeiro'] : '';
 
-$where = '1=1';
-$params = [];
-
-if ($busca !== '') {
-    $where .= ' AND (a.nome LIKE ? OR a.cpf LIKE ? OR a.telefone LIKE ? OR a.email LIKE ? OR a.ra LIKE ?)';
-    $like = "%{$busca}%";
-    $params = [$like, $like, $like, $like, $like];
-}
-
-if ($situacao === 'ativo') {
-    $where .= ' AND a.ativo = 1';
-} elseif ($situacao === 'inativo') {
-    $where .= ' AND a.ativo = 0';
-}
-
-$having = '';
-if ($financeiro === 'atraso') {
-    $having = 'HAVING valor_vencido > 0';
-} elseif ($financeiro === 'em_dia') {
-    $having = 'HAVING valor_vencido = 0';
-}
-
-$stmt = $pdo->prepare(
-    "SELECT a.*,
-            (SELECT COUNT(*) FROM matriculas m WHERE m.aluno_id = a.id AND m.status = 'ativa') AS matriculas_ativas,
-            (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr
-              WHERE cr.aluno_id = a.id AND cr.status = 'pendente' AND cr.data_vencimento < CURDATE()) AS valor_vencido
-     FROM alunos a
-     WHERE {$where}
-     {$having}
-     ORDER BY a.nome ASC"
-);
-$stmt->execute($params);
-$alunos = $stmt->fetchAll();
+$alunos = buscarListaAlunos($pdo, $filtro, $podeVerFinanceiro);
+$lista = estadoListagem('alunos', colunasListaAlunos());
+$alunos = ordenarLinhas($alunos, $lista);
+$alunosPagina = paginarLinhas($alunos, $lista);
 
 $temFiltro = $busca !== '' || $situacao !== '' || $financeiro !== '';
 
@@ -67,6 +37,7 @@ $acoesMassa = array_values(array_filter([
     usuarioPodeAtivarAluno() ? ['Desativar selecionados', 'bi-toggle-off', '/alunos/massa.php', 'desativar', 'Desativar {n} aluno(s)? Eles não conseguem entrar no portal nem ser matriculados.', ''] : null,
     usuarioPodeExcluirAluno() ? ['Excluir selecionados', 'bi-trash3', '/alunos/massa.php', 'excluir', 'Excluir {n} aluno(s)? Quem tiver matrícula ou lançamento financeiro não é excluído. Esta ação não pode ser desfeita.', 'text-danger'] : null,
 ]));
+$linkImprimir = '/alunos/imprimir.php';
 $emAtraso = array_filter($alunos, fn ($a) => (float) $a['valor_vencido'] > 0);
 $informacoes = array_values(array_filter([
     ['Alunos na lista', count($alunos), ''],
@@ -118,16 +89,16 @@ require __DIR__ . '/../../includes/layout_header.php';
             <thead>
                 <tr>
                     <th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th>
-                    <th>RA</th><th>Nome</th><th>CPF</th><th>Telefone</th><th class="text-center">Matrículas ativas</th>
-                    <?php if ($podeVerFinanceiro): ?><th>Financeiro</th><?php endif; ?>
-                    <th>Situação</th><th class="text-end">Ações</th>
+                    <?= thOrdenavel('RA', 'ra', $lista) ?><?= thOrdenavel('Nome', 'nome', $lista) ?><?= thOrdenavel('CPF', 'cpf', $lista) ?><?= thOrdenavel('Telefone', 'telefone', $lista) ?><?= thOrdenavel('Matrículas ativas', 'matriculas', $lista, 'text-center') ?>
+                    <?php if ($podeVerFinanceiro): ?><?= thOrdenavel('Financeiro', 'financeiro', $lista) ?><?php endif; ?>
+                    <?= thOrdenavel('Situação', 'situacao', $lista) ?><th class="text-end">Ações</th>
                 </tr>
             </thead>
             <tbody>
             <?php if (!$alunos): ?>
                 <tr><td colspan="9" class="text-center text-muted py-4">Nenhum aluno encontrado.</td></tr>
             <?php endif; ?>
-            <?php foreach ($alunos as $a): ?>
+            <?php foreach ($alunosPagina as $a): ?>
                 <tr class="cursor-pointer" onclick="window.location='/alunos/form.php?id=<?= (int) $a['id'] ?>'">
                     <td style="width: 36px;" onclick="event.stopPropagation();"><input type="checkbox" class="form-check-input selecao-item" value="<?= (int) $a['id'] ?>"></td>
                     <td class="text-nowrap small text-muted"><?= e($a['ra'] ?: '-') ?></td>
@@ -164,6 +135,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             </tbody>
         </table>
     </div>
+    <?= rodapePaginacao($lista) ?>
 </div>
 
 </div><!-- /pedidos-conteudo -->

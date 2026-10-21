@@ -33,6 +33,7 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute($params);
 $contas = $stmt->fetchAll();
+$contas = ordenarLinhas($contas, estadoListagem('contas_pagar', colunasListaPagar())); // mesma ordem da tela
 
 $totalExibido = array_sum(array_column($contas, 'valor'));
 $labelStatus = match ($status) {

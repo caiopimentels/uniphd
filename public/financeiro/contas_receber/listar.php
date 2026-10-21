@@ -28,8 +28,12 @@ $dataFim = $_SESSION['filtro_contas_receber']['data_fim'];
 $busca = $_SESSION['filtro_contas_receber']['busca'];
 
 $contas = buscarContasReceber($pdo, $_SESSION['filtro_contas_receber']);
+$lista = estadoListagem('contas_receber', colunasListaReceber());
+$contas = ordenarLinhas($contas, $lista);
+// Agrupada, a lista sai inteira (os grupos abrem e fecham); sem agrupar, por página.
+$contasPagina = $agrupar ? $contas : paginarLinhas($contas, $lista);
 $totalExibido = array_sum(array_map('valorExibidoReceber', $contas));
-$grupos = agruparContasReceber($contas, $agrupar);
+$grupos = agruparContasReceber($contasPagina, $agrupar);
 
 // Parcelas em aberto podem ser marcadas para as ações do painel lateral.
 $temPendente = (bool) array_filter($contas, fn ($c) => $c['status'] === 'pendente');
@@ -118,7 +122,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle" id="tabela-receber">
-            <thead><tr><th style="width: 36px;"><?php if ($temPendente): ?><input type="checkbox" class="form-check-input" id="lote-todos" title="Selecionar todas as pendentes"><?php endif; ?></th><th>Descrição</th><th>Aluno/Categoria</th><th>Vencimento</th><th class="text-end">Valor</th><th>Pago em</th><th class="text-end">Valor pago</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+            <thead><tr><th style="width: 36px;"><?php if ($temPendente): ?><input type="checkbox" class="form-check-input" id="lote-todos" title="Selecionar todas as pendentes"><?php endif; ?></th><?= thOrdenavel('Descrição', 'descricao', $lista) ?><?= thOrdenavel('Aluno/Categoria', 'aluno', $lista) ?><?= thOrdenavel('Vencimento', 'vencimento', $lista) ?><?= thOrdenavel('Valor', 'valor', $lista, 'text-end') ?><?= thOrdenavel('Pago em', 'pago_em', $lista) ?><?= thOrdenavel('Valor pago', 'valor_pago', $lista, 'text-end') ?><?= thOrdenavel('Status', 'status', $lista) ?><th class="text-end">Ações</th></tr></thead>
             <tbody>
             <?php if (!$contas): ?>
                 <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma conta encontrada.</td></tr>
@@ -205,6 +209,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
             <?php endif; ?>
         </table>
     </div>
+    <?= $agrupar ? '' : rodapePaginacao($lista) ?>
 </div>
 
 </div><!-- /pedidos-conteudo -->

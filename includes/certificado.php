@@ -454,16 +454,7 @@ function pdfDocumentoEmitido(int $documentoId, string $html): ?string
 // primeira letra de cada palavra maiúscula; de/da/do/dos/das/e minúsculos).
 function cidadeCertificado(array $config): string
 {
-    $cidade = trim(preg_replace('/\s+/u', ' ', (string) ($config['empresa_cidade'] ?? '')));
-    if ($cidade !== '') {
-        $palavras = explode(' ', mb_strtolower($cidade, 'UTF-8'));
-        foreach ($palavras as $i => $palavra) {
-            if ($i === 0 || !in_array($palavra, ['de', 'da', 'do', 'dos', 'das', 'e', "d'"], true)) {
-                $palavras[$i] = mb_convert_case($palavra, MB_CASE_TITLE, 'UTF-8');
-            }
-        }
-        $cidade = implode(' ', $palavras);
-    }
+    $cidade = formatarNomePessoa((string) ($config['empresa_cidade'] ?? ''));
     $uf = mb_strtoupper(trim((string) ($config['empresa_uf'] ?? '')), 'UTF-8');
     return $cidade !== '' && $uf !== '' ? $cidade . ' - ' . $uf : $cidade;
 }

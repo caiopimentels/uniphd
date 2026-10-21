@@ -46,6 +46,9 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute($params);
 $contas = $stmt->fetchAll();
+$lista = estadoListagem('contas_pagar', colunasListaPagar());
+$contas = ordenarLinhas($contas, $lista);
+$contasPagina = paginarLinhas($contas, $lista);
 
 $totalExibido = array_sum(array_column($contas, 'valor'));
 $labelTotal = match ($status) {
@@ -87,12 +90,12 @@ require __DIR__ . '/../../../includes/layout_header.php';
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
-            <thead><tr><th>Descrição</th><th>Fornecedor/Categoria</th><th>Vencimento</th><th class="text-end">Valor</th><th>Status</th><th class="text-end">Ações</th></tr></thead>
+            <thead><tr><?= thOrdenavel('Descrição', 'descricao', $lista) ?><?= thOrdenavel('Fornecedor/Categoria', 'fornecedor', $lista) ?><?= thOrdenavel('Vencimento', 'vencimento', $lista) ?><?= thOrdenavel('Valor', 'valor', $lista, 'text-end') ?><?= thOrdenavel('Status', 'status', $lista) ?><th class="text-end">Ações</th></tr></thead>
             <tbody>
             <?php if (!$contas): ?>
                 <tr><td colspan="6" class="text-center text-muted py-4">Nenhuma conta encontrada.</td></tr>
             <?php endif; ?>
-            <?php foreach ($contas as $c): ?>
+            <?php foreach ($contasPagina as $c): ?>
                 <?php $vencida = $c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d'); ?>
                 <tr>
                     <td>
@@ -125,6 +128,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
             <?php endif; ?>
         </table>
     </div>
+    <?= rodapePaginacao($lista) ?>
 </div>
 
 <?php require __DIR__ . '/../../../includes/layout_footer.php'; ?>

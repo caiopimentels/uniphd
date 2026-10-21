@@ -172,6 +172,25 @@ function formatPercent($value): string
     return number_format((float) $value, 2, ',', '.') . '%';
 }
 
+// Nome de pessoa padronizado: só a primeira letra de cada palavra maiúscula,
+// e de/da/do/das/dos/e minúsculos no meio ("MARIA DA SILVA" e "maria da
+// silva" viram "Maria da Silva"). Espaços repetidos saem.
+function formatarNomePessoa(string $nome): string
+{
+    $nome = trim(preg_replace('/\s+/u', ' ', $nome));
+    if ($nome === '') {
+        return '';
+    }
+    $palavras = explode(' ', mb_strtolower($nome, 'UTF-8'));
+    foreach ($palavras as $i => $palavra) {
+        if ($i === 0 || !in_array($palavra, ['de', 'da', 'do', 'dos', 'das', 'e', "d'"], true)) {
+            $palavras[$i] = mb_convert_case($palavra, MB_CASE_TITLE, 'UTF-8');
+        }
+    }
+    // D'ávila → D'Ávila
+    return preg_replace_callback("/'(\\p{Ll})/u", fn ($m) => "'" . mb_strtoupper($m[1], 'UTF-8'), implode(' ', $palavras));
+}
+
 function contaStatusBadgeClass(string $status): string
 {
     return match ($status) {

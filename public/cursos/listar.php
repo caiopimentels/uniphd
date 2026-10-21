@@ -6,24 +6,11 @@ exigirCursos();
 $pdo = getDB();
 $busca = trim($_GET['busca'] ?? '');
 
-$where = '1=1';
-$params = [];
-if ($busca !== '') {
-    $where .= ' AND c.nome LIKE ?';
-    $params[] = "%{$busca}%";
-}
-
-$stmt = $pdo->prepare(
-    "SELECT c.*,
-            (SELECT COUNT(*) FROM turmas t JOIN situacoes_turma s ON s.id = t.situacao_id
-              WHERE t.curso_id = c.id AND s.comportamento IN ('aberta', 'em_andamento')) AS turmas_abertas,
-            (SELECT COUNT(*) FROM turmas t WHERE t.curso_id = c.id) AS turmas_total
-     FROM cursos c
-     WHERE {$where}
-     ORDER BY c.ativo DESC, c.nome ASC"
-);
-$stmt->execute($params);
-$cursos = $stmt->fetchAll();
+$cursos = buscarListaCursos($pdo, $busca);
+$lista = estadoListagem('cursos', colunasListaCursos());
+$cursos = ordenarLinhas($cursos, $lista);
+$cursosPagina = paginarLinhas($cursos, $lista);
+$linkImprimir = '/cursos/imprimir.php?' . http_build_query(['busca' => $busca]);
 
 $pageTitle = 'Cursos';
 $pageBreadcrumb = 'Acadêmico';
@@ -66,12 +53,12 @@ require __DIR__ . '/../../includes/layout_header.php';
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
-            <thead><tr><th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th><th>Curso</th><th class="text-end">Carga horária</th><th class="text-center">Turmas abertas</th><th class="text-center">Turmas (total)</th><th>Situação</th><th class="text-end">Ações</th></tr></thead>
+            <thead><tr><th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th><?= thOrdenavel('Curso', 'curso', $lista) ?><?= thOrdenavel('Carga horária', 'carga', $lista, 'text-end') ?><?= thOrdenavel('Turmas abertas', 'abertas', $lista, 'text-center') ?><?= thOrdenavel('Turmas (total)', 'total', $lista, 'text-center') ?><?= thOrdenavel('Situação', 'situacao', $lista) ?><th class="text-end">Ações</th></tr></thead>
             <tbody>
             <?php if (!$cursos): ?>
                 <tr><td colspan="7" class="text-center text-muted py-4">Nenhum curso cadastrado.</td></tr>
             <?php endif; ?>
-            <?php foreach ($cursos as $c): ?>
+            <?php foreach ($cursosPagina as $c): ?>
                 <tr class="cursor-pointer" onclick="window.location='/cursos/form.php?id=<?= (int) $c['id'] ?>'">
                     <td style="width: 36px;" onclick="event.stopPropagation();"><input type="checkbox" class="form-check-input selecao-item" value="<?= (int) $c['id'] ?>"></td>
                     <td><?= e($c['nome']) ?></td>
@@ -98,6 +85,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             </tbody>
         </table>
     </div>
+    <?= rodapePaginacao($lista) ?>
 </div>
 
 </div><!-- /pedidos-conteudo -->

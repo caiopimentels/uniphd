@@ -34,7 +34,7 @@
         ?>
     </div>
 
-    <div class="col-12"><div class="fw-semibold mt-2">Endereço <span class="text-muted fw-normal small">o</span></div></div>
+    <div class="col-12"><div class="fw-semibold mt-2">Endereço <span class="text-muted fw-normal small"></span></div></div>
     <div class="col-md-3">
         <label class="form-label">CEP *</label>
         <input type="text" name="cep" class="form-control" required inputmode="numeric" data-mascara="cep" autocomplete="postal-code" value="<?= e($d['cep'] ?? '') ?>">

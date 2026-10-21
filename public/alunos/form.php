@@ -59,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$podeEditarAluno) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $nome = input('nome');
+    $nome = formatarNomePessoa(input('nome'));
     $dataNascimento = input('data_nascimento');
     $cpf = input('cpf');
     $rg = input('rg');
@@ -82,11 +82,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $enderecosPost[] = [
             'apelido' => trim($_POST['endereco_apelido'][$i] ?? ''),
             'cep' => trim($_POST['endereco_cep'][$i] ?? ''),
-            'logradouro' => trim($logradouroEndereco),
+            'logradouro' => formatarNomePessoa($logradouroEndereco),
             'numero' => trim($_POST['endereco_numero'][$i] ?? ''),
-            'complemento' => trim($_POST['endereco_complemento'][$i] ?? ''),
-            'bairro' => trim($_POST['endereco_bairro'][$i] ?? ''),
-            'cidade' => trim($_POST['endereco_cidade'][$i] ?? ''),
+            'complemento' => formatarNomePessoa($_POST['endereco_complemento'][$i] ?? ''),
+            'bairro' => formatarNomePessoa($_POST['endereco_bairro'][$i] ?? ''),
+            'cidade' => formatarNomePessoa($_POST['endereco_cidade'][$i] ?? ''),
             'uf' => strtoupper(trim($_POST['endereco_uf'][$i] ?? '')),
             'principal' => $i === $enderecoPrincipalIndice ? 1 : 0,
         ];

@@ -724,6 +724,31 @@ function buscarContasReceber(PDO $pdo, array $filtros): array
     return $stmt->fetchAll();
 }
 
+// Colunas que dá para ordenar nas listas (ver includes/listagem.php).
+function colunasListaReceber(): array
+{
+    return [
+        'descricao' => 'descricao',
+        'aluno' => fn ($c) => $c['aluno_nome'] ?: $c['categoria_nome'],
+        'vencimento' => 'data_vencimento',
+        'valor' => 'valor',
+        'pago_em' => fn ($c) => $c['status'] === 'pago' ? $c['data_recebimento'] : null,
+        'valor_pago' => fn ($c) => $c['status'] === 'pago' ? ($c['valor_recebido'] ?? $c['valor']) : null,
+        'status' => fn ($c) => contaStatusLabel($c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d') ? 'vencido' : $c['status']),
+    ];
+}
+
+function colunasListaPagar(): array
+{
+    return [
+        'descricao' => 'descricao',
+        'fornecedor' => fn ($c) => $c['fornecedor_nome'] ?: $c['categoria_nome'],
+        'vencimento' => 'data_vencimento',
+        'valor' => 'valor',
+        'status' => fn ($c) => contaStatusLabel($c['status']),
+    ];
+}
+
 function opcoesAgruparReceber(): array
 {
     return ['' => 'Sem agrupar (por data)', 'turma' => 'Por turma', 'curso' => 'Por curso', 'aluno' => 'Por aluno', 'tipo' => 'Por tipo'];

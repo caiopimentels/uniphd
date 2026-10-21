@@ -34,39 +34,10 @@ $busca = $filtro['busca'];
 $situacoesFiltro = $filtro['situacoes'];
 $cursosFiltro = $filtro['cursos'];
 
-$where = '1=1';
-$params = [];
-
-if ($busca !== '') {
-    $where .= ' AND (t.nome LIKE ? OR c.nome LIKE ? OR p.nome LIKE ?)';
-    $like = "%{$busca}%";
-    array_push($params, $like, $like, $like);
-}
-if ($situacoesFiltro) {
-    $where .= ' AND t.situacao_id IN (' . implode(',', array_fill(0, count($situacoesFiltro), '?')) . ')';
-    array_push($params, ...$situacoesFiltro);
-}
-if ($cursosFiltro) {
-    $where .= ' AND t.curso_id IN (' . implode(',', array_fill(0, count($cursosFiltro), '?')) . ')';
-    array_push($params, ...$cursosFiltro);
-}
-
-$stmt = $pdo->prepare(
-    "SELECT t.*, c.nome AS curso_nome, p.nome AS professor_nome,
-            s.nome AS situacao_nome, s.cor AS situacao_cor, s.comportamento,
-            (SELECT COUNT(*) FROM matriculas m WHERE m.turma_id = t.id AND m.status = 'ativa') AS alunos_ativos,
-            " . SQL_RESERVAS_TURMA . " AS reservas,
-            (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr JOIN matriculas m ON m.id = cr.matricula_id
-              WHERE m.turma_id = t.id AND cr.status = 'pendente' AND cr.data_vencimento < CURDATE()) AS valor_vencido
-     FROM turmas t
-     JOIN cursos c ON c.id = t.curso_id
-     JOIN situacoes_turma s ON s.id = t.situacao_id
-     LEFT JOIN professores p ON p.id = t.professor_id
-     WHERE {$where}
-     ORDER BY t.data_inicio IS NULL DESC, t.data_inicio DESC, t.nome"
-);
-$stmt->execute($params);
-$turmas = $stmt->fetchAll();
+$turmas = buscarListaTurmas($pdo, $filtro);
+$lista = estadoListagem('turmas', colunasListaTurmas());
+$turmas = ordenarLinhas($turmas, $lista);
+$turmasPagina = paginarLinhas($turmas, $lista);
 
 $totalAlunos = array_sum(array_column($turmas, 'alunos_ativos'));
 $totalVagasLivres = array_sum(array_map(fn ($t) => max(0, (int) $t['vagas'] - (int) $t['alunos_ativos'] - (int) $t['reservas']), $turmas));
@@ -174,15 +145,15 @@ require __DIR__ . '/../../includes/layout_header.php';
             <thead>
                 <tr>
                     <th style="width: 36px;"><input type="checkbox" class="form-check-input" id="marcar-todos"></th>
-                    <th>Turma</th><th>Curso</th><th class="col-secundaria">Professor</th><th class="col-secundaria">Período</th>
-                    <th class="text-end col-secundaria">Mensalidade</th><th class="text-center">Alunos</th><th>Situação</th><th></th>
+                    <?= thOrdenavel('Turma', 'turma', $lista) ?><?= thOrdenavel('Curso', 'curso', $lista) ?><?= thOrdenavel('Professor', 'professor', $lista, 'col-secundaria') ?><?= thOrdenavel('Período', 'periodo', $lista, 'col-secundaria') ?>
+                    <?= thOrdenavel('Mensalidade', 'mensalidade', $lista, 'text-end col-secundaria') ?><?= thOrdenavel('Alunos', 'alunos', $lista, 'text-center') ?><?= thOrdenavel('Situação', 'situacao', $lista) ?><th></th>
                 </tr>
             </thead>
             <tbody>
             <?php if (!$turmas): ?>
                 <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma turma encontrada.</td></tr>
             <?php endif; ?>
-            <?php foreach ($turmas as $t): ?>
+            <?php foreach ($turmasPagina as $t): ?>
                 <?php $lotada = (int) $t['alunos_ativos'] + (int) $t['reservas'] >= (int) $t['vagas']; ?>
                 <tr class="cursor-pointer" onclick="abrirLinhaTurma(event, '/turmas/visualizar.php?id=<?= (int) $t['id'] ?>')">
                     <td>
@@ -249,11 +220,17 @@ require __DIR__ . '/../../includes/layout_header.php';
             </tbody>
         </table>
     </div>
+    <?= rodapePaginacao($lista) ?>
 </div>
 
 </div><!-- /pedidos-conteudo -->
 
 <aside class="pedidos-lateral">
+    <div class="lateral-bloco">
+        <div class="lateral-titulo">Lista</div>
+        <a href="/turmas/imprimir.php" target="_blank" class="lateral-acao"><i class="bi bi-printer"></i> Imprimir lista</a>
+    </div>
+
     <div class="lateral-bloco">
         <div class="lateral-titulo">Alterar em massa</div>
         <?php if (usuarioPodeEditarTurma() || usuarioPodeConcluirTurma()): ?>
@@ -277,7 +254,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="lateral-titulo">Informações</div>
 
         <div class="lateral-info">
-            <span class="lateral-info-rotulo">Turmas na página</span>
+            <span class="lateral-info-rotulo">Turmas na lista</span>
             <span class="lateral-info-valor"><?= count($turmas) ?></span>
         </div>
         <div class="lateral-info">

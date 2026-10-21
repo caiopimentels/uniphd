@@ -21,6 +21,7 @@ $agrupar = array_key_exists($agrupar, opcoesAgruparReceber()) ? $agrupar : '';
 $abertos = array_map('strval', (array) ($_GET['abertos'] ?? []));
 
 $contas = buscarContasReceber($pdo, $filtros);
+$contas = ordenarLinhas($contas, estadoListagem('contas_receber', colunasListaReceber())); // mesma ordem da tela
 $grupos = agruparContasReceber($contas, $agrupar);
 $totalExibido = array_sum(array_map('valorExibidoReceber', $contas));
 $labelStatus = match ($status) {

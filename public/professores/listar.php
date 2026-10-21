@@ -23,6 +23,12 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute($params);
 $professores = $stmt->fetchAll();
+$lista = estadoListagem('professores', [
+    'nome' => 'nome', 'formacao' => 'formacao', 'telefone' => 'telefone', 'email' => 'email',
+    'turmas' => 'turmas_abertas', 'situacao' => fn ($p) => $p['ativo'] ? 'Ativo' : 'Inativo',
+]);
+$professores = ordenarLinhas($professores, $lista);
+$professoresPagina = paginarLinhas($professores, $lista);
 
 $pageTitle = 'Professores';
 $pageBreadcrumb = 'Acadêmico';
@@ -64,12 +70,12 @@ require __DIR__ . '/../../includes/layout_header.php';
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
-            <thead><tr><th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th><th>Nome</th><th>Formação</th><th>Telefone</th><th>E-mail</th><th class="text-center">Turmas abertas</th><th>Situação</th><th class="text-end">Ações</th></tr></thead>
+            <thead><tr><th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th><?= thOrdenavel('Nome', 'nome', $lista) ?><?= thOrdenavel('Formação', 'formacao', $lista) ?><?= thOrdenavel('Telefone', 'telefone', $lista) ?><?= thOrdenavel('E-mail', 'email', $lista) ?><?= thOrdenavel('Turmas abertas', 'turmas', $lista, 'text-center') ?><?= thOrdenavel('Situação', 'situacao', $lista) ?><th class="text-end">Ações</th></tr></thead>
             <tbody>
             <?php if (!$professores): ?>
                 <tr><td colspan="8" class="text-center text-muted py-4">Nenhum professor cadastrado.</td></tr>
             <?php endif; ?>
-            <?php foreach ($professores as $p): ?>
+            <?php foreach ($professoresPagina as $p): ?>
                 <tr class="cursor-pointer" onclick="window.location='/professores/form.php?id=<?= (int) $p['id'] ?>'">
                     <td style="width: 36px;" onclick="event.stopPropagation();"><input type="checkbox" class="form-check-input selecao-item" value="<?= (int) $p['id'] ?>"></td>
                     <td><?= e($p['nome']) ?></td>
@@ -97,6 +103,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             </tbody>
         </table>
     </div>
+    <?= rodapePaginacao($lista) ?>
 </div>
 
 </div><!-- /pedidos-conteudo -->

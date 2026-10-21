@@ -10,7 +10,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $pdo = getDB();
 
-$nome = input('nome');
+$nome = formatarNomePessoa(input('nome'));
 $cpf = input('cpf');
 $telefone = input('telefone');
 $email = input('email');

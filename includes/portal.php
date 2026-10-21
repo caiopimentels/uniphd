@@ -632,17 +632,18 @@ function garantirCobrancaParcelaPortal(PDO $pdo, array $parcela): array
 function lerDadosAlunoPortal(): array
 {
     return [
-        'nome' => trim(input('nome')),
+        'nome' => formatarNomePessoa(input('nome')),
         'cpf' => apenasDigitos(input('cpf')),
         'data_nascimento' => input('data_nascimento'),
         'telefone' => trim(input('telefone')),
         'email' => mb_strtolower(trim(input('email'))),
         'cep' => input('cep'),
-        'logradouro' => trim(input('logradouro')),
+        // Endereço na mesma regra do nome (Rua da Paz); a UF fica maiúscula.
+        'logradouro' => formatarNomePessoa(input('logradouro')),
         'numero' => trim(input('numero')),
-        'complemento' => trim(input('complemento')),
-        'bairro' => trim(input('bairro')),
-        'cidade' => trim(input('cidade')),
+        'complemento' => formatarNomePessoa(input('complemento')),
+        'bairro' => formatarNomePessoa(input('bairro')),
+        'cidade' => formatarNomePessoa(input('cidade')),
         'uf' => strtoupper(trim(input('uf'))),
     ];
 }
@@ -874,8 +875,8 @@ function lerDadosCertificacaoAluno(PDO $pdo, bool $exigir, bool $soSite, ?int $g
 {
     $possui = $_POST['possui_graduacao'] ?? '';
     $d = [
-        'nome_mae' => mb_substr(trim(input('nome_mae')), 0, 150),
-        'nome_pai' => mb_substr(trim(input('nome_pai')), 0, 150),
+        'nome_mae' => mb_substr(formatarNomePessoa(input('nome_mae')), 0, 150),
+        'nome_pai' => mb_substr(formatarNomePessoa(input('nome_pai')), 0, 150),
         'possui_graduacao' => $possui === '1' ? 1 : ($possui === '0' ? 0 : null),
         'graduacao_id' => (int) ($_POST['graduacao_id'] ?? 0) ?: null,
     ];
