@@ -7,8 +7,8 @@
     <div class="turmas-grade">
         <?php foreach ($turmasCartao as $t): $restam = (int) $t['vagas_site']; ?>
             <a class="turma-card" href="/portal/turma.php?id=<?= (int) $t['id'] ?>">
-                <div class="capa">
-                    <?php if ($t['portal_imagem']): ?><img src="<?= e($t['portal_imagem']) ?>" alt=""><?php else: ?><i class="bi bi-mortarboard"></i><?php endif; ?>
+                <div class="capa <?= $t['portal_imagem'] ? 'capa-turma' : '' ?>">
+                    <?php if ($t['portal_imagem']): ?><img class="fundo" src="<?= e($t['portal_imagem']) ?>" alt=""><img class="arte" src="<?= e($t['portal_imagem']) ?>" alt=""><?php else: ?><i class="bi bi-mortarboard"></i><?php endif; ?>
                 </div>
                 <div class="corpo">
                     <div class="curso"><?= e($t['curso_nome']) ?></div>

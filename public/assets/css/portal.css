@@ -100,8 +100,14 @@ body.portal { background: var(--bg); color: var(--text); font-family: 'Inter', s
 .turmas-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
 .turma-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; text-decoration: none; color: var(--text) !important; transition: box-shadow .15s, transform .15s; }
 .turma-card:hover { box-shadow: 0 8px 24px rgba(0,0,0,.08); transform: translateY(-2px); }
-.turma-card .capa { aspect-ratio: 16 / 9; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 2.4rem; }
-.turma-card .capa img { width: 100%; height: 100%; object-fit: cover; }
+.turma-card .capa { aspect-ratio: 4 / 5; background: var(--accent-soft); display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 2.4rem; }
+/* Capa da turma (cartão e página): mesmo tamanho para todas, sem cortar a
+   arte — a imagem aparece inteira e o espaço que sobra é preenchido por ela
+   mesma, desfocada. */
+.capa-turma { position: relative; overflow: hidden; background: #111; }
+.capa-turma .fundo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; filter: blur(24px) brightness(.7); transform: scale(1.2); }
+.capa-turma .arte { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.capa-turma-pagina { aspect-ratio: 4 / 3; max-height: 480px; width: 100%; border-radius: 1rem; margin-bottom: 1rem; }
 .turma-card .corpo { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .turma-card .curso { font-weight: 650; font-size: 1.05rem; line-height: 1.3; }
 .turma-card .info { color: var(--text-muted); font-size: .88rem; }

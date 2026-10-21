@@ -39,7 +39,10 @@ require __DIR__ . '/../../includes/portal_header.php';
 <div class="row g-4 mt-1">
     <div class="col-lg-7">
         <?php if ($turma['portal_imagem']): ?>
-            <img src="<?= e($turma['portal_imagem']) ?>" alt="" class="w-100 rounded-4 mb-3" style="aspect-ratio: 16/9; object-fit: cover;">
+            <div class="capa-turma capa-turma-pagina">
+                <img class="fundo" src="<?= e($turma['portal_imagem']) ?>" alt="">
+                <img class="arte" src="<?= e($turma['portal_imagem']) ?>" alt="">
+            </div>
         <?php endif; ?>
         <h1 class="portal-titulo"><?= e($turma['curso_nome']) ?></h1>
         <p class="portal-sub mb-3"><?= e($turma['nome']) ?></p>
