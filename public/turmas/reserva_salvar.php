@@ -13,7 +13,7 @@ $pdo = getDB();
 $turmaId = (int) ($_POST['turma_id'] ?? 0);
 $alunoId = (int) ($_POST['aluno_id'] ?? 0) ?: null;
 $nome = mb_substr(input('nome'), 0, 150);
-$telefone = mb_substr(input('telefone'), 0, 30);
+$telefone = mb_substr(apenasDigitos(input('telefone')), 0, 30);
 $observacao = mb_substr(input('observacao'), 0, 255);
 $voltar = '/turmas/visualizar.php?id=' . $turmaId;
 

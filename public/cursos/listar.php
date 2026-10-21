@@ -10,6 +10,9 @@ $cursos = buscarListaCursos($pdo, $busca);
 $lista = estadoListagem('cursos', colunasListaCursos());
 $cursos = ordenarLinhas($cursos, $lista);
 $cursosPagina = paginarLinhas($cursos, $lista);
+$telaColunas = 'cursos';
+$definicaoColunas = definicaoColunasTela($pdo, $telaColunas);
+$colunas = colunasVisiveis($pdo, $telaColunas, $definicaoColunas);
 $linkImprimir = '/cursos/imprimir.php?' . http_build_query(['busca' => $busca]);
 
 $pageTitle = 'Cursos';
@@ -31,6 +34,13 @@ $informacoes = [
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
 
+<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes" onclick="alternarLateral()">
+    <i class="bi bi-list-ul"></i> Ações e totais
+</button>
+
+<div class="pedidos-layout">
+<div class="pedidos-conteudo">
+
 <div class="filtros">
     <form method="get">
         <input type="text" name="busca" class="form-control form-control-sm" placeholder="Buscar por nome"
@@ -40,32 +50,21 @@ require __DIR__ . '/../../includes/layout_header.php';
     <?php if ($busca !== ''): ?>
         <span class="filtro-chip">Busca: <?= e($busca) ?> <a href="/cursos/listar.php">×</a></span>
     <?php endif; ?>
-    <span class="ms-auto text-muted small"><?= count($cursos) ?> registro(s)</span>
+    <div class="ms-auto"><?php require __DIR__ . '/../../includes/painel_colunas.php'; ?></div>
 </div>
-
-<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes" onclick="alternarLateral()">
-    <i class="bi bi-list-ul"></i> Ações e totais
-</button>
-
-<div class="pedidos-layout">
-<div class="pedidos-conteudo">
 
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle">
-            <thead><tr><th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th><?= thOrdenavel('Curso', 'curso', $lista) ?><?= thOrdenavel('Carga horária', 'carga', $lista, 'text-end') ?><?= thOrdenavel('Turmas abertas', 'abertas', $lista, 'text-center') ?><?= thOrdenavel('Turmas (total)', 'total', $lista, 'text-center') ?><?= thOrdenavel('Situação', 'situacao', $lista) ?><th class="text-end">Ações</th></tr></thead>
+            <thead><tr><th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th><?= cabecalhoColunas($colunas, $lista) ?><th class="text-end">Ações</th></tr></thead>
             <tbody>
             <?php if (!$cursos): ?>
-                <tr><td colspan="7" class="text-center text-muted py-4">Nenhum curso cadastrado.</td></tr>
+                <tr><td colspan="<?= count($colunas) + 2 ?>" class="text-center text-muted py-4">Nenhum curso cadastrado.</td></tr>
             <?php endif; ?>
             <?php foreach ($cursosPagina as $c): ?>
                 <tr class="cursor-pointer" onclick="window.location='/cursos/form.php?id=<?= (int) $c['id'] ?>'">
                     <td style="width: 36px;" onclick="event.stopPropagation();"><input type="checkbox" class="form-check-input selecao-item" value="<?= (int) $c['id'] ?>"></td>
-                    <td><?= e($c['nome']) ?></td>
-                    <td class="text-end"><?= $c['carga_horaria'] ? (int) $c['carga_horaria'] . ' h' : '-' ?></td>
-                    <td class="text-center"><?= (int) $c['turmas_abertas'] ?></td>
-                    <td class="text-center"><?= (int) $c['turmas_total'] ?></td>
-                    <td><?= $c['ativo'] ? '<span class="badge text-bg-success">Ativo</span>' : '<span class="badge text-bg-secondary">Inativo</span>' ?></td>
+                    <?= celulasColunas($colunas, $c) ?>
                     <td class="text-end" onclick="event.stopPropagation();">
                         <?php if (usuarioPodeExcluirCurso()): ?>
                         <form action="/cursos/remover.php" method="post" class="d-inline" onsubmit="return confirm(<?= e(json_encode('Excluir ' . $c['nome'] . '? Só é possível se não houver turma ligada a ele. Esta ação não pode ser desfeita.')) ?>);">

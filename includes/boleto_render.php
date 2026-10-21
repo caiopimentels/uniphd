@@ -54,7 +54,7 @@ $especie = $conta ? ($conta['itau_especie'] ?? '04') : '04';
 $siglaEspecie = explode(' - ', especiesItau()[$especie] ?? 'ME')[0];
 $numeroDocumento = 'CR' . str_pad((string) $parcela['id'], 6, '0', STR_PAD_LEFT);
 $valor = formatMoney($parcela['valor']);
-$cpfPagador = $aluno['cpf'] ?? '';
+$cpfPagador = cpfFormatado($aluno['cpf'] ?? '');
 ?>
 <!doctype html>
 <html lang="pt-br">

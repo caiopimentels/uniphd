@@ -56,7 +56,7 @@ documentoCabecalho($doc, 'Comprovante de matrícula', 'Matrícula nº ' . str_pa
             <div><div class="rotulo">CPF</div><?= e(cpfFormatado($m['aluno_cpf']) ?: '-') ?></div>
             <div><div class="rotulo">RG</div><?= e($m['aluno_rg'] ?: '-') ?></div>
             <div><div class="rotulo">Nascimento</div><?= formatDate($m['data_nascimento']) ?></div>
-            <div><div class="rotulo">Telefone</div><?= e($m['aluno_telefone'] ?: '-') ?></div>
+            <div><div class="rotulo">Telefone</div><?= e(telefoneFormatado($m['aluno_telefone']) ?: '-') ?></div>
             <div class="dois"><div class="rotulo">E-mail</div><?= e($m['aluno_email'] ?: '-') ?></div>
             <?php if ($endereco): ?>
                 <div class="todo"><div class="rotulo">Endereço</div><?= e(implode(', ', array_filter([$endereco['logradouro'], $endereco['numero'], $endereco['complemento'], $endereco['bairro']]))

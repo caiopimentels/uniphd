@@ -87,7 +87,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <tr class="cursor-pointer" onclick="window.location='/alunos/form.php?id=<?= (int) $i['aluno_id'] ?>&tab=financeiro'">
                     <td><?= e($i['nome']) ?></td>
                     <td class="small"><?= e($i['turmas'] ?: 'Lançamento avulso') ?></td>
-                    <td><?= e($i['telefone'] ?: '-') ?></td>
+                    <td><?= e(telefoneFormatado($i['telefone']) ?: '-') ?></td>
                     <td class="text-center"><?= (int) $i['parcelas'] ?></td>
                     <td><?= formatDate($i['vencimento_mais_antigo']) ?></td>
                     <td class="text-end <?= (int) $i['dias_atraso'] > 30 ? 'estoque-baixo' : '' ?>"><?= (int) $i['dias_atraso'] ?></td>

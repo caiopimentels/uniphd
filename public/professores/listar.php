@@ -48,6 +48,13 @@ $informacoes = [
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
 
+<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes" onclick="alternarLateral()">
+    <i class="bi bi-list-ul"></i> Ações e totais
+</button>
+
+<div class="pedidos-layout">
+<div class="pedidos-conteudo">
+
 <div class="filtros">
     <form method="get">
         <input type="text" name="busca" class="form-control form-control-sm" placeholder="Buscar por nome, CPF ou e-mail"
@@ -57,15 +64,7 @@ require __DIR__ . '/../../includes/layout_header.php';
     <?php if ($busca !== ''): ?>
         <span class="filtro-chip">Busca: <?= e($busca) ?> <a href="/professores/listar.php">×</a></span>
     <?php endif; ?>
-    <span class="ms-auto text-muted small"><?= count($professores) ?> registro(s)</span>
 </div>
-
-<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes" onclick="alternarLateral()">
-    <i class="bi bi-list-ul"></i> Ações e totais
-</button>
-
-<div class="pedidos-layout">
-<div class="pedidos-conteudo">
 
 <div class="card">
     <div class="table-responsive">

@@ -635,7 +635,7 @@ function lerDadosAlunoPortal(): array
         'nome' => formatarNomePessoa(input('nome')),
         'cpf' => apenasDigitos(input('cpf')),
         'data_nascimento' => input('data_nascimento'),
-        'telefone' => trim(input('telefone')),
+        'telefone' => apenasDigitos(input('telefone')),
         'email' => mb_strtolower(trim(input('email'))),
         'cep' => input('cep'),
         // Endereço na mesma regra do nome (Rua da Paz); a UF fica maiúscula.

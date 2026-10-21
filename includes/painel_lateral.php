@@ -4,14 +4,15 @@
 //   $acoesMassa   = [['rotulo', 'icone bi-*', 'url do POST', 'acao', 'pergunta de confirmação', 'classe extra'(, 'js ao clicar')], ...]
 //                   com o 7º item, o botão só chama aquele JS (a página cuida do resto).
 //   $informacoes  = [['rotulo', 'valor já formatado', 'classe extra'], ...]
-//   $linkImprimir = endereço da impressão da lista (opcional)
+//   $linkImprimir = endereço da impressão da lista (opcional; com linhas
+//                   marcadas, imprime só elas)
 // A seleção (caixinhas .selecao-item) e o envio ficam em /assets/js/selecao-massa.js.
 ?>
 <aside class="pedidos-lateral">
     <?php if (!empty($linkImprimir)): ?>
     <div class="lateral-bloco">
         <div class="lateral-titulo">Lista</div>
-        <a href="<?= e($linkImprimir) ?>" target="_blank" class="lateral-acao"><i class="bi bi-printer"></i> Imprimir lista</a>
+        <a href="<?= e($linkImprimir) ?>" target="_blank" class="lateral-acao" data-imprimir=".selecao-item"><i class="bi bi-printer"></i> Imprimir lista</a>
     </div>
     <?php endif; ?>
     <?php if ($acoesMassa): ?>

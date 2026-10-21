@@ -112,7 +112,7 @@ montarBusca({
     itens: () => alunos,
     combina: (a, termo, digitos) => normalizar(a.nome).includes(termo) || (digitos && String(a.cpf || '').replace(/\D/g, '').includes(digitos)),
     titulo: (a) => a.nome,
-    detalhe: (a) => a.cpf ? 'CPF ' + a.cpf : 'Sem CPF cadastrado',
+    detalhe: (a) => a.cpf ? 'CPF ' + String(a.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : 'Sem CPF cadastrado',
     vazio: 'Nenhum aluno encontrado.',
 });
 // Texto digitado sem escolher da lista não vale: avisa antes de salvar.

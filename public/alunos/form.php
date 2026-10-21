@@ -61,16 +61,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$podeEditarAluno) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nome = formatarNomePessoa(input('nome'));
     $dataNascimento = input('data_nascimento');
-    $cpf = input('cpf');
+    // CPF e telefones: só os números no banco (a máscara é da tela).
+    $cpf = apenasDigitos(input('cpf'));
     $rg = input('rg');
-    $telefone = input('telefone');
+    $telefone = apenasDigitos(input('telefone'));
     $email = input('email');
     $observacao = input('observacao');
     // Mãe, pai e graduação: na secretaria não são obrigatórios.
     [$certificacao, $errosCertificacao] = lerDadosCertificacaoAluno($pdo, false, false, (int) ($aluno['graduacao_id'] ?? 0) ?: null);
     // Sem a permissão de ativar, o campo fica como estava (aluno novo: ativo).
     $ativo = $podeAtivarAluno ? (isset($_POST['ativo']) ? 1 : 0) : (int) ($aluno['ativo'] ?? 1);
-    $telefonesExtrasPost = array_filter(array_map('trim', $_POST['telefones_extra'] ?? []));
+    $telefonesExtrasPost = array_filter(array_map(fn ($t) => apenasDigitos((string) $t), $_POST['telefones_extra'] ?? []));
 
     $enderecosPost = [];
     $enderecoPrincipalIndice = (int) ($_POST['endereco_principal'] ?? 0);
@@ -302,7 +303,7 @@ require __DIR__ . '/../../includes/layout_header.php';
 
                 <div class="col-md-3">
                     <label class="form-label">CPF</label>
-                    <input type="text" name="cpf" class="form-control" value="<?= e($aluno['cpf'] ?? '') ?>"
+                    <input type="text" name="cpf" class="form-control" inputmode="numeric" data-mascara="cpf" value="<?= e(cpfFormatado($aluno['cpf'] ?? '')) ?>"
                            onblur="validarCampoDocumento(this)" oninput="this.classList.remove('is-invalid')">
                     <div class="invalid-feedback">CPF inválido.</div>
                 </div>
@@ -334,14 +335,14 @@ require __DIR__ . '/../../includes/layout_header.php';
 
                 <div class="col-md-3">
                     <label class="form-label">Telefone principal</label>
-                    <input type="text" name="telefone" class="form-control" value="<?= e($aluno['telefone'] ?? '') ?>">
+                    <input type="tel" name="telefone" class="form-control" data-mascara="telefone" value="<?= e(telefoneFormatado($aluno['telefone'] ?? '')) ?>">
                 </div>
                 <div class="col-md-9">
                     <label class="form-label">Outros telefones</label>
                     <div id="telefones-extras">
                         <?php foreach ($telefonesExtras as $tel): ?>
                             <div class="input-group mb-1">
-                                <input type="text" name="telefones_extra[]" class="form-control" value="<?= e($tel) ?>">
+                                <input type="tel" name="telefones_extra[]" class="form-control" data-mascara="telefone" value="<?= e(telefoneFormatado($tel)) ?>">
                                 <button type="button" class="btn btn-outline-danger" onclick="this.closest('.input-group').remove()"><i class="bi bi-trash"></i></button>
                             </div>
                         <?php endforeach; ?>
@@ -798,7 +799,7 @@ function adicionarTelefone() {
     const div = document.createElement('div');
     div.className = 'input-group mb-1';
     div.innerHTML = `
-        <input type="text" name="telefones_extra[]" class="form-control">
+        <input type="tel" name="telefones_extra[]" class="form-control" data-mascara="telefone">
         <button type="button" class="btn btn-outline-danger" onclick="this.closest('.input-group').remove()"><i class="bi bi-trash"></i></button>
     `;
     container.appendChild(div);

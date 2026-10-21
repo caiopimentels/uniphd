@@ -11,8 +11,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $pdo = getDB();
 
 $nome = formatarNomePessoa(input('nome'));
-$cpf = input('cpf');
-$telefone = input('telefone');
+$cpf = apenasDigitos(input('cpf'));
+$telefone = apenasDigitos(input('telefone'));
 $email = input('email');
 
 if ($nome === '') {

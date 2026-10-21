@@ -40,3 +40,4 @@ require_once __DIR__ . '/smtp_mailer.php';
 require_once __DIR__ . '/auditoria.php';
 require_once __DIR__ . '/listagem.php';
 require_once __DIR__ . '/listas_academico.php';
+require_once __DIR__ . '/colunas_telas.php';

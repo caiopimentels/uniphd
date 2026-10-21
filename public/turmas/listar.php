@@ -38,6 +38,9 @@ $turmas = buscarListaTurmas($pdo, $filtro);
 $lista = estadoListagem('turmas', colunasListaTurmas());
 $turmas = ordenarLinhas($turmas, $lista);
 $turmasPagina = paginarLinhas($turmas, $lista);
+$telaColunas = 'turmas';
+$definicaoColunas = definicaoColunasTela($pdo, $telaColunas);
+$colunas = colunasVisiveis($pdo, $telaColunas, $definicaoColunas);
 
 $totalAlunos = array_sum(array_column($turmas, 'alunos_ativos'));
 $totalVagasLivres = array_sum(array_map(fn ($t) => max(0, (int) $t['vagas'] - (int) $t['alunos_ativos'] - (int) $t['reservas']), $turmas));
@@ -65,6 +68,13 @@ $pageAction = usuarioPodeCriarTurma() ? '<a href="/turmas/form.php" class="btn b
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
 
+<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes" onclick="alternarLateral()">
+    <i class="bi bi-list-ul"></i> Ações e totais
+</button>
+
+<div class="pedidos-layout">
+<div class="pedidos-conteudo">
+
 <form method="get" id="form-filtros">
     <input type="hidden" name="f" value="1">
     <div class="barra-filtros">
@@ -77,6 +87,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <i class="bi bi-search"></i>
             <input type="text" name="busca" value="<?= e($busca) ?>" placeholder="Pesquisar por turma, curso ou professor">
         </div>
+        <div class="ms-auto"><?php $colunasParte = 'botao'; require __DIR__ . '/../../includes/painel_colunas.php'; ?></div>
     </div>
 
     <?php if ($chips || $busca !== ''): ?>
@@ -131,13 +142,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         </div>
     </div>
 </form>
-
-<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes" onclick="alternarLateral()">
-    <i class="bi bi-list-ul"></i> Ações e totais
-</button>
-
-<div class="pedidos-layout">
-<div class="pedidos-conteudo">
+<?php $colunasParte = 'painel'; require __DIR__ . '/../../includes/painel_colunas.php'; ?>
 
 <div class="card">
     <div class="table-responsive" style="overflow: visible;">
@@ -145,13 +150,12 @@ require __DIR__ . '/../../includes/layout_header.php';
             <thead>
                 <tr>
                     <th style="width: 36px;"><input type="checkbox" class="form-check-input" id="marcar-todos"></th>
-                    <?= thOrdenavel('Turma', 'turma', $lista) ?><?= thOrdenavel('Curso', 'curso', $lista) ?><?= thOrdenavel('Professor', 'professor', $lista, 'col-secundaria') ?><?= thOrdenavel('Período', 'periodo', $lista, 'col-secundaria') ?>
-                    <?= thOrdenavel('Mensalidade', 'mensalidade', $lista, 'text-end col-secundaria') ?><?= thOrdenavel('Alunos', 'alunos', $lista, 'text-center') ?><?= thOrdenavel('Situação', 'situacao', $lista) ?><th></th>
+                    <?= cabecalhoColunas($colunas, $lista) ?><th></th>
                 </tr>
             </thead>
             <tbody>
             <?php if (!$turmas): ?>
-                <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma turma encontrada.</td></tr>
+                <tr><td colspan="<?= count($colunas) + 2 ?>" class="text-center text-muted py-4">Nenhuma turma encontrada.</td></tr>
             <?php endif; ?>
             <?php foreach ($turmasPagina as $t): ?>
                 <?php $lotada = (int) $t['alunos_ativos'] + (int) $t['reservas'] >= (int) $t['vagas']; ?>
@@ -160,20 +164,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                         <input type="checkbox" class="form-check-input checkbox-turma" value="<?= (int) $t['id'] ?>"
                                data-alunos="<?= (int) $t['alunos_ativos'] ?>">
                     </td>
-                    <td>
-                        <?= e($t['nome']) ?>
-                        <?php if ($t['horario']): ?><div class="small text-muted"><?= e($t['horario']) ?></div><?php endif; ?>
-                    </td>
-                    <td><?= e($t['curso_nome']) ?></td>
-                    <td class="col-secundaria"><?= e($t['professor_nome'] ?: '-') ?></td>
-                    <td class="col-secundaria"><?= e(periodoTurma($t)) ?></td>
-                    <td class="text-end col-secundaria"><?= formatMoney($t['valor_mensalidade']) ?><?php if ($t['valor_total'] !== null && (float) $t['valor_total'] > 0): ?><div class="small text-muted">total <?= formatMoney($t['valor_total']) ?></div><?php endif; ?></td>
-                    <td class="text-center">
-                        <?= (int) $t['alunos_ativos'] ?>/<?= (int) $t['vagas'] ?>
-                        <?php if ($t['reservas']): ?><div class="small text-muted" title="Vagas reservadas pela secretaria"><i class="bi bi-bookmark"></i> +<?= (int) $t['reservas'] ?> reserv.</div><?php endif; ?>
-                        <?php if ($lotada): ?><span class="badge text-bg-warning">Lotada</span><?php endif; ?>
-                    </td>
-                    <td><?= badgeSituacaoTurma($t['situacao_nome'], $t['situacao_cor']) ?></td>
+                    <?= celulasColunas($colunas, $t) ?>
                     <td>
                         <div class="dropdown">
                             <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="dropdown">
@@ -228,7 +219,7 @@ require __DIR__ . '/../../includes/layout_header.php';
 <aside class="pedidos-lateral">
     <div class="lateral-bloco">
         <div class="lateral-titulo">Lista</div>
-        <a href="/turmas/imprimir.php" target="_blank" class="lateral-acao"><i class="bi bi-printer"></i> Imprimir lista</a>
+        <a href="/turmas/imprimir.php" target="_blank" class="lateral-acao" data-imprimir=".checkbox-turma"><i class="bi bi-printer"></i> Imprimir lista</a>
     </div>
 
     <div class="lateral-bloco">

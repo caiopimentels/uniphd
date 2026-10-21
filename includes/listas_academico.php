@@ -12,8 +12,15 @@ function buscarListaAlunos(PDO $pdo, array $filtro, bool $comFinanceiro): array
     $params = [];
     $busca = trim((string) ($filtro['busca'] ?? ''));
     if ($busca !== '') {
-        $where .= ' AND (a.nome LIKE ? OR a.cpf LIKE ? OR a.telefone LIKE ? OR a.email LIKE ? OR a.ra LIKE ?)';
+        $where .= ' AND (a.nome LIKE ? OR a.cpf LIKE ? OR a.telefone LIKE ? OR a.email LIKE ? OR a.ra LIKE ?';
         $params = array_fill(0, 5, "%{$busca}%");
+        // CPF e telefone ficam só com números: "045.365" ou "(77) 9810" também acham.
+        $digitos = apenasDigitos($busca);
+        if (strlen($digitos) >= 3) {
+            $where .= ' OR a.cpf LIKE ? OR a.telefone LIKE ?';
+            array_push($params, "%{$digitos}%", "%{$digitos}%");
+        }
+        $where .= ')';
     }
     if (($filtro['situacao'] ?? '') === 'ativo') {
         $where .= ' AND a.ativo = 1';
@@ -47,6 +54,8 @@ function colunasListaAlunos(): array
         'nome' => 'nome',
         'cpf' => 'cpf',
         'telefone' => 'telefone',
+        'email' => 'email',
+        'nascimento' => 'data_nascimento',
         'matriculas' => 'matriculas_ativas',
         'financeiro' => 'valor_vencido',
         'situacao' => fn ($a) => $a['ativo'] ? 'Ativo' : 'Inativo',
@@ -97,7 +106,9 @@ function colunasListaTurmas(): array
         'professor' => 'professor_nome',
         'periodo' => 'data_inicio',
         'mensalidade' => 'valor_mensalidade',
+        'valor_total' => 'valor_total',
         'alunos' => 'alunos_ativos',
+        'vagas_livres' => fn ($t) => max(0, (int) $t['vagas'] - (int) $t['alunos_ativos'] - (int) $t['reservas']),
         'situacao' => 'situacao_nome',
     ];
 }

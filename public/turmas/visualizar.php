@@ -467,7 +467,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <i class="bi bi-bookmark-fill text-warning"></i> <?= e($r['nome']) ?>
                             <?php if ($r['aluno_id']): ?><div class="small text-muted">aluno cadastrado</div><?php endif; ?>
                         </td>
-                        <td><?= e($r['telefone'] ?: '-') ?></td>
+                        <td><?= e(telefoneFormatado($r['telefone']) ?: '-') ?></td>
                         <td><?= formatDate(substr((string) $r['criado_em'], 0, 10)) ?></td>
                         <td class="text-end text-muted">-</td>
                         <?php if ($podeVerFinanceiro): ?><td class="text-end text-muted">-</td><td class="text-muted">-</td><?php endif; ?>
@@ -500,7 +500,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <?php endif; ?>
                             <?php endif; ?><?= e($m['aluno_nome']) ?>
                         </td>
-                        <td><?= e($m['aluno_telefone'] ?: '-') ?></td>
+                        <td><?= e(telefoneFormatado($m['aluno_telefone']) ?: '-') ?></td>
                         <td><?= formatDate($m['data_matricula']) ?></td>
                         <td class="text-end">
                             <?= formatMoney(valorMensalidadeComDesconto((float) $m['valor_mensalidade'], (float) $m['desconto_percentual'])) ?>
@@ -649,7 +649,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <input type="text" name="nome" id="reserva-nome" class="form-control" required maxlength="150" list="reserva-alunos" autocomplete="off" placeholder="Nome (escolha um aluno da lista ou digite)">
                     <datalist id="reserva-alunos">
                         <?php foreach ($alunosReserva as $a): ?>
-                            <option value="<?= e($a['nome']) ?>" data-id="<?= (int) $a['id'] ?>"><?= e($a['cpf'] ? 'CPF ' . $a['cpf'] : 'aluno cadastrado') ?></option>
+                            <option value="<?= e($a['nome']) ?>" data-id="<?= (int) $a['id'] ?>"><?= e($a['cpf'] ? 'CPF ' . cpfFormatado($a['cpf']) : 'aluno cadastrado') ?></option>
                         <?php endforeach; ?>
                     </datalist>
                     <div class="form-text" id="reserva-aluno-aviso"></div>
@@ -657,7 +657,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <div class="row g-3">
                     <div class="col-md-5">
                         <label class="form-label">Telefone</label>
-                        <input type="text" name="telefone" class="form-control" maxlength="30">
+                        <input type="tel" name="telefone" class="form-control" maxlength="30" data-mascara="telefone">
                     </div>
                     <div class="col-md-7">
                         <label class="form-label">Observação</label>

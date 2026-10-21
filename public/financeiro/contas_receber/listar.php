@@ -32,6 +32,13 @@ $lista = estadoListagem('contas_receber', colunasListaReceber());
 $contas = ordenarLinhas($contas, $lista);
 // Agrupada, a lista sai inteira (os grupos abrem e fecham); sem agrupar, por página.
 $contasPagina = $agrupar ? $contas : paginarLinhas($contas, $lista);
+$telaColunas = 'contas_receber';
+$definicaoColunas = definicaoColunasTela($pdo, $telaColunas);
+$colunas = colunasVisiveis($pdo, $telaColunas, $definicaoColunas);
+// Onde cai a coluna Valor (os totais do grupo e do rodapé ficam embaixo
+// dela); sem ela visível — ou sendo a primeira —, o total vai junto do texto.
+$posicaoValor = array_search('valor', array_keys($colunas), true);
+$posicaoValor = $posicaoValor === false || $posicaoValor === 0 ? null : $posicaoValor;
 $totalExibido = array_sum(array_map('valorExibidoReceber', $contas));
 $grupos = agruparContasReceber($contasPagina, $agrupar);
 
@@ -79,10 +86,17 @@ $queryImpressao = http_build_query([
 $pageTitle = 'Contas a receber';
 $pageBreadcrumb = 'Financeiro';
 $activeMenu = 'contas-receber';
-$pageAction = '<a href="/financeiro/contas_receber/imprimir.php?' . e($queryImpressao) . '" target="_blank" id="link-imprimir" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Imprimir</a> '
+$pageAction = '<a href="/financeiro/contas_receber/imprimir.php?' . e($queryImpressao) . '" target="_blank" id="link-imprimir" data-imprimir=".lote-item" class="btn btn-outline-secondary" title="Com parcelas marcadas, imprime só elas"><i class="bi bi-printer"></i> Imprimir</a> '
     . (usuarioPodeLancarReceber() ? '<a href="/financeiro/contas_receber/form.php" class="btn btn-brand"><i class="bi bi-plus-lg"></i> Incluir lançamento</a>' : '');
 require __DIR__ . '/../../../includes/layout_header.php';
 ?>
+
+<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes nao-imprimir" onclick="alternarLateral()">
+    <i class="bi bi-list-ul"></i> Ações e totais
+</button>
+
+<div class="pedidos-layout">
+<div class="pedidos-conteudo">
 
 <div class="filtros">
     <form method="get">
@@ -110,34 +124,30 @@ require __DIR__ . '/../../../includes/layout_header.php';
             <?php endforeach; ?>
         </select>
     </form>
+    <div class="ms-auto"><?php require __DIR__ . '/../../../includes/painel_colunas.php'; ?></div>
 </div>
-
-<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes nao-imprimir" onclick="alternarLateral()">
-    <i class="bi bi-list-ul"></i> Ações e totais
-</button>
-
-<div class="pedidos-layout">
-<div class="pedidos-conteudo">
 
 <div class="card">
     <div class="table-responsive">
         <table class="table table-hover mb-0 align-middle" id="tabela-receber">
-            <thead><tr><th style="width: 36px;"><?php if ($temPendente): ?><input type="checkbox" class="form-check-input" id="lote-todos" title="Selecionar todas as pendentes"><?php endif; ?></th><?= thOrdenavel('Descrição', 'descricao', $lista) ?><?= thOrdenavel('Aluno/Categoria', 'aluno', $lista) ?><?= thOrdenavel('Vencimento', 'vencimento', $lista) ?><?= thOrdenavel('Valor', 'valor', $lista, 'text-end') ?><?= thOrdenavel('Pago em', 'pago_em', $lista) ?><?= thOrdenavel('Valor pago', 'valor_pago', $lista, 'text-end') ?><?= thOrdenavel('Status', 'status', $lista) ?><th class="text-end">Ações</th></tr></thead>
+            <thead><tr><th style="width: 36px;"><?php if ($temPendente): ?><input type="checkbox" class="form-check-input" id="lote-todos" title="Selecionar todas as pendentes"><?php endif; ?></th><?= cabecalhoColunas($colunas, $lista) ?><th class="text-end">Ações</th></tr></thead>
             <tbody>
             <?php if (!$contas): ?>
-                <tr><td colspan="9" class="text-center text-muted py-4">Nenhuma conta encontrada.</td></tr>
+                <tr><td colspan="<?= count($colunas) + 2 ?>" class="text-center text-muted py-4">Nenhuma conta encontrada.</td></tr>
             <?php endif; ?>
             <?php $indiceGrupo = 0; foreach ($grupos as $grupo): $indiceGrupo++; $pendentesGrupo = array_filter($grupo['contas'], fn ($c) => $c['status'] === 'pendente'); ?>
                 <?php if ($agrupar): ?>
                     <tr class="table-light cabecalho-grupo cursor-pointer" data-grupo-id="<?= e($grupo['id']) ?>" title="Clique para abrir ou fechar">
                         <th onclick="event.stopPropagation();"><?php if ($pendentesGrupo && $temPendente): ?><input type="checkbox" class="form-check-input lote-grupo" data-grupo="<?= $indiceGrupo ?>" title="Selecionar as pendentes deste grupo"><?php endif; ?></th>
-                        <th colspan="3">
+                        <th colspan="<?= $posicaoValor ?? count($colunas) + 1 ?>">
                             <i class="bi bi-chevron-right seta-grupo me-1"></i>
-                            <?= e($grupo['nome']) ?> <span class="text-muted fw-normal small">· <?= count($grupo['contas']) ?> lançamento(s)</span>
+                            <?= e($grupo['nome']) ?> <span class="text-muted fw-normal small">· <?= count($grupo['contas']) ?> lançamento(s)<?= $posicaoValor === null ? ' · ' . formatMoney($grupo['total']) : '' ?></span>
                             <?php if ($grupo['aluno_id']): ?><a href="/alunos/form.php?id=<?= (int) $grupo['aluno_id'] ?>&tab=financeiro" class="small fw-normal ms-2" onclick="event.stopPropagation();">ver aluno</a><?php endif; ?>
                         </th>
+                        <?php if ($posicaoValor !== null): ?>
                         <th class="text-end"><?= formatMoney($grupo['total']) ?></th>
-                        <th colspan="4"></th>
+                        <th colspan="<?= count($colunas) - $posicaoValor ?>"></th>
+                        <?php endif; ?>
                     </tr>
                 <?php endif; ?>
             <?php foreach ($grupo['contas'] as $c): ?>
@@ -148,18 +158,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                             <input type="checkbox" class="form-check-input lote-item" value="<?= (int) $c['id'] ?>" data-grupo="<?= $indiceGrupo ?>" data-valor="<?= e((string) $c['valor']) ?>" data-aluno="<?= (int) $c['aluno_id'] ?>">
                         <?php endif; ?>
                     </td>
-                    <td><?= e($c['descricao']) ?><?php if ($c['forma_pagamento_id'] && ($nomeForma = meiosCobrancaForma($pdo, (int) $c['forma_pagamento_id'])['nome'])): ?><div class="small text-muted"><i class="bi bi-wallet2"></i> <?= e($nomeForma) ?></div><?php endif; ?><?php if ($seloBanco = seloBancoParcela($pdo, (int) $c['id'])): ?><div class="mt-1"><?= $seloBanco ?></div><?php endif; ?></td>
-                    <td><?= e($c['aluno_nome'] ?: $c['categoria_nome'] ?: '-') ?></td>
-                    <td class="text-nowrap <?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($c['data_vencimento']) ?></td>
-                    <td class="text-end text-nowrap">
-                    <?= formatMoney($c['valor']) ?>
-                    <?php if ($c['status'] === 'pendente' && $c['desconto_valor'] !== null): ?>
-                        <div class="small <?= (float) $c['desconto_valor'] > 0 ? 'text-success' : 'text-muted' ?>"><?= (float) $c['desconto_valor'] > 0 ? '− ' . formatMoney($c['desconto_valor']) . ' até ' . formatDate($c['desconto_ate'] ?: $c['data_vencimento']) : 'sem desconto' ?></div>
-                    <?php endif; ?>
-                </td>
-                    <td class="text-nowrap"><?= $c['status'] === 'pago' && $c['data_recebimento'] ? formatDate($c['data_recebimento']) : '-' ?></td>
-                    <td class="text-end text-nowrap"><?= $c['status'] === 'pago' ? '<span class="text-success fw-semibold">' . formatMoney($c['valor_recebido'] ?? $c['valor']) . '</span>' : '-' ?></td>
-                    <td><span class="badge <?= contaStatusBadgeClass($vencida ? 'vencido' : $c['status']) ?>"><?= contaStatusLabel($vencida ? 'vencido' : $c['status']) ?></span></td>
+                    <?= celulasColunas($colunas, $c) ?>
                     <td class="text-end text-nowrap" onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $c['aluno_id']): ?>
                             <?= botoesCobrancaParcela($pdo, $c) ?>
@@ -205,7 +204,13 @@ require __DIR__ . '/../../../includes/layout_header.php';
             <?php endforeach; ?>
             </tbody>
             <?php if ($contas): ?>
-            <tfoot><tr><th colspan="4" class="text-end"><?= e($labelTotal) ?></th><th class="text-end"><?= formatMoney($totalExibido) ?></th><th colspan="4"></th></tr></tfoot>
+            <tfoot><tr>
+                <?php if ($posicaoValor !== null): ?>
+                <th colspan="<?= $posicaoValor + 1 ?>" class="text-end"><?= e($labelTotal) ?></th><th class="text-end"><?= formatMoney($totalExibido) ?></th><th colspan="<?= count($colunas) - $posicaoValor ?>"></th>
+                <?php else: ?>
+                <th colspan="<?= count($colunas) + 2 ?>" class="text-end"><?= e($labelTotal) ?>: <?= formatMoney($totalExibido) ?></th>
+                <?php endif; ?>
+            </tr></tfoot>
             <?php endif; ?>
         </table>
     </div>

@@ -154,3 +154,88 @@ function rodapePaginacao(array $lista): string
         . '<select class="form-select form-select-sm" style="width:auto" onchange="window.location = this.value">' . $opcoes . '</select></label>'
         . '</div>';
 }
+
+/* ---------------- Colunas visíveis (escolhidas por usuário) ----------------
+ *
+ * Cada tela descreve as colunas em includes/colunas_telas.php:
+ *   'chave' => ['rotulo' => 'CPF', 'ordem' => 'cpf' (chave de ordenação ou null),
+ *               'classe' => 'text-end', 'padrao' => true (aparece de início),
+ *               'html' => fn ($linha) => '...' (já escapado),
+ *               'texto' => fn ($linha) => '...' (para a impressão)]
+ * A caixinha de seleção e a coluna de ações ficam fora (são fixas).
+ */
+
+// Chaves visíveis, na ordem escolhida pelo usuário (ou as padrão).
+function chavesColunasVisiveis(PDO $pdo, string $tela, array $definicao): array
+{
+    $stmt = $pdo->prepare('SELECT colunas FROM usuario_colunas_lista WHERE usuario_id = ? AND tela = ?');
+    $stmt->execute([usuarioAtualId(), $tela]);
+    $salvas = $stmt->fetchColumn();
+    $chaves = $salvas !== false
+        ? array_values(array_filter(explode(',', (string) $salvas), fn ($c) => isset($definicao[$c])))
+        : array_keys(array_filter($definicao, fn ($c) => $c['padrao'] ?? true));
+    return $chaves ?: [array_key_first($definicao)];
+}
+
+function colunasVisiveis(PDO $pdo, string $tela, array $definicao): array
+{
+    $colunas = [];
+    foreach (chavesColunasVisiveis($pdo, $tela, $definicao) as $chave) {
+        $colunas[$chave] = $definicao[$chave];
+    }
+    return $colunas;
+}
+
+function salvarColunasVisiveis(PDO $pdo, string $tela, array $chaves): void
+{
+    $pdo->prepare(
+        'INSERT INTO usuario_colunas_lista (usuario_id, tela, colunas) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE colunas = VALUES(colunas)'
+    )->execute([usuarioAtualId(), $tela, mb_substr(implode(',', $chaves), 0, 500)]);
+}
+
+function cabecalhoColunas(array $colunas, array $lista): string
+{
+    $html = '';
+    foreach ($colunas as $col) {
+        $html .= !empty($col['ordem'])
+            ? thOrdenavel($col['rotulo'], $col['ordem'], $lista, $col['classe'] ?? '')
+            : '<th class="' . e($col['classe'] ?? '') . '">' . e($col['rotulo']) . '</th>';
+    }
+    return $html;
+}
+
+function celulasColunas(array $colunas, array $linha): string
+{
+    $html = '';
+    foreach ($colunas as $col) {
+        $html .= '<td class="' . e($col['classe'] ?? '') . '">' . $col['html']($linha) . '</td>';
+    }
+    return $html;
+}
+
+// Impressão: só texto; números e valores à direita como na tela.
+function cabecalhoColunasImpressao(array $colunas): string
+{
+    $html = '';
+    foreach ($colunas as $col) {
+        $html .= '<th class="' . (str_contains($col['classe'] ?? '', 'text-end') ? 'text-end' : '') . '">' . e($col['rotulo']) . '</th>';
+    }
+    return $html;
+}
+
+function celulasColunasImpressao(array $colunas, array $linha): string
+{
+    $html = '';
+    foreach ($colunas as $col) {
+        $html .= '<td class="' . (str_contains($col['classe'] ?? '', 'text-end') ? 'text-end' : '') . '">' . e($col['texto']($linha)) . '</td>';
+    }
+    return $html;
+}
+
+// Impressão "só as selecionadas": ids[] na URL; sem ids, a lista toda.
+function filtrarSelecionadas(array $linhas): array
+{
+    $ids = array_filter(array_map('intval', (array) ($_GET['ids'] ?? [])));
+    return $ids ? array_values(array_filter($linhas, fn ($l) => in_array((int) $l['id'], $ids, true))) : $linhas;
+}

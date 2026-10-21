@@ -24,6 +24,9 @@ $alunos = buscarListaAlunos($pdo, $filtro, $podeVerFinanceiro);
 $lista = estadoListagem('alunos', colunasListaAlunos());
 $alunos = ordenarLinhas($alunos, $lista);
 $alunosPagina = paginarLinhas($alunos, $lista);
+$telaColunas = 'alunos';
+$definicaoColunas = definicaoColunasTela($pdo, $telaColunas);
+$colunas = colunasVisiveis($pdo, $telaColunas, $definicaoColunas);
 
 $temFiltro = $busca !== '' || $situacao !== '' || $financeiro !== '';
 
@@ -49,6 +52,13 @@ $informacoes = array_values(array_filter([
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
 
+<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes" onclick="alternarLateral()">
+    <i class="bi bi-list-ul"></i> Ações e totais
+</button>
+
+<div class="pedidos-layout">
+<div class="pedidos-conteudo">
+
 <div class="filtros">
     <form method="get" class="d-flex flex-wrap gap-2 align-items-center">
         <input type="text" name="busca" class="form-control filtro-controle" style="width:280px;"
@@ -73,15 +83,8 @@ require __DIR__ . '/../../includes/layout_header.php';
             <a href="/alunos/listar.php?busca=&situacao=&financeiro=" class="btn btn-sm btn-outline-secondary"><i class="bi bi-x-lg"></i> Limpar</a>
         <?php endif; ?>
     </form>
-    <span class="ms-auto text-muted small"><?= count($alunos) ?> registro(s)</span>
+    <div class="ms-auto"><?php require __DIR__ . '/../../includes/painel_colunas.php'; ?></div>
 </div>
-
-<button type="button" class="btn btn-outline-secondary btn-sm btn-acoes" onclick="alternarLateral()">
-    <i class="bi bi-list-ul"></i> Ações e totais
-</button>
-
-<div class="pedidos-layout">
-<div class="pedidos-conteudo">
 
 <div class="card">
     <div class="table-responsive">
@@ -89,33 +92,18 @@ require __DIR__ . '/../../includes/layout_header.php';
             <thead>
                 <tr>
                     <th style="width: 36px;"><input type="checkbox" class="form-check-input selecao-todos" title="Marcar todos"></th>
-                    <?= thOrdenavel('RA', 'ra', $lista) ?><?= thOrdenavel('Nome', 'nome', $lista) ?><?= thOrdenavel('CPF', 'cpf', $lista) ?><?= thOrdenavel('Telefone', 'telefone', $lista) ?><?= thOrdenavel('Matrículas ativas', 'matriculas', $lista, 'text-center') ?>
-                    <?php if ($podeVerFinanceiro): ?><?= thOrdenavel('Financeiro', 'financeiro', $lista) ?><?php endif; ?>
-                    <?= thOrdenavel('Situação', 'situacao', $lista) ?><th class="text-end">Ações</th>
+                    <?= cabecalhoColunas($colunas, $lista) ?>
+                    <th class="text-end">Ações</th>
                 </tr>
             </thead>
             <tbody>
             <?php if (!$alunos): ?>
-                <tr><td colspan="9" class="text-center text-muted py-4">Nenhum aluno encontrado.</td></tr>
+                <tr><td colspan="<?= count($colunas) + 2 ?>" class="text-center text-muted py-4">Nenhum aluno encontrado.</td></tr>
             <?php endif; ?>
             <?php foreach ($alunosPagina as $a): ?>
                 <tr class="cursor-pointer" onclick="window.location='/alunos/form.php?id=<?= (int) $a['id'] ?>'">
                     <td style="width: 36px;" onclick="event.stopPropagation();"><input type="checkbox" class="form-check-input selecao-item" value="<?= (int) $a['id'] ?>"></td>
-                    <td class="text-nowrap small text-muted"><?= e($a['ra'] ?: '-') ?></td>
-                    <td><?= e($a['nome']) ?></td>
-                    <td><?= e($a['cpf']) ?: '-' ?></td>
-                    <td><?= e($a['telefone']) ?: '-' ?></td>
-                    <td class="text-center"><?= (int) $a['matriculas_ativas'] ?></td>
-                    <?php if ($podeVerFinanceiro): ?>
-                    <td>
-                        <?php if ((float) $a['valor_vencido'] > 0): ?>
-                            <span class="badge text-bg-danger">Em atraso · <?= formatMoney($a['valor_vencido']) ?></span>
-                        <?php else: ?>
-                            <span class="badge text-bg-success">Em dia</span>
-                        <?php endif; ?>
-                    </td>
-                    <?php endif; ?>
-                    <td><?= $a['ativo'] ? '<span class="badge text-bg-success">Ativo</span>' : '<span class="badge text-bg-secondary">Inativo</span>' ?></td>
+                    <?= celulasColunas($colunas, $a) ?>
                     <td class="text-end" onclick="event.stopPropagation();">
                         <?php if (usuarioPodeExcluirAluno()): ?>
                         <form action="/alunos/remover.php" method="post" class="d-inline" onsubmit="return confirm(<?= e(json_encode('Excluir o cadastro de ' . $a['nome'] . '? Só é possível se ele não tiver matrícula nem lançamento financeiro. Esta ação não pode ser desfeita.')) ?>);">

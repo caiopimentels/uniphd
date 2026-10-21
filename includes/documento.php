@@ -78,12 +78,6 @@ function numeroPorExtenso(int $n): string
     return $txt[0];
 }
 
-function cpfFormatado(?string $cpf): string
-{
-    $d = preg_replace('/\D/', '', (string) $cpf);
-    return strlen($d) === 11 ? substr($d, 0, 3) . '.' . substr($d, 3, 3) . '.' . substr($d, 6, 3) . '-' . substr($d, 9) : (string) $cpf;
-}
-
 function cnpjFormatado(?string $cnpj): string
 {
     $d = preg_replace('/\D/', '', (string) $cnpj);

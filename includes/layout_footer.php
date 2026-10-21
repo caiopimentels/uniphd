@@ -144,6 +144,8 @@ function marcarTodosAlertas() {
 </script>
 <script src="/assets/js/filtro-periodo.js"></script>
 <script src="/assets/js/validar-documento.js"></script>
+<script src="<?= e(assetUrl('/assets/js/mascaras.js')) ?>"></script>
+<script src="<?= e(assetUrl('/assets/js/imprimir-lista.js')) ?>"></script>
 <script src="/assets/js/escapar-html.js"></script>
 <script src="/assets/js/csrf.js"></script>
 <script>

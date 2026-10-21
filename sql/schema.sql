@@ -77,6 +77,16 @@ CREATE TABLE usuarios (
     CONSTRAINT fk_usuario_perfil FOREIGN KEY (perfil_id) REFERENCES perfis(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Colunas visíveis (e a ordem) nas listas, por usuário; a impressão segue.
+CREATE TABLE usuario_colunas_lista (
+    usuario_id INT NOT NULL,
+    tela VARCHAR(40) NOT NULL,
+    colunas VARCHAR(500) NOT NULL, -- chaves separadas por vírgula, na ordem
+    atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (usuario_id, tela),
+    CONSTRAINT fk_colunas_lista_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE usuarios_reset_senha (
     id INT AUTO_INCREMENT PRIMARY KEY,
     usuario_id INT NOT NULL,
@@ -242,14 +252,14 @@ CREATE TABLE alunos (
     ra VARCHAR(9) DEFAULT NULL UNIQUE,
     nome VARCHAR(150) NOT NULL,
     data_nascimento DATE DEFAULT NULL,
-    cpf VARCHAR(14) DEFAULT NULL,
+    cpf VARCHAR(14) DEFAULT NULL, -- só números (a máscara é da tela)
     rg VARCHAR(20) DEFAULT NULL,
     nome_mae VARCHAR(150) DEFAULT NULL,
     nome_pai VARCHAR(150) DEFAULT NULL,
     possui_graduacao TINYINT(1) DEFAULT NULL,
     graduacao_id INT DEFAULT NULL,
     termo_certificacao_em DATETIME DEFAULT NULL,
-    telefone VARCHAR(20) DEFAULT NULL,
+    telefone VARCHAR(20) DEFAULT NULL, -- só números
     email VARCHAR(150) DEFAULT NULL,
     -- Portal do aluno: entra com CPF + esta senha (password_hash).
     senha_hash VARCHAR(255) DEFAULT NULL,
@@ -267,7 +277,7 @@ CREATE TABLE alunos (
 CREATE TABLE aluno_telefones (
     id INT AUTO_INCREMENT PRIMARY KEY,
     aluno_id INT NOT NULL,
-    telefone VARCHAR(20) NOT NULL,
+    telefone VARCHAR(20) NOT NULL, -- só números
     CONSTRAINT fk_aluno_telefone_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

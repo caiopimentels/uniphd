@@ -22,7 +22,17 @@ $abertos = array_map('strval', (array) ($_GET['abertos'] ?? []));
 
 $contas = buscarContasReceber($pdo, $filtros);
 $contas = ordenarLinhas($contas, estadoListagem('contas_receber', colunasListaReceber())); // mesma ordem da tela
+// Parcelas marcadas na tela: só elas, com os grupos abertos.
+$soSelecionadas = !empty($_GET['ids']);
+$contas = filtrarSelecionadas($contas);
 $grupos = agruparContasReceber($contas, $agrupar);
+if ($soSelecionadas) {
+    $abertos = array_column($grupos, 'id');
+}
+// Mesmas colunas da tela; os totais ficam embaixo da coluna Valor.
+$colunas = colunasVisiveis($pdo, 'contas_receber', definicaoColunasTela($pdo, 'contas_receber'));
+$posicaoValor = array_search('valor', array_keys($colunas), true);
+$posicaoValor = $posicaoValor === false || $posicaoValor === 0 ? null : $posicaoValor;
 $totalExibido = array_sum(array_map('valorExibidoReceber', $contas));
 $labelStatus = match ($status) {
     'pendente' => 'Pendentes',
@@ -70,7 +80,7 @@ $labelTotal = match ($status) {
 <main class="relatorio">
     <h1>Contas a receber</h1>
     <p class="relatorio-meta">
-        Situação: <?= e($labelStatus) ?>
+        <?= $soSelecionadas ? 'Somente as selecionadas &middot; ' : '' ?>Situação: <?= e($labelStatus) ?>
         <?php if ($filtros['busca'] !== ''): ?>&middot; Aluno: <?= e($filtros['busca']) ?><?php endif; ?>
         <?php if ($agrupar): ?>&middot; Agrupado <?= e(mb_strtolower(opcoesAgruparReceber()[$agrupar])) ?><?php endif; ?>
         <?php if ($dataInicio || $dataFim): ?>
@@ -80,50 +90,36 @@ $labelTotal = match ($status) {
     </p>
 
     <table>
-        <thead>
-            <tr>
-                <th>Descrição</th>
-                <th>Aluno/Categoria</th>
-                <th>Vencimento</th>
-                <th class="text-end">Valor</th>
-                <th>Pago em</th>
-                <th class="text-end">Valor pago</th>
-                <th>Status</th>
-            </tr>
-        </thead>
+        <thead><tr><?= cabecalhoColunasImpressao($colunas) ?></tr></thead>
         <tbody>
         <?php if (!$contas): ?>
-            <tr><td colspan="7">Nenhuma conta encontrada.</td></tr>
+            <tr><td colspan="<?= count($colunas) ?>">Nenhuma conta encontrada.</td></tr>
         <?php endif; ?>
         <?php foreach ($grupos as $grupo): $grupoAberto = !$agrupar || in_array($grupo['id'], $abertos, true); ?>
             <?php if ($agrupar): ?>
                 <tr class="linha-grupo">
-                    <th colspan="3"><?= e($grupo['nome']) ?> <span class="grupo-qtd">· <?= count($grupo['contas']) ?> lançamento(s)</span></th>
+                    <th colspan="<?= $posicaoValor ?? count($colunas) ?>"><?= e($grupo['nome']) ?> <span class="grupo-qtd">· <?= count($grupo['contas']) ?> lançamento(s)<?= $posicaoValor === null ? ' · ' . formatMoney($grupo['total']) : '' ?></span></th>
+                    <?php if ($posicaoValor !== null): ?>
                     <th class="text-end"><?= formatMoney($grupo['total']) ?></th>
-                    <th colspan="3"></th>
+                    <?php if (count($colunas) - $posicaoValor - 1 > 0): ?><th colspan="<?= count($colunas) - $posicaoValor - 1 ?>"></th><?php endif; ?>
+                    <?php endif; ?>
                 </tr>
             <?php endif; ?>
             <?php if ($grupoAberto): foreach ($grupo['contas'] as $c): ?>
-            <tr>
-                <td><?= e($c['descricao']) ?></td>
-                <td><?= e($c['aluno_nome'] ?: $c['categoria_nome'] ?: '-') ?></td>
-                <td><?= formatDate($c['data_vencimento']) ?></td>
-                <td class="text-end">
-                    <?= formatMoney($c['valor']) ?>
-                </td>
-                <td><?= $c['status'] === 'pago' && $c['data_recebimento'] ? formatDate($c['data_recebimento']) : '-' ?></td>
-                <td class="text-end"><?= $c['status'] === 'pago' ? formatMoney($c['valor_recebido'] ?? $c['valor']) : '-' ?></td>
-                <td><?= e(contaStatusLabel($c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d') ? 'vencido' : $c['status'])) ?></td>
-            </tr>
+            <tr><?= celulasColunasImpressao($colunas, $c) ?></tr>
             <?php endforeach; endif; ?>
         <?php endforeach; ?>
         </tbody>
         <?php if ($contas): ?>
         <tfoot>
             <tr>
-                <th colspan="3" class="text-end"><?= e($labelTotal) ?></th>
+                <?php if ($posicaoValor !== null): ?>
+                <th colspan="<?= $posicaoValor ?>" class="text-end"><?= e($labelTotal) ?></th>
                 <th class="text-end"><?= formatMoney($totalExibido) ?></th>
-                <th colspan="3"></th>
+                <?php if (count($colunas) - $posicaoValor - 1 > 0): ?><th colspan="<?= count($colunas) - $posicaoValor - 1 ?>"></th><?php endif; ?>
+                <?php else: ?>
+                <th colspan="<?= count($colunas) ?>" class="text-end"><?= e($labelTotal) ?>: <?= formatMoney($totalExibido) ?></th>
+                <?php endif; ?>
             </tr>
         </tfoot>
         <?php endif; ?>

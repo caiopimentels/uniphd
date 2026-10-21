@@ -63,7 +63,7 @@ documentoCabecalho($doc, 'Ficha do aluno', 'Cadastro nº ' . str_pad((string) $i
     <div class="doc-secao">
         <h2>Contato</h2>
         <div class="doc-grade">
-            <div class="dois"><div class="rotulo">Telefone(s)</div><?= e($telefones ? implode(' · ', $telefones) : '-') ?></div>
+            <div class="dois"><div class="rotulo">Telefone(s)</div><?= e($telefones ? implode(' · ', array_map('telefoneFormatado', $telefones)) : '-') ?></div>
             <div class="dois"><div class="rotulo">E-mail</div><?= e($aluno['email'] ?: '-') ?></div>
             <?php foreach ($enderecos as $end): ?>
                 <div class="todo"><div class="rotulo">Endereço<?= $end['apelido'] ? ' — ' . e($end['apelido']) : '' ?><?= $end['principal'] ? ' (principal)' : '' ?></div>

@@ -89,7 +89,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         <?php endif; ?>
         <div class="card"><div class="card-body">
             <div class="row g-3">
-                <div class="col-md-6"><div class="kpi-rotulo">Aluno</div><div><a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>"><?= e($matricula['aluno_nome']) ?></a><?= $matricula['aluno_ra'] ? ' · ' . e($matricula['aluno_ra']) : '' ?><?= $matricula['aluno_cpf'] ? ' · ' . e($matricula['aluno_cpf']) : '' ?></div></div>
+                <div class="col-md-6"><div class="kpi-rotulo">Aluno</div><div><a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>"><?= e($matricula['aluno_nome']) ?></a><?= $matricula['aluno_ra'] ? ' · ' . e($matricula['aluno_ra']) : '' ?><?= $matricula['aluno_cpf'] ? ' · ' . e(cpfFormatado($matricula['aluno_cpf'])) : '' ?></div></div>
                 <div class="col-md-6"><div class="kpi-rotulo">Turma</div><div><a href="/turmas/visualizar.php?id=<?= (int) $matricula['turma_id'] ?>"><?= e($matricula['curso_nome']) ?> · <?= e($matricula['turma_nome']) ?></a></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Data da matrícula</div><div><?= formatDate($matricula['data_matricula']) ?></div>
                     <div class="small text-muted">lançada em <?= formatDateTime($matricula['criado_em']) ?></div></div>

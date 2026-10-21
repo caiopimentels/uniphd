@@ -730,6 +730,7 @@ function colunasListaReceber(): array
     return [
         'descricao' => 'descricao',
         'aluno' => fn ($c) => $c['aluno_nome'] ?: $c['categoria_nome'],
+        'turma' => fn ($c) => $c['turma_nome'] ? $c['curso_nome'] . ' · ' . $c['turma_nome'] : null,
         'vencimento' => 'data_vencimento',
         'valor' => 'valor',
         'pago_em' => fn ($c) => $c['status'] === 'pago' ? $c['data_recebimento'] : null,
@@ -745,7 +746,8 @@ function colunasListaPagar(): array
         'fornecedor' => fn ($c) => $c['fornecedor_nome'] ?: $c['categoria_nome'],
         'vencimento' => 'data_vencimento',
         'valor' => 'valor',
-        'status' => fn ($c) => contaStatusLabel($c['status']),
+        'pago_em' => fn ($c) => $c['status'] === 'pago' ? $c['data_pagamento'] : null,
+        'status' => fn ($c) => contaStatusLabel($c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d') ? 'vencido' : $c['status']),
     ];
 }
 

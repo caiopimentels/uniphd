@@ -63,7 +63,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <div class="kpi-rotulo">Pagador</div>
             <div class="mb-2">
                 <?php if ($aluno): ?>
-                    <a href="/alunos/form.php?id=<?= (int) $aluno['id'] ?>"><?= e($aluno['nome']) ?></a><?= $aluno['cpf'] ? ' · CPF ' . e($aluno['cpf']) : '' ?>
+                    <a href="/alunos/form.php?id=<?= (int) $aluno['id'] ?>"><?= e($aluno['nome']) ?></a><?= $aluno['cpf'] ? ' · CPF ' . e(cpfFormatado($aluno['cpf'])) : '' ?>
                 <?php else: ?>-<?php endif; ?>
             </div>
 

@@ -229,6 +229,24 @@ function linkWhatsapp(?string $numero, string $mensagem = ''): ?string
     return $url;
 }
 
+// CPF e telefone ficam no banco só com números; na tela, sempre com máscara.
+function cpfFormatado(?string $cpf): string
+{
+    $d = preg_replace('/\D/', '', (string) $cpf);
+    return strlen($d) === 11 ? substr($d, 0, 3) . '.' . substr($d, 3, 3) . '.' . substr($d, 6, 3) . '-' . substr($d, 9) : (string) $cpf;
+}
+
+// (77) 98100-4911 (celular) ou (77) 3421-1234 (fixo); outro tamanho sai como veio.
+function telefoneFormatado(?string $telefone): string
+{
+    $d = preg_replace('/\D/', '', (string) $telefone);
+    return match (strlen($d)) {
+        11 => '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 5) . '-' . substr($d, 7),
+        10 => '(' . substr($d, 0, 2) . ') ' . substr($d, 2, 4) . '-' . substr($d, 6),
+        default => (string) $telefone,
+    };
+}
+
 function apenasDigitos(string $valor): string
 {
     return preg_replace('/\D/', '', $valor) ?? '';

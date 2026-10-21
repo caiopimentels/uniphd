@@ -310,7 +310,7 @@ require __DIR__ . '/../../includes/layout_header.php';
 <?php endif; ?>
 
 <?php if ($reserva): ?>
-    <div class="alert alert-info"><i class="bi bi-bookmark-check"></i> Matrícula na vaga reservada para <strong><?= e($reserva['nome']) ?></strong><?= $reserva['telefone'] ? ' (' . e($reserva['telefone']) . ')' : '' ?>.
+    <div class="alert alert-info"><i class="bi bi-bookmark-check"></i> Matrícula na vaga reservada para <strong><?= e($reserva['nome']) ?></strong><?= $reserva['telefone'] ? ' (' . e(telefoneFormatado($reserva['telefone'])) . ')' : '' ?>.
         <?= $reserva['aluno_id'] ? '' : 'Pesquise o aluno abaixo ou cadastre com o botão <i class="bi bi-person-plus"></i>.' ?> Ao matricular, a reserva sai da lista.</div>
 <?php endif; ?>
 
@@ -621,7 +621,7 @@ const buscaAluno = montarBusca({
     itens: () => alunos,
     combina: (a, termo, digitos) => normalizar(a.nome).includes(termo) || (digitos && String(a.cpf || '').replace(/\D/g, '').includes(digitos)),
     titulo: (a) => a.nome,
-    detalhe: (a) => a.cpf ? 'CPF ' + a.cpf : 'Sem CPF cadastrado',
+    detalhe: (a) => a.cpf ? 'CPF ' + String(a.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : 'Sem CPF cadastrado',
     vazio: 'Nenhum aluno encontrado.<?= $podeCriarAluno ? ' Use o botão <i class="bi bi-person-plus"></i> para cadastrar.' : '' ?>',
     aoEscolher: () => atualizarInadimplencia(),
 });
@@ -785,12 +785,12 @@ document.getElementById('aluno-busca').value = <?= json_encode($reserva['nome'],
                     </div>
                     <div class="col-6">
                         <label class="form-label">CPF</label>
-                        <input type="text" class="form-control" name="cpf" onblur="if (this.value.trim()) validarCampoDocumento(this)" oninput="this.classList.remove('is-invalid')">
+                        <input type="text" class="form-control" name="cpf" inputmode="numeric" data-mascara="cpf" onblur="if (this.value.trim()) validarCampoDocumento(this)" oninput="this.classList.remove('is-invalid')">
                         <div class="invalid-feedback">CPF inválido.</div>
                     </div>
                     <div class="col-6">
                         <label class="form-label">Telefone</label>
-                        <input type="text" class="form-control" name="telefone">
+                        <input type="tel" class="form-control" name="telefone" data-mascara="telefone">
                     </div>
                     <div class="col-12">
                         <label class="form-label">E-mail</label>

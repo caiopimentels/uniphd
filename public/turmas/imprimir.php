@@ -3,11 +3,13 @@ require_once __DIR__ . '/../../includes/bootstrap.php';
 exigirLogin();
 exigirCursos();
 
-// Lista de turmas para imprimir: o mesmo filtro e a mesma ordem da tela,
-// com todos os registros (sem paginação).
+// Lista de turmas para imprimir: o mesmo filtro, a mesma ordem e as mesmas
+// colunas da tela, com todos os registros (sem paginação) — ou só as marcadas.
 $pdo = getDB();
 $filtro = array_merge(['busca' => '', 'situacoes' => [], 'cursos' => []], $_SESSION['filtro_turmas'] ?? []);
 $turmas = ordenarLinhas(buscarListaTurmas($pdo, $filtro), estadoListagem('turmas', colunasListaTurmas()));
+$turmas = filtrarSelecionadas($turmas); // marcadas na tela: só elas
+$colunas = colunasVisiveis($pdo, 'turmas', definicaoColunasTela($pdo, 'turmas'));
 
 $nomesSituacao = array_column(buscarSituacoesTurma($pdo), 'nome', 'id');
 $nomesCurso = array_column($pdo->query('SELECT id, nome FROM cursos')->fetchAll(), 'nome', 'id');
@@ -36,36 +38,22 @@ $descricaoFiltro = array_filter([
 <main class="relatorio">
     <h1>Turmas</h1>
     <p class="relatorio-meta">
-        <?= $descricaoFiltro ? e(implode(' · ', $descricaoFiltro)) . ' &middot; ' : '' ?><?= count($turmas) ?> turma(s)
+        <?= !empty($_GET['ids']) ? 'Somente as selecionadas &middot; ' : ($descricaoFiltro ? e(implode(' · ', $descricaoFiltro)) . ' &middot; ' : '') ?><?= count($turmas) ?> turma(s)
         &middot; Emitido em <?= formatDateTime(date('Y-m-d H:i:s')) ?>
     </p>
 
     <table>
-        <thead>
-            <tr><th>Turma</th><th>Curso</th><th>Professor</th><th>Período</th><th class="text-end">Mensalidade</th><th class="text-end">Alunos / vagas</th><th>Situação</th></tr>
-        </thead>
+        <thead><tr><?= cabecalhoColunasImpressao($colunas) ?></tr></thead>
         <tbody>
         <?php if (!$turmas): ?>
-            <tr><td colspan="7">Nenhuma turma encontrada.</td></tr>
+            <tr><td colspan="<?= count($colunas) ?>">Nenhuma turma encontrada.</td></tr>
         <?php endif; ?>
         <?php foreach ($turmas as $t): ?>
-            <tr>
-                <td><?= e($t['nome']) ?><?= $t['horario'] ? '<br><small>' . e($t['horario']) . '</small>' : '' ?></td>
-                <td><?= e($t['curso_nome']) ?></td>
-                <td><?= e($t['professor_nome'] ?: '-') ?></td>
-                <td><?= e(periodoTurma($t)) ?></td>
-                <td class="text-end"><?= formatMoney($t['valor_mensalidade']) ?></td>
-                <td class="text-end"><?= (int) $t['alunos_ativos'] ?>/<?= (int) $t['vagas'] ?></td>
-                <td><?= e($t['situacao_nome']) ?></td>
-            </tr>
+            <tr><?= celulasColunasImpressao($colunas, $t) ?></tr>
         <?php endforeach; ?>
         </tbody>
-        <?php if ($turmas): ?>
-        <tfoot>
-            <tr><th colspan="5" class="text-end">Alunos ativos</th><th class="text-end"><?= array_sum(array_column($turmas, 'alunos_ativos')) ?></th><th></th></tr>
-        </tfoot>
-        <?php endif; ?>
     </table>
+    <?php if ($turmas): ?><p class="relatorio-meta">Alunos ativos nestas turmas: <?= array_sum(array_column($turmas, 'alunos_ativos')) ?></p><?php endif; ?>
 </main>
 
 </body>

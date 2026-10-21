@@ -24,8 +24,10 @@ if ($dataFim !== '') {
 }
 
 $stmt = $pdo->prepare(
-    "SELECT cp.*, f.nome AS fornecedor_nome, c.nome AS categoria_nome
+    "SELECT cp.*, f.nome AS fornecedor_nome, c.nome AS categoria_nome, t.nome AS turma_nome, cu.nome AS curso_nome
      FROM contas_pagar cp
+     LEFT JOIN turmas t ON t.id = cp.turma_id
+     LEFT JOIN cursos cu ON cu.id = t.curso_id
      LEFT JOIN fornecedores f ON f.id = cp.fornecedor_id
      LEFT JOIN categorias_financeiras c ON c.id = cp.categoria_id
      WHERE {$where}
@@ -34,6 +36,11 @@ $stmt = $pdo->prepare(
 $stmt->execute($params);
 $contas = $stmt->fetchAll();
 $contas = ordenarLinhas($contas, estadoListagem('contas_pagar', colunasListaPagar())); // mesma ordem da tela
+$contas = filtrarSelecionadas($contas); // marcadas na tela: só elas
+// Mesmas colunas da tela; o total fica embaixo da coluna Valor.
+$colunas = colunasVisiveis($pdo, 'contas_pagar', definicaoColunasTela($pdo, 'contas_pagar'));
+$posicaoValor = array_search('valor', array_keys($colunas), true);
+$posicaoValor = $posicaoValor === false || $posicaoValor === 0 ? null : $posicaoValor;
 
 $totalExibido = array_sum(array_column($contas, 'valor'));
 $labelStatus = match ($status) {
@@ -75,7 +82,7 @@ $labelTotal = match ($status) {
 <main class="relatorio">
     <h1>Contas a pagar</h1>
     <p class="relatorio-meta">
-        Situação: <?= e($labelStatus) ?>
+        <?= !empty($_GET['ids']) ? 'Somente as selecionadas &middot; ' : '' ?>Situação: <?= e($labelStatus) ?>
         <?php if ($dataInicio || $dataFim): ?>
             &middot; Vencimento: <?= $dataInicio ? formatDate($dataInicio) : '...' ?> a <?= $dataFim ? formatDate($dataFim) : '...' ?>
         <?php endif; ?>
@@ -83,35 +90,25 @@ $labelTotal = match ($status) {
     </p>
 
     <table>
-        <thead>
-            <tr>
-                <th>Descrição</th>
-                <th>Fornecedor/Categoria</th>
-                <th>Vencimento</th>
-                <th class="text-end">Valor</th>
-                <th>Status</th>
-            </tr>
-        </thead>
+        <thead><tr><?= cabecalhoColunasImpressao($colunas) ?></tr></thead>
         <tbody>
         <?php if (!$contas): ?>
-            <tr><td colspan="5">Nenhuma conta encontrada.</td></tr>
+            <tr><td colspan="<?= count($colunas) ?>">Nenhuma conta encontrada.</td></tr>
         <?php endif; ?>
         <?php foreach ($contas as $c): ?>
-            <tr>
-                <td><?= e($c['descricao']) ?></td>
-                <td><?= e($c['fornecedor_nome'] ?: $c['categoria_nome'] ?: '-') ?></td>
-                <td><?= formatDate($c['data_vencimento']) ?></td>
-                <td class="text-end"><?= formatMoney($c['valor']) ?></td>
-                <td><?= e(contaStatusLabel($c['status'])) ?></td>
-            </tr>
+            <tr><?= celulasColunasImpressao($colunas, $c) ?></tr>
         <?php endforeach; ?>
         </tbody>
         <?php if ($contas): ?>
         <tfoot>
             <tr>
-                <th colspan="3" class="text-end"><?= e($labelTotal) ?></th>
+                <?php if ($posicaoValor !== null): ?>
+                <th colspan="<?= $posicaoValor ?>" class="text-end"><?= e($labelTotal) ?></th>
                 <th class="text-end"><?= formatMoney($totalExibido) ?></th>
-                <th></th>
+                <?php if (count($colunas) - $posicaoValor - 1 > 0): ?><th colspan="<?= count($colunas) - $posicaoValor - 1 ?>"></th><?php endif; ?>
+                <?php else: ?>
+                <th colspan="<?= count($colunas) ?>" class="text-end"><?= e($labelTotal) ?>: <?= formatMoney($totalExibido) ?></th>
+                <?php endif; ?>
             </tr>
         </tfoot>
         <?php endif; ?>

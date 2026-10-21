@@ -3,12 +3,14 @@ require_once __DIR__ . '/../../includes/bootstrap.php';
 exigirLogin();
 exigirAlunos();
 
-// Lista de alunos para imprimir: o mesmo filtro e a mesma ordem da tela,
-// com todos os registros (sem paginação).
+// Lista de alunos para imprimir: o mesmo filtro, a mesma ordem e as mesmas
+// colunas da tela, com todos os registros (sem paginação) — ou só os marcados.
 $pdo = getDB();
 $podeVerFinanceiro = usuarioPodeVerInadimplencia();
 $filtro = array_merge(['busca' => '', 'situacao' => '', 'financeiro' => ''], $_SESSION['filtro_alunos'] ?? []);
 $alunos = ordenarLinhas(buscarListaAlunos($pdo, $filtro, $podeVerFinanceiro), estadoListagem('alunos', colunasListaAlunos()));
+$alunos = filtrarSelecionadas($alunos); // marcados na tela: só eles
+$colunas = colunasVisiveis($pdo, 'alunos', definicaoColunasTela($pdo, 'alunos'));
 
 $descricaoFiltro = array_filter([
     trim($filtro['busca']) !== '' ? 'Busca: ' . trim($filtro['busca']) : '',
@@ -35,35 +37,18 @@ $descricaoFiltro = array_filter([
 <main class="relatorio">
     <h1>Alunos</h1>
     <p class="relatorio-meta">
-        <?= $descricaoFiltro ? e(implode(' · ', $descricaoFiltro)) . ' &middot; ' : '' ?><?= count($alunos) ?> aluno(s)
+        <?= !empty($_GET['ids']) ? 'Somente os selecionados &middot; ' : ($descricaoFiltro ? e(implode(' · ', $descricaoFiltro)) . ' &middot; ' : '') ?><?= count($alunos) ?> aluno(s)
         &middot; Emitido em <?= formatDateTime(date('Y-m-d H:i:s')) ?>
     </p>
 
     <table>
-        <thead>
-            <tr>
-                <th>RA</th><th>Nome</th><th>CPF</th><th>Telefone</th><th>E-mail</th><th class="text-end">Matrículas ativas</th>
-                <?php if ($podeVerFinanceiro): ?><th>Financeiro</th><?php endif; ?>
-                <th>Situação</th>
-            </tr>
-        </thead>
+        <thead><tr><?= cabecalhoColunasImpressao($colunas) ?></tr></thead>
         <tbody>
         <?php if (!$alunos): ?>
-            <tr><td colspan="8">Nenhum aluno encontrado.</td></tr>
+            <tr><td colspan="<?= count($colunas) ?>">Nenhum aluno encontrado.</td></tr>
         <?php endif; ?>
         <?php foreach ($alunos as $a): ?>
-            <tr>
-                <td><?= e($a['ra'] ?: '-') ?></td>
-                <td><?= e($a['nome']) ?></td>
-                <td><?= e($a['cpf'] ?: '-') ?></td>
-                <td><?= e($a['telefone'] ?: '-') ?></td>
-                <td><?= e($a['email'] ?: '-') ?></td>
-                <td class="text-end"><?= (int) $a['matriculas_ativas'] ?></td>
-                <?php if ($podeVerFinanceiro): ?>
-                <td><?= (float) $a['valor_vencido'] > 0 ? 'Em atraso · ' . formatMoney($a['valor_vencido']) : 'Em dia' ?></td>
-                <?php endif; ?>
-                <td><?= $a['ativo'] ? 'Ativo' : 'Inativo' ?></td>
-            </tr>
+            <tr><?= celulasColunasImpressao($colunas, $a) ?></tr>
         <?php endforeach; ?>
         </tbody>
     </table>
