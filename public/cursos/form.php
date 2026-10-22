@@ -71,6 +71,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     $modeloCertificadoCurso = (int) ($_POST['certificado_modelo'] ?? 0) ?: null;
+    $modeloContratoCurso = (int) ($_POST['contrato_modelo'] ?? 0) ?: null;
+    if ($modeloContratoCurso && !buscarModeloContrato($pdo, $modeloContratoCurso)) {
+        $modeloContratoCurso = null;
+    }
     if ($modeloCertificadoCurso && !buscarModeloCertificado($pdo, $modeloCertificadoCurso)) {
         $modeloCertificadoCurso = null;
     }
@@ -173,7 +177,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare('INSERT INTO curso_emissoes (curso_id, nome, modelo_id, modulo_id, ordem) VALUES (?, ?, ?, NULL, 1000)')
                 ->execute([$id, 'Certificado de conclusão', $modeloCertificadoCurso]);
         }
-        $pdo->prepare('UPDATE cursos SET certificado_modelo_id = ? WHERE id = ?')->execute([$modeloCertificadoCurso, $id]);
+        $pdo->prepare('UPDATE cursos SET certificado_modelo_id = ?, contrato_modelo_id = ? WHERE id = ?')->execute([$modeloCertificadoCurso, $modeloContratoCurso, $id]);
 
         // Documentos: os que já existem são atualizados (o envio dos alunos
         // continua ligado a eles); os removidos saem — ou, se algum aluno já
@@ -226,6 +230,8 @@ $pageTitle = $id ? e($curso['nome']) : 'Novo curso';
 $pageBreadcrumb = 'Acadêmico · Cursos';
 $activeMenu = 'cursos';
 $modelosDocumento = modelosCertificado($pdo);
+garantirContratoPadrao($pdo);
+$modelosContrato = modelosContrato($pdo);
 $pageAction = $podeEditar
     ? '<a href="/cursos/listar.php" class="btn btn-outline-secondary">Cancelar</a>'
         . '<button type="submit" form="form-principal" class="btn btn-brand"><i class="bi bi-check-lg"></i> Salvar</button>'
@@ -285,7 +291,16 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <option value="">Modelo padrão</option>
                     <?php foreach ($modelosDocumento as $modeloOpcao): ?><option value="<?= (int) $modeloOpcao['id'] ?>" <?= (int) $modeloAtual === (int) $modeloOpcao['id'] ? 'selected' : '' ?>><?= e($modeloOpcao['nome']) ?> (<?= ($modeloOpcao['orientacao'] ?? 'horizontal') === 'vertical' ? 'vertical' : 'horizontal' ?>)</option><?php endforeach; ?>
                 </select>
-                <div class="form-text">Modelos em Acadêmico › Documentos<?php if (usuarioPodeGerenciarPortal()): ?> — <a href="/configuracoes/certificado.php" target="_blank">ver modelos</a><?php endif; ?>.</div>
+                <div class="form-text">Modelos em Acadêmico › Documentos<?php if (usuarioPodeEditarDocumentos()): ?> — <a href="/configuracoes/certificado.php" target="_blank">ver modelos</a><?php endif; ?>.</div>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Contrato do curso</label>
+                <?php $contratoAtual = isset($modeloContratoCurso) ? $modeloContratoCurso : ($curso['contrato_modelo_id'] ?? null); ?>
+                <select name="contrato_modelo" class="form-select">
+                    <option value="">Contrato padrão</option>
+                    <?php foreach ($modelosContrato as $contratoOpcao): if ($contratoOpcao['padrao']) { continue; } ?><option value="<?= (int) $contratoOpcao['id'] ?>" <?= (int) $contratoAtual === (int) $contratoOpcao['id'] ? 'selected' : '' ?>><?= e($contratoOpcao['nome']) ?></option><?php endforeach; ?>
+                </select>
+                <div class="form-text">Impresso na matrícula e, se a turma permitir, no portal do aluno.</div>
             </div>
             <div class="col-12">
                 <div class="fw-semibold mb-1">Liberação dos documentos</div>

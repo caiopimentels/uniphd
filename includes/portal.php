@@ -321,10 +321,11 @@ function primeiroVencimentoPortal(array $turma, string $hoje): string
  * até pagar, conforme o modo de vaga da turma), gera taxa + mensalidades
  * e marca qual parcela confirma a matrícula. Inscrição cancelada antes
  * (desistência, prazo vencido) é reaproveitada — a tabela só admite uma
- * matrícula por aluno na turma.
+ * matrícula por aluno na turma. Com $codigoCupom, o cupom é conferido
+ * (com trava) e aplicado: desconto no curso ou taxa de matrícula zerada.
  * Retorna ['ok' => bool, 'mensagem' => string, 'matricula_id' => ?int].
  */
-function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
+function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codigoCupom = ''): array
 {
     $falha = fn (string $m) => ['ok' => false, 'mensagem' => $m, 'matricula_id' => null];
 
@@ -379,6 +380,19 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
 
         $numParcelas = numParcelasPortal($turma);
         $valorTotal = valorTotalTurma($turma);
+        $taxa = (float) $turma['portal_taxa_matricula'];
+        $cupom = null;
+        $cupomDesconto = 0.0;
+        if (trim($codigoCupom) !== '') {
+            $validacao = validarCupom($pdo, $codigoCupom, (int) $turma['curso_id'], $alunoId, true);
+            $aplicado = $validacao['ok'] ? aplicarCupom($validacao['cupom'], $valorTotal, $taxa) : $validacao;
+            if (!$aplicado['ok']) {
+                $pdo->rollBack();
+                return $falha($aplicado['mensagem']);
+            }
+            $cupom = $validacao['cupom'];
+            [$valorTotal, $taxa, $cupomDesconto] = [$aplicado['valor_total'], $aplicado['taxa'], $aplicado['desconto']];
+        }
         $valores = [
             'data_matricula' => $hoje,
             'status' => $pendente ? 'pendente' : 'ativa',
@@ -388,9 +402,11 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
             'valor_total' => $valorTotal,
             'num_parcelas' => $numParcelas,
             'primeiro_vencimento' => primeiroVencimentoPortal($turma, $hoje),
-            'taxa_matricula' => $turma['portal_taxa_matricula'],
+            'taxa_matricula' => $taxa,
             'forma_pagamento_id' => $turma['portal_forma_pagamento_id'],
             'forma_mensalidade_id' => $turma['forma_mensalidade_id'] ?: $turma['portal_forma_pagamento_id'],
+            'cupom_id' => $cupom ? (int) $cupom['id'] : null,
+            'cupom_desconto' => $cupomDesconto,
         ];
 
         if ($existente) {
@@ -399,7 +415,7 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
                 "UPDATE matriculas SET data_matricula = ?, status = ?, origem = 'portal', pagamento_ate = ?, segura_vaga = ?, lista_espera = 0,
                         valor_mensalidade = ?, valor_total = ?, desconto_percentual = 0, desconto_pontualidade_tipo = 'nenhum', desconto_pontualidade_valor = 0,
                         desconto_pontualidade_dias = 0, num_parcelas = ?, primeiro_vencimento = ?, taxa_matricula = ?, forma_pagamento_id = ?, forma_mensalidade_id = ?,
-                        data_cancelamento = NULL, conta_receber_confirmacao_id = NULL, usuario_id = NULL
+                        cupom_id = ?, cupom_desconto = ?, data_cancelamento = NULL, conta_receber_confirmacao_id = NULL, usuario_id = NULL
                  WHERE id = ?"
             );
             $stmt->execute([...array_values($valores), $existente['id']]);
@@ -407,8 +423,9 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
         } else {
             $stmt = $pdo->prepare(
                 "INSERT INTO matriculas (turma_id, aluno_id, origem, data_matricula, status, pagamento_ate, segura_vaga, valor_mensalidade,
-                                         valor_total, num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id)
-                 VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                         valor_total, num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id,
+                                         cupom_id, cupom_desconto)
+                 VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             $stmt->execute([$turmaId, $alunoId, ...array_values($valores)]);
             $matriculaId = (int) $pdo->lastInsertId();
@@ -451,8 +468,9 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId): array
         throw $e;
     }
 
-    registrarAtividadeUsuario(null, 'Portal: ' . $aluno['nome'], 'matriculas', 'matricula', 'Inscrição pelo portal na turma ' . $turma['nome'] . ($pendente ? ' (aguardando pagamento)' : ''));
-    registrarHistoricoAluno($pdo, $alunoId, 'inscricao', 'Turma ' . $turma['nome'] . ($pendente ? ' — aguardando pagamento' : ''), $matriculaId);
+    $textoCupom = $cupom ? ' — cupom ' . $cupom['codigo'] . ' (' . ($cupom['tipo'] === 'matricula_zero' ? 'matrícula grátis' : formatMoney($cupomDesconto) . ' de desconto') . ')' : '';
+    registrarAtividadeUsuario(null, 'Portal: ' . $aluno['nome'], 'matriculas', 'matricula', 'Inscrição pelo portal na turma ' . $turma['nome'] . ($pendente ? ' (aguardando pagamento)' : '') . $textoCupom);
+    registrarHistoricoAluno($pdo, $alunoId, 'inscricao', 'Turma ' . $turma['nome'] . ($pendente ? ' — aguardando pagamento' : '') . $textoCupom, $matriculaId);
     criarNotificacao($pdo, 'matricula', 'Nova inscrição pelo portal', $aluno['nome'] . ' · ' . $turma['curso_nome'] . ' — ' . $turma['nome'], '/matriculas/visualizar.php?id=' . $matriculaId, $matriculaId);
 
     return [

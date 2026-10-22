@@ -281,6 +281,11 @@ function usuarioPodeVerFormasPagamento(): bool
     return usuarioTemPermissao('ver_formas_pagamento');
 }
 
+function usuarioPodeGerenciarCupons(): bool
+{
+    return usuarioTemPermissao('gerenciar_cupons');
+}
+
 function usuarioDescontoMax(): float
 {
     return usuarioEhAdmin() ? 100.0 : (float) ($_SESSION['user_desconto_max'] ?? 0);
@@ -432,6 +437,11 @@ function exigirFormasPagamento(): void
     exigirPermissao('ver_formas_pagamento', 'Seu perfil não tem acesso a Formas de pagamento.');
 }
 
+function exigirCupons(): void
+{
+    exigirPermissao('gerenciar_cupons', 'Seu perfil não tem acesso a Cupons de desconto.');
+}
+
 function usuarioPodeGerenciarPortal(): bool
 {
     return usuarioTemPermissao('gerenciar_portal');
@@ -440,4 +450,15 @@ function usuarioPodeGerenciarPortal(): bool
 function exigirPortal(): void
 {
     exigirPermissao('gerenciar_portal', 'Seu perfil não pode editar o portal do aluno.');
+}
+
+// Modelos de documentos: certificados, declarações e contratos.
+function usuarioPodeEditarDocumentos(): bool
+{
+    return usuarioTemPermissao('editar_documentos');
+}
+
+function exigirEditarDocumentos(): void
+{
+    exigirPermissao('editar_documentos', 'Seu perfil não pode editar os modelos de documentos.');
 }

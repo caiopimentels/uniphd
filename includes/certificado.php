@@ -381,8 +381,9 @@ function navegadorParaPdf(): ?string
 /**
  * PDF do documento a partir do HTML da página. Retorna o caminho do arquivo
  * (já gerado antes ou feito agora) ou null se não deu (sem navegador, erro).
+ * $documentoId: id do documento emitido ou outra chave (ex.: 'contrato-12').
  */
-function pdfDocumentoEmitido(int $documentoId, string $html): ?string
+function pdfDocumentoEmitido(int|string $documentoId, string $html): ?string
 {
     $pasta = caminhoStorage('documentos_pdf');
     if (!is_dir($pasta)) {

@@ -29,6 +29,8 @@ $mensalidade = mensalidadeDoTotal($valorTotal, $parcelas);
 $formaMensalidadeSecretaria = formaPagaNaSecretaria($pdo, ($turma['forma_mensalidade_id'] ?? null) ? (int) $turma['forma_mensalidade_id'] : null);
 $pagaNaInscricao = $turma['portal_modo_vaga'] !== 'inscricao' && ($taxa > 0 || $mensalidade > 0);
 $prazoDias = max(1, (int) $turma['portal_prazo_pagamento_dias']);
+// Link de divulgação com cupom (turma.php?id=X&cupom=CODIGO): já vem preenchido.
+$cupomUrl = normalizarCodigoCupom((string) ($_GET['cupom'] ?? ''));
 
 $tituloPagina = $turma['curso_nome'];
 $telaPortal = 'turma';
@@ -103,6 +105,7 @@ require __DIR__ . '/../../includes/portal_header.php';
                 <?php else: ?>
                     <form method="post" action="/portal/inscrever.php">
                         <input type="hidden" name="turma_id" value="<?= (int) $turma['id'] ?>">
+                        <input type="hidden" name="cupom" value="<?= e($cupomUrl) ?>">
                         <button type="submit" class="btn btn-brand btn-lg w-100">Inscrever-me</button>
                     </form>
                 <?php endif; ?>
@@ -144,14 +147,25 @@ require __DIR__ . '/../../includes/portal_header.php';
                 </div>
                 <div class="border rounded p-3 mb-3">
                     <?php if ($taxa > 0): ?>
-                        <div class="d-flex justify-content-between"><span>Matrícula <span class="text-muted small">(paga agora)</span></span><strong><?= formatMoney($taxa) ?></strong></div>
+                        <div class="d-flex justify-content-between"><span>Matrícula <span class="text-muted small">(paga agora)</span></span><strong id="valor-taxa" data-original="<?= e(formatMoney($taxa)) ?>"><?= formatMoney($taxa) ?></strong></div>
                     <?php endif; ?>
                     <?php if ($mensalidade > 0): ?>
-                        <div class="d-flex justify-content-between mt-1"><span>Curso <span class="text-muted small">(<?= $parcelas ?>x de <?= formatMoney($mensalidade) ?>)</span></span><strong><?= formatMoney($valorTotal) ?></strong></div>
+                        <div class="d-flex justify-content-between mt-1"><span>Curso <span class="text-muted small" id="parcelas-curso" data-original="(<?= $parcelas ?>x de <?= e(formatMoney($mensalidade)) ?>)">(<?= $parcelas ?>x de <?= formatMoney($mensalidade) ?>)</span></span><strong id="valor-curso" data-original="<?= e(formatMoney($valorTotal)) ?>"><?= formatMoney($valorTotal) ?></strong></div>
                         <div class="small text-muted">1ª mensalidade em <?= formatDate($primeiroVencimento) ?><?= $formaMensalidadeSecretaria ? ' · ' . e(mb_strtolower($formaMensalidadeSecretaria)) . ', pago na secretaria' : '' ?></div>
                     <?php endif; ?>
                     <?php if ($taxa <= 0 && $mensalidade <= 0): ?><div class="fw-semibold">Curso gratuito</div><?php endif; ?>
                 </div>
+                <?php if ($taxa > 0 || $mensalidade > 0): ?>
+                <div class="mb-3">
+                    <a href="#" class="small" id="cupom-abrir" <?= $cupomUrl ? 'style="display:none"' : '' ?>><i class="bi bi-ticket-perforated"></i> Tem um cupom de desconto?</a>
+                    <div class="input-group input-group-sm" id="cupom-campo" <?= $cupomUrl ? '' : 'style="display:none"' ?>>
+                        <input type="text" class="form-control text-uppercase" id="cupom-codigo" placeholder="Código do cupom" value="<?= e($cupomUrl) ?>" autocomplete="off">
+                        <button class="btn btn-outline-secondary" type="button" id="cupom-aplicar">Aplicar</button>
+                    </div>
+                    <div class="small mt-1" id="cupom-mensagem"></div>
+                    <input type="hidden" name="cupom" id="cupom-aplicado" value="">
+                </div>
+                <?php endif; ?>
                 <?php if ($pagaNaInscricao): ?>
                     <div class="alert alert-info small mb-0">
                         <i class="bi bi-qr-code"></i>
@@ -170,6 +184,52 @@ require __DIR__ . '/../../includes/portal_header.php';
         </form>
     </div>
 </div>
+<script>
+// Cupom: confere no servidor e mostra os valores com desconto. Só o
+// cupom aplicado (campo escondido) vai junto da inscrição.
+(() => {
+    const campo = document.getElementById('cupom-codigo');
+    if (!campo) return;
+    const mensagem = document.getElementById('cupom-mensagem');
+    const aplicado = document.getElementById('cupom-aplicado');
+    const restaurar = () => {
+        aplicado.value = '';
+        ['valor-taxa', 'parcelas-curso', 'valor-curso'].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = el.dataset.original; });
+    };
+    document.getElementById('cupom-abrir').addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.target.closest('a').style.display = 'none';
+        document.getElementById('cupom-campo').style.display = '';
+        campo.focus();
+    });
+    campo.addEventListener('input', () => { campo.value = campo.value.toUpperCase().replace(/\s/g, ''); restaurar(); mensagem.textContent = ''; });
+    campo.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); aplicar(); } });
+    document.getElementById('cupom-aplicar').addEventListener('click', aplicar);
+    async function aplicar() {
+        restaurar();
+        if (!campo.value) return;
+        mensagem.className = 'small mt-1 text-muted';
+        mensagem.textContent = 'Conferindo...';
+        try {
+            const r = await (await fetch('/portal/cupom.php?turma_id=<?= (int) $turma['id'] ?>&codigo=' + encodeURIComponent(campo.value))).json();
+            mensagem.className = 'small mt-1 ' + (r.ok ? 'text-success fw-semibold' : 'text-danger');
+            mensagem.textContent = r.mensagem;
+            if (!r.ok) return;
+            aplicado.value = r.codigo;
+            const taxa = document.getElementById('valor-taxa');
+            if (taxa) taxa.textContent = r.taxa_zero ? 'Grátis' : r.taxa;
+            const parcelas = document.getElementById('parcelas-curso');
+            if (parcelas) parcelas.textContent = '(' + r.parcelas + ')';
+            const curso = document.getElementById('valor-curso');
+            if (curso) curso.textContent = r.curso;
+        } catch (e) {
+            mensagem.className = 'small mt-1 text-danger';
+            mensagem.textContent = 'Não foi possível conferir o cupom agora.';
+        }
+    }
+    if (campo.value) document.getElementById('modal-inscricao').addEventListener('shown.bs.modal', aplicar, { once: true });
+})();
+</script>
 <?php if (isset($_GET['inscrever'])): ?>
 <script>
 // Voltou do login / dos dados: abre a confirmação para não precisar clicar de novo.

@@ -84,14 +84,23 @@ function cnpjFormatado(?string $cnpj): string
     return strlen($d) === 14 ? substr($d, 0, 2) . '.' . substr($d, 2, 3) . '.' . substr($d, 5, 3) . '/' . substr($d, 8, 4) . '-' . substr($d, 12) : (string) $cnpj;
 }
 
+/** Dados da instituição para o cabeçalho dos documentos (e a cor do tema). */
+function documentoDados(PDO $pdo): array
+{
+    $config = buscarConfiguracoes($pdo);
+    return [
+        'config' => $config,
+        'cor' => preg_match('/^#[0-9a-fA-F]{6}$/', (string) $config['cor_primaria']) && strtolower($config['cor_primaria']) !== '#ffffff' ? $config['cor_primaria'] : '#071f4a',
+        'nome' => $config['empresa_nome_fantasia'] ?: ($config['empresa_razao_social'] ?: nomeSistema()),
+        'endereco' => trim(implode(', ', array_filter([$config['empresa_logradouro'] ?? '', $config['empresa_numero'] ?? '', $config['empresa_bairro'] ?? '']))),
+        'cidade' => trim(($config['empresa_cidade'] ?? '') . (!empty($config['empresa_uf']) ? ' - ' . $config['empresa_uf'] : '')),
+    ];
+}
+
 /** Abre a página: <head>, barra de ações e o cabeçalho da instituição. */
 function documentoInicio(PDO $pdo, string $titulo, string $voltar): array
 {
-    $config = buscarConfiguracoes($pdo);
-    $cor = preg_match('/^#[0-9a-fA-F]{6}$/', (string) $config['cor_primaria']) && strtolower($config['cor_primaria']) !== '#ffffff' ? $config['cor_primaria'] : '#071f4a';
-    $nome = $config['empresa_nome_fantasia'] ?: ($config['empresa_razao_social'] ?: nomeSistema());
-    $endereco = trim(implode(', ', array_filter([$config['empresa_logradouro'] ?? '', $config['empresa_numero'] ?? '', $config['empresa_bairro'] ?? ''])));
-    $cidade = trim(($config['empresa_cidade'] ?? '') . (!empty($config['empresa_uf']) ? ' - ' . $config['empresa_uf'] : ''));
+    ['config' => $config, 'cor' => $cor, 'nome' => $nome, 'endereco' => $endereco, 'cidade' => $cidade] = documentoDados($pdo);
     ?>
 <!doctype html>
 <html lang="pt-br">

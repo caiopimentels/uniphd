@@ -59,12 +59,24 @@ $temPagamento = (int) $stmt->fetchColumn() > 0;
 $mensalidadeFinal = valorMensalidadeComDesconto((float) $matricula['valor_mensalidade'], (float) $matricula['desconto_percentual']);
 $hoje = date('Y-m-d');
 
+// Cupom: aqui aparece o valor cheio, com o valor depois do cupom embaixo
+// (os valores gravados na matrícula já vêm com o desconto).
+$tipoCupom = null;
+if ($matricula['cupom_id'] && (float) $matricula['cupom_desconto'] > 0) {
+    $stmt = $pdo->prepare('SELECT tipo FROM cupons WHERE id = ?');
+    $stmt->execute([$matricula['cupom_id']]);
+    $tipoCupom = $stmt->fetchColumn() ?: null;
+}
+$cupomNoCurso = $tipoCupom && $tipoCupom !== 'matricula_zero';
+$mensalidadeCheia = $cupomNoCurso ? round($mensalidadeFinal + (float) $matricula['cupom_desconto'] / max(1, (int) $matricula['num_parcelas']), 2) : $mensalidadeFinal;
+
 $pageTitle = 'Matrícula · ' . e($matricula['aluno_nome']);
 $pageBreadcrumb = 'Acadêmico · ' . $matricula['curso_nome'] . ' · ' . $matricula['turma_nome'];
 $activeMenu = 'turmas';
 $pageAction = '<a href="/turmas/visualizar.php?id=' . (int) $matricula['turma_id'] . '" class="btn btn-outline-secondary">Ver turma</a>'
     . '<a href="/alunos/form.php?id=' . (int) $matricula['aluno_id'] . '" class="btn btn-outline-secondary">Ver aluno</a>'
     . '<a href="/matriculas/comprovante.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Comprovante</a>'
+    . '<a href="/matriculas/contrato.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-text"></i> Contrato</a>'
     . ($matricula['status'] === 'concluida' ? '<a href="#documentos" class="btn btn-brand"><i class="bi bi-award"></i> Documentos</a>' : '');
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
@@ -94,10 +106,13 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <div class="col-md-3"><div class="kpi-rotulo">Data da matrícula</div><div><?= formatDate($matricula['data_matricula']) ?></div>
                     <div class="small text-muted">lançada em <?= formatDateTime($matricula['criado_em']) ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Período da turma</div><div><?= e(periodoTurma($matricula)) ?></div></div>
-                <div class="col-md-3"><div class="kpi-rotulo">Mensalidade</div><div><?= formatMoney($mensalidadeFinal) ?><?php if ((float) $matricula['desconto_percentual'] > 0): ?> <span class="small text-muted">(<?= formatMoney($matricula['valor_mensalidade']) ?> − <?= formatPercent($matricula['desconto_percentual']) ?>)</span><?php endif; ?></div></div>
-                <div class="col-md-3"><div class="kpi-rotulo">Mensalidades</div><div><?= (int) $matricula['num_parcelas'] ?>× a partir de <?= formatDate($matricula['primeiro_vencimento']) ?><?php if ($matricula['valor_total'] !== null): ?><div class="small text-muted">curso: <?= formatMoney($matricula['valor_total']) ?></div><?php endif; ?></div></div>
-                <div class="col-md-3"><div class="kpi-rotulo">Taxa de matrícula</div><div><?= (float) $matricula['taxa_matricula'] > 0 ? formatMoney($matricula['taxa_matricula']) : 'Sem taxa' ?></div></div>
+                <div class="col-md-3"><div class="kpi-rotulo">Mensalidade</div><div><?= formatMoney($mensalidadeCheia) ?><?php if ((float) $matricula['desconto_percentual'] > 0): ?> <span class="small text-muted">(<?= formatMoney($matricula['valor_mensalidade']) ?> − <?= formatPercent($matricula['desconto_percentual']) ?>)</span><?php endif; ?><?php if ($cupomNoCurso): ?><div class="small text-success"><?= formatMoney($mensalidadeFinal) ?> com o cupom</div><?php endif; ?></div></div>
+                <div class="col-md-3"><div class="kpi-rotulo">Mensalidades</div><div><?= (int) $matricula['num_parcelas'] ?>× a partir de <?= formatDate($matricula['primeiro_vencimento']) ?><?php if ($matricula['valor_total'] !== null): ?><div class="small text-muted">curso: <?= formatMoney((float) $matricula['valor_total'] + ($cupomNoCurso ? (float) $matricula['cupom_desconto'] : 0)) ?><?= $cupomNoCurso ? ' · <span class="text-success">' . formatMoney($matricula['valor_total']) . ' com o cupom</span>' : '' ?></div><?php endif; ?></div></div>
+                <div class="col-md-3"><div class="kpi-rotulo">Taxa de matrícula</div><div><?php if ($tipoCupom === 'matricula_zero'): ?><?= formatMoney($matricula['cupom_desconto']) ?><div class="small text-success">isenta com o cupom</div><?php else: ?><?= (float) $matricula['taxa_matricula'] > 0 ? formatMoney($matricula['taxa_matricula']) : 'Sem taxa' ?><?php endif; ?></div></div>
                 <div class="col-md-6"><div class="kpi-rotulo">Desconto por pontualidade</div><div><?= e(textoDescontoPontualidade($matricula)) ?></div></div>
+                <?php if ($textoCupom = resumoCupomMatricula($pdo, $matricula)): ?>
+                <div class="col-md-6"><div class="kpi-rotulo">Cupom</div><div class="text-success"><i class="bi bi-ticket-perforated"></i> <?= e($textoCupom) ?></div></div>
+                <?php endif; ?>
                 <div class="col-md-3"><div class="kpi-rotulo">Formas de pagamento</div><div>
                     <?php if ((float) $matricula['taxa_matricula'] > 0): ?>Matrícula: <?= e($matricula['forma_pagamento_nome'] ?: '-') ?><br><?php endif; ?>
                     Mensalidades: <?= e(($matricula['forma_mensalidade_nome'] ?: $matricula['forma_pagamento_nome']) ?: '-') ?>

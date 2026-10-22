@@ -46,6 +46,36 @@ if ($podeVerFinanceiro) {
 }
 $mensalidade = valorMensalidadeComDesconto((float) $m['valor_mensalidade'], (float) $m['desconto_percentual']);
 
+// Cupom: o comprovante mostra o valor cheio e o desconto numa linha à
+// parte (as parcelas gravadas já vêm com ele). No R$/% o desconto volta
+// para as mensalidades, dividido como no lançamento; na "matrícula zero"
+// a taxa aparece com o valor dela e isenta.
+$cupomComprovante = null;
+$descontoCupom = (float) $m['cupom_desconto'];
+if ($m['cupom_id'] && $descontoCupom > 0) {
+    $stmt = $pdo->prepare('SELECT codigo, tipo FROM cupons WHERE id = ?');
+    $stmt->execute([$m['cupom_id']]);
+    $cupomComprovante = $stmt->fetch() ?: null;
+}
+foreach ($parcelas as &$p) {
+    $p['valor_cheio'] = (float) $p['valor'];
+}
+unset($p);
+$mensalidadeCheia = $mensalidade;
+if ($podeVerFinanceiro && $cupomComprovante && $cupomComprovante['tipo'] === 'matricula_zero') {
+    array_unshift($parcelas, ['descricao' => 'Taxa de matrícula - ' . $m['turma_nome'], 'data_vencimento' => $m['data_matricula'],
+        'valor' => 0, 'valor_cheio' => $descontoCupom, 'status' => 'isenta', 'data_recebimento' => null]);
+} elseif ($cupomComprovante) {
+    $idMensalidade = (int) categoriaSistemaId($pdo, 'mensalidade');
+    $indices = array_keys(array_filter($parcelas, fn ($p) => (int) ($p['categoria_id'] ?? 0) === $idMensalidade));
+    if ($indices) {
+        foreach (dividirValor($descontoCupom, count($indices)) as $i => $parte) {
+            $parcelas[$indices[$i]]['valor_cheio'] += $parte;
+        }
+    }
+    $mensalidadeCheia = round($mensalidade + $descontoCupom / max(1, (int) $m['num_parcelas']), 2);
+}
+
 $doc = documentoInicio($pdo, 'Comprovante de matrícula · ' . $m['aluno_nome'], '/matriculas/visualizar.php?id=' . $id);
 documentoCabecalho($doc, 'Comprovante de matrícula', 'Matrícula nº ' . str_pad((string) $id, 6, '0', STR_PAD_LEFT) . ' · ' . formatDate($m['data_matricula']));
 ?>
@@ -82,10 +112,15 @@ documentoCabecalho($doc, 'Comprovante de matrícula', 'Matrícula nº ' . str_pa
     <div class="doc-secao">
         <h2>Condições financeiras</h2>
         <div class="doc-grade">
-            <div><div class="rotulo">Mensalidade</div><?= formatMoney($mensalidade) ?><?= (float) $m['desconto_percentual'] > 0 ? ' (' . formatPercent($m['desconto_percentual']) . ' de desconto)' : '' ?></div>
+            <div><div class="rotulo">Mensalidade</div><?= formatMoney($mensalidadeCheia) ?><?= (float) $m['desconto_percentual'] > 0 ? ' (' . formatPercent($m['desconto_percentual']) . ' de desconto)' : '' ?></div>
             <div><div class="rotulo">Nº de mensalidades</div><?= (int) $m['num_parcelas'] ?></div>
-            <div><div class="rotulo">Taxa de matrícula</div><?= (float) $m['taxa_matricula'] > 0 ? formatMoney($m['taxa_matricula']) : 'Sem taxa' ?></div>
+            <div><div class="rotulo">Taxa de matrícula</div><?= $cupomComprovante && $cupomComprovante['tipo'] === 'matricula_zero'
+                ? formatMoney($descontoCupom)
+                : ((float) $m['taxa_matricula'] > 0 ? formatMoney($m['taxa_matricula']) : 'Sem taxa') ?></div>
             <div><div class="rotulo">Forma de pagamento</div><?= e($m['forma_pagamento_nome'] ?: '-') ?></div>
+            <?php if ($textoCupom = resumoCupomMatricula($pdo, $m)): ?>
+                <div class="todo"><div class="rotulo">Cupom de desconto</div><?= e($textoCupom) ?></div>
+            <?php endif; ?>
             <?php if ($m['desconto_pontualidade_tipo'] !== 'nenhum' && (float) $m['desconto_pontualidade_valor'] > 0): ?>
                 <div class="todo"><div class="rotulo">Desconto por pontualidade</div>
                     <?= $m['desconto_pontualidade_tipo'] === 'percentual' ? formatPercent($m['desconto_pontualidade_valor']) : formatMoney($m['desconto_pontualidade_valor']) ?>
@@ -104,12 +139,22 @@ documentoCabecalho($doc, 'Comprovante de matrícula', 'Matrícula nº ' . str_pa
                 <tr>
                     <td><?= e($p['descricao']) ?></td>
                     <td><?= formatDate($p['data_vencimento']) ?></td>
-                    <td class="text-end"><?= formatMoney($p['valor']) ?></td>
-                    <td><?= $p['status'] === 'pago' ? 'Pago em ' . formatDate($p['data_recebimento']) : 'A pagar' ?></td>
+                    <td class="text-end"><?= formatMoney($p['valor_cheio']) ?></td>
+                    <td><?= match ($p['status']) { 'pago' => 'Pago em ' . formatDate($p['data_recebimento']), 'isenta' => 'Isenta (cupom)', default => 'A pagar' } ?></td>
                 </tr>
             <?php endforeach; ?>
+            <?php if ($cupomComprovante): ?>
+                <tr>
+                    <td>Desconto do cupom <?= e($cupomComprovante['codigo']) ?> <span style="color:#6b7280">(<?= $cupomComprovante['tipo'] === 'matricula_zero' ? 'taxa de matrícula' : 'no valor do curso' ?>)</span></td>
+                    <td></td>
+                    <td class="text-end">− <?= formatMoney($descontoCupom) ?></td>
+                    <td>Aplicado</td>
+                </tr>
+            <?php endif; ?>
             </tbody>
-            <tfoot><tr><td colspan="2" class="text-end">Total</td><td class="text-end"><?= formatMoney(array_sum(array_column($parcelas, 'valor'))) ?></td><td></td></tr></tfoot>
+            <tfoot>
+                <tr><td colspan="2" class="text-end">Total</td><td class="text-end"><?= formatMoney(array_sum(array_column($parcelas, 'valor_cheio')) - ($cupomComprovante ? $descontoCupom : 0)) ?></td><td></td></tr>
+            </tfoot>
         </table>
     </div>
     <?php endif; ?>

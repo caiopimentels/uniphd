@@ -426,6 +426,7 @@ CREATE TABLE cursos (
     -- Modelo de certificado do curso (NULL = o modelo padrão). A chave
     -- estrangeira é criada no fim, depois de certificado_modelos.
     certificado_modelo_id INT DEFAULT NULL,
+    contrato_modelo_id INT DEFAULT NULL,
     liberar_documentos_auto TINYINT(1) NOT NULL DEFAULT 1,
     bloquear_inadimplente TINYINT(1) NOT NULL DEFAULT 0,
     bloquear_pendencia_documental TINYINT(1) NOT NULL DEFAULT 1,
@@ -510,6 +511,8 @@ CREATE TABLE turmas (
     --   apos_pagamento -> só conta vaga quem pagou (os outros esperam)
     --   inscricao      -> a vaga é ocupada na inscrição, sem pagar antes
     portal_publicar TINYINT(1) NOT NULL DEFAULT 0,
+    -- Contrato da matrícula disponível para o aluno no portal (em Documentos).
+    contrato_portal TINYINT(1) NOT NULL DEFAULT 0,
     portal_descricao TEXT DEFAULT NULL,
     portal_imagem VARCHAR(255) DEFAULT NULL,
     portal_inscricoes_ate DATE DEFAULT NULL,
@@ -537,6 +540,38 @@ CREATE TABLE turmas (
 -- no que já foi contratado com quem está matriculado. As mensalidades em
 -- si vivem em contas_receber (matricula_id).
 -- ----------------------------------------------------------------------
+-- Cupons de desconto para a matrícula (portal e secretaria).
+--   tipo 'valor'          → R$ a menos no valor do curso (mensalidades)
+--   tipo 'percentual'     → % a menos no valor do curso
+--   tipo 'matricula_zero' → taxa de matrícula zerada
+-- quantidade NULL = ilimitado (conta as matrículas não canceladas que usaram);
+-- validade_inicio/fim NULL = sem limite naquele lado; sem cursos marcados = todos.
+CREATE TABLE cupons (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    codigo VARCHAR(40) NOT NULL UNIQUE,
+    descricao VARCHAR(150) DEFAULT NULL,
+    tipo ENUM('valor', 'percentual', 'matricula_zero') NOT NULL,
+    valor DECIMAL(12,2) NOT NULL DEFAULT 0,
+    quantidade INT DEFAULT NULL,
+    validade_inicio DATE DEFAULT NULL,
+    validade_fim DATE DEFAULT NULL,
+    uma_vez_por_aluno TINYINT(1) NOT NULL DEFAULT 1,
+    -- Acumula com a bolsa e o desconto por pontualidade da matrícula?
+    acumula TINYINT(1) NOT NULL DEFAULT 1,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    usuario_id INT DEFAULT NULL,
+    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_cupom_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE cupom_cursos (
+    cupom_id INT NOT NULL,
+    curso_id INT NOT NULL,
+    PRIMARY KEY (cupom_id, curso_id),
+    CONSTRAINT fk_cupom_curso_cupom FOREIGN KEY (cupom_id) REFERENCES cupons(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cupom_curso_curso FOREIGN KEY (curso_id) REFERENCES cursos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE matriculas (
     id INT AUTO_INCREMENT PRIMARY KEY,
     turma_id INT NOT NULL,
@@ -565,6 +600,9 @@ CREATE TABLE matriculas (
     desconto_pontualidade_tipo ENUM('nenhum', 'valor', 'percentual') NOT NULL DEFAULT 'nenhum',
     desconto_pontualidade_valor DECIMAL(12,2) NOT NULL DEFAULT 0,
     desconto_pontualidade_dias INT NOT NULL DEFAULT 0,
+    -- Cupom usado e quanto ele descontou (do curso, ou a taxa zerada).
+    cupom_id INT DEFAULT NULL,
+    cupom_desconto DECIMAL(12,2) NOT NULL DEFAULT 0,
     num_parcelas INT NOT NULL,
     primeiro_vencimento DATE NOT NULL,
     taxa_matricula DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -581,7 +619,8 @@ CREATE TABLE matriculas (
     CONSTRAINT fk_matricula_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id),
     CONSTRAINT fk_matricula_forma_pagamento FOREIGN KEY (forma_pagamento_id) REFERENCES formas_pagamento(id),
     CONSTRAINT fk_matricula_forma_mensalidade FOREIGN KEY (forma_mensalidade_id) REFERENCES formas_pagamento(id),
-    CONSTRAINT fk_matricula_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id)
+    CONSTRAINT fk_matricula_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id),
+    CONSTRAINT fk_matricula_cupom FOREIGN KEY (cupom_id) REFERENCES cupons(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ======================================================================
@@ -1093,6 +1132,21 @@ INSERT INTO certificado_modelos (nome, padrao) VALUES ('Modelo padrão', 1);
 
 ALTER TABLE cursos ADD CONSTRAINT fk_curso_certificado_modelo FOREIGN KEY (certificado_modelo_id) REFERENCES certificado_modelos(id) ON DELETE SET NULL;
 
+-- Modelos de contrato (texto editável, com variáveis como {aluno_nome}),
+-- impressos na matrícula e mostrados ao aluno no portal. Cada curso escolhe
+-- o seu (cursos.contrato_modelo_id); sem escolha, vale o padrão.
+CREATE TABLE contrato_modelos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(100) NOT NULL,
+    conteudo MEDIUMTEXT DEFAULT NULL, -- HTML do editor
+    -- Página: margens (cm), cabeçalho e rodapé, em JSON (vazio = padrão).
+    pagina TEXT DEFAULT NULL,
+    padrao TINYINT(1) NOT NULL DEFAULT 0,
+    criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ALTER TABLE cursos ADD CONSTRAINT fk_curso_contrato_modelo FOREIGN KEY (contrato_modelo_id) REFERENCES contrato_modelos(id) ON DELETE SET NULL;
+
 INSERT INTO perfis (id, nome, administrador, desconto_max) VALUES
 (1, 'Administrador', 1, 100.00),
 (2, 'Secretaria', 0, 10.00);
@@ -1123,6 +1177,7 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('lancar_receber', 'Lançar cobranças (contas a receber)', 'Financeiro dos alunos', 51),
 ('editar_financeiro_aluno', 'Alterar parcelas (valor, vencimento, desconto) e o desconto por pontualidade', 'Financeiro dos alunos', 52),
 ('excluir_receber', 'Excluir lançamentos a receber', 'Financeiro dos alunos', 53),
+('gerenciar_cupons', 'Cadastrar cupons de desconto', 'Financeiro dos alunos', 55),
 ('baixar_receber', 'Dar baixa em contas a receber (inclusive várias de uma vez) e estornar baixa manual', 'Financeiro dos alunos', 54),
 ('ver_financeiro', 'Ver o Financeiro (contas a receber e a pagar, recebimentos, resultado por turma)', 'Financeiro da instituição', 60),
 ('acesso_financeiro', 'Lançar contas a pagar (inclusive despesas da turma)', 'Financeiro da instituição', 61),
@@ -1132,7 +1187,8 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('ver_dre', 'Ver o DRE e o Fluxo de caixa', 'Financeiro da instituição', 65),
 ('ver_fornecedores', 'Cadastrar fornecedores (menu Fornecedores)', 'Financeiro da instituição', 66),
 ('ver_formas_pagamento', 'Cadastrar formas de pagamento', 'Financeiro da instituição', 67),
-('gerenciar_portal', 'Editar o site do portal do aluno e os modelos de certificado', 'Portal do aluno', 70),
+('gerenciar_portal', 'Editar o site do portal do aluno', 'Portal do aluno', 70),
+('editar_documentos', 'Editar os modelos de documentos (certificados, declarações e contratos)', 'Portal do aluno', 71),
 ('cadastrar_usuario', 'Cadastrar usuários (só com os perfis liberados abaixo)', 'Usuários do sistema', 80),
 ('editar_usuario', 'Editar usuários e trocar a senha deles (só dos perfis liberados abaixo)', 'Usuários do sistema', 81),
 ('desativar_usuario', 'Ativar e desativar usuários (só dos perfis liberados abaixo)', 'Usuários do sistema', 82);

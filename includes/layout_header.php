@@ -52,7 +52,7 @@ $menus = [
             ['Cursos', '/cursos/listar.php', usuarioPodeVerCursos(), 'cursos'],
             ['Professores', '/professores/listar.php', usuarioPodeVerCursos(), 'professores'],
             ['Portal do aluno', '/configuracoes/portal.php', usuarioPodeGerenciarPortal(), 'portal'],
-            ['Documentos', '/configuracoes/certificado.php', usuarioPodeGerenciarPortal(), 'certificado'],
+            ['Documentos', '/configuracoes/certificado.php', usuarioPodeEditarDocumentos(), 'certificado'],
         ],
     ],
     'financeiro' => [
@@ -64,6 +64,7 @@ $menus = [
             ['Fornecedores', '/fornecedores/listar.php', usuarioPodeVerFornecedores(), 'fornecedores'],
             ['Categorias financeiras', '/financeiro/categorias/listar.php', usuarioPodeGerenciarCategorias(), 'categorias-financeiras'],
             ['Formas de pagamento', '/formas_pagamento/listar.php', usuarioPodeVerFormasPagamento(), 'formas-pagamento'],
+            ['Cupons de desconto', '/cupons/listar.php', usuarioPodeGerenciarCupons(), 'cupons'],
         ],
     ],
     'relatorios' => [

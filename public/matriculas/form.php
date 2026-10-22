@@ -39,6 +39,8 @@ $dados = [
     'forma_pagamento_id' => 0,
     'forma_mensalidade_id' => 0,
     'observacao' => '',
+    'cupom' => '',
+    'prazo_taxa_dias' => 2,
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -56,6 +58,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'forma_pagamento_id' => (int) ($_POST['forma_pagamento_id'] ?? 0),
         'forma_mensalidade_id' => (int) ($_POST['forma_mensalidade_id'] ?? 0),
         'observacao' => input('observacao'),
+        'cupom' => normalizarCodigoCupom(input('cupom')),
+        'prazo_taxa_dias' => (int) ($_POST['prazo_taxa_dias'] ?? 2),
     ];
 
     $stmt = $pdo->prepare('SELECT * FROM alunos WHERE id = ?');
@@ -108,6 +112,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if (!$dados['primeiro_vencimento']) {
         $erros[] = 'Informe o vencimento da primeira mensalidade.';
+    }
+    if ($dados['prazo_taxa_dias'] < 0 || $dados['prazo_taxa_dias'] > 60) {
+        $erros[] = 'O prazo para pagar a matrícula vai de 0 (no mesmo dia) a 60 dias.';
     }
     if ($dados['taxa_matricula'] < 0) {
         $erros[] = 'A taxa de matrícula não pode ser negativa.';
@@ -164,6 +171,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Valor do curso (o da turma) dividido nas parcelas escolhidas.
             // Turma antiga sem valor total: mensalidade da turma × parcelas.
             $valorTotalCurso = $turma ? ($turma['valor_total'] !== null ? (float) $turma['valor_total'] : (float) $turma['valor_mensalidade'] * max(1, $dados['num_parcelas'])) : 0.0;
+            // Cupom: conferido com trava (o último não sai duas vezes) e
+            // aplicado antes da bolsa — desconto no curso ou taxa zerada.
+            // Não entra na alçada de desconto do perfil.
+            $cupomUsado = null;
+            $cupomDesconto = 0.0;
+            $taxaMatriculaFinal = $dados['taxa_matricula'];
+            if ($turma && $dados['cupom'] !== '') {
+                $validacaoCupom = validarCupom($pdo, $dados['cupom'], (int) $turma['curso_id'], (int) $aluno['id'], true);
+                if (!$validacaoCupom['ok']) {
+                    $erros[] = 'Cupom: ' . $validacaoCupom['mensagem'];
+                } elseif (!$validacaoCupom['cupom']['acumula'] && ($dados['desconto_percentual'] > 0 || $dados['desconto_pontualidade_tipo'] !== 'nenhum')) {
+                    $erros[] = 'O cupom ' . $dados['cupom'] . ' não acumula com outros descontos: zere a bolsa e o desconto por pontualidade, ou tire o cupom.';
+                } else {
+                    $aplicado = aplicarCupom($validacaoCupom['cupom'], $valorTotalCurso, (float) $dados['taxa_matricula']);
+                    if (!$aplicado['ok']) {
+                        $erros[] = 'Cupom: ' . $aplicado['mensagem'];
+                    } else {
+                        $cupomUsado = $validacaoCupom['cupom'];
+                        $cupomDesconto = $aplicado['desconto'];
+                        $valorTotalCurso = $aplicado['valor_total'];
+                        $taxaMatriculaFinal = $aplicado['taxa'];
+                    }
+                }
+            }
             $mensalidadeBase = mensalidadeDoTotal($valorTotalCurso, max(1, $dados['num_parcelas']));
             if ($turma && $dados['desconto_pontualidade_tipo'] !== 'nenhum') {
                 $mensalidadeFinal = valorMensalidadeComDesconto($mensalidadeBase, $dados['desconto_percentual']);
@@ -187,15 +218,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'INSERT INTO matriculas
                         (turma_id, aluno_id, data_matricula, valor_mensalidade, valor_total, desconto_percentual,
                          desconto_pontualidade_tipo, desconto_pontualidade_valor, desconto_pontualidade_dias, num_parcelas,
-                         primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id, observacao, usuario_id)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+                         primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id, observacao, usuario_id,
+                         cupom_id, cupom_desconto)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
                 );
                 $stmt->execute([
                     $turma['id'], $aluno['id'], $dados['data_matricula'], $mensalidadeBase, $valorTotalCurso,
                     $dados['desconto_percentual'], $dados['desconto_pontualidade_tipo'], $dados['desconto_pontualidade_valor'],
                     $dados['desconto_pontualidade_dias'], $dados['num_parcelas'], $dados['primeiro_vencimento'],
-                    $dados['taxa_matricula'], $dados['forma_pagamento_id'] ?: null, $dados['forma_mensalidade_id'] ?: null, $dados['observacao'] ?: null,
-                    usuarioAtualId(),
+                    $taxaMatriculaFinal, $dados['forma_pagamento_id'] ?: null, $dados['forma_mensalidade_id'] ?: null, $dados['observacao'] ?: null,
+                    usuarioAtualId(), $cupomUsado ? (int) $cupomUsado['id'] : null, $cupomDesconto,
                 ]);
                 $matriculaId = (int) $pdo->lastInsertId();
                 if ($reservaUsada) {
@@ -204,7 +236,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $stmt = $pdo->prepare('SELECT * FROM matriculas WHERE id = ?');
                 $stmt->execute([$matriculaId]);
-                gerarCobrancasMatricula($pdo, $stmt->fetch(), $turma['nome'], usuarioAtualId());
+                // A taxa vence no prazo escolhido, contado da data da matrícula.
+                gerarCobrancasMatricula($pdo, $stmt->fetch() + ['vencimento_taxa' => date('Y-m-d', strtotime($dados['data_matricula'] . ' +' . $dados['prazo_taxa_dias'] . ' days'))], $turma['nome'], usuarioAtualId());
 
                 if ($liberacaoUsada) {
                     $pdo->prepare("UPDATE liberacoes_inadimplencia SET status = 'usada', usado_em = NOW() WHERE id = ?")->execute([$liberacaoUsada]);
@@ -214,6 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 registrarHistoricoAluno($pdo, (int) $aluno['id'], 'matricula', 'Turma ' . $turma['nome'] . ($autorizacaoInadimplente ? ' (inadimplente, autorizado por ' . $autorizacaoInadimplente . ')' : ''), isset($matriculaId) ? (int) $matriculaId : null);
                 registrarAtividade('matriculas', 'matricula', 'Aluno ' . $aluno['nome'] . ' matriculado na turma ' . $turma['nome']
+                    . ($cupomUsado ? ' — cupom ' . $cupomUsado['codigo'] . ' (' . ($cupomUsado['tipo'] === 'matricula_zero' ? 'matrícula grátis' : formatMoney($cupomDesconto) . ' de desconto') . ')' : '')
                     . ($autorizacaoInadimplente ? ' (inadimplente: ' . formatMoney($atrasoAluno) . ' em atraso — autorizado por ' . $autorizacaoInadimplente . ')' : ''));
 
                 flash('success', 'Matrícula realizada. ' . $dados['num_parcelas'] . ' mensalidade(s) lançada(s) em contas a receber.');
@@ -354,7 +388,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             </div>
             <div class="col-md-6">
                 <label class="form-label">Data da matrícula</label>
-                <input type="date" name="data_matricula" class="form-control" value="<?= e($dados['data_matricula']) ?>">
+                <input type="date" name="data_matricula" class="form-control" value="<?= e($dados['data_matricula']) ?>" oninput="atualizarVencimentoTaxa()">
             </div>
             <div class="col-12">
                 <label class="form-label">Observação</label>
@@ -371,7 +405,15 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <label class="form-label">Taxa de matrícula</label>
                 <input type="text" name="taxa_matricula" id="taxa_matricula" class="form-control"
                        value="<?= e(number_format((float) $dados['taxa_matricula'], 2, ',', '')) ?>" oninput="atualizarPrevia()">
-                <div class="form-text">0 = sem taxa. Vence na data da matrícula.</div>
+                <div class="form-text">0 = sem taxa.</div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Prazo para pagar a matrícula</label>
+                <div class="input-group">
+                    <input type="number" name="prazo_taxa_dias" id="prazo_taxa_dias" class="form-control" min="0" max="60" value="<?= (int) $dados['prazo_taxa_dias'] ?>" oninput="atualizarVencimentoTaxa()">
+                    <span class="input-group-text">dias</span>
+                </div>
+                <div class="form-text" id="vencimento_taxa_texto"></div>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Matrícula paga com</label>
@@ -393,6 +435,14 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <input type="text" name="desconto_percentual" id="desconto_percentual" class="form-control"
                        value="<?= e(number_format((float) $dados['desconto_percentual'], 2, ',', '')) ?>" oninput="atualizarPrevia()">
                 <div class="form-text">Seu limite: <?= formatPercent($descontoMax) ?></div>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Cupom de desconto</label>
+                <div class="input-group">
+                    <input type="text" name="cupom" id="cupom" class="form-control text-uppercase" autocomplete="off" placeholder="Código" value="<?= e($dados['cupom']) ?>">
+                    <button type="button" class="btn btn-outline-secondary" onclick="conferirCupom()">Aplicar</button>
+                </div>
+                <div class="form-text" id="cupom_mensagem"></div>
             </div>
             <div class="col-md-4">
                 <label class="form-label">Mensalidades pagas com</label>
@@ -461,6 +511,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <div class="d-flex justify-content-between"><span>Mensalidade com desconto</span><strong id="previa_mensalidade">-</strong></div>
             <div class="d-flex justify-content-between"><span>Mensalidades</span><span id="previa_qtd">-</span></div>
             <div class="d-flex justify-content-between"><span>Taxa de matrícula</span><span id="previa_taxa">-</span></div>
+            <div class="d-flex justify-content-between text-success d-none" id="linha_cupom"><span>Cupom <span id="previa_cupom_codigo"></span></span><strong id="previa_cupom">-</strong></div>
             <div class="d-flex justify-content-between text-success d-none" id="linha_pontualidade"><span>Pagando em dia</span><strong id="previa_pontualidade">-</strong></div>
             <hr>
             <div class="d-flex justify-content-between fs-5"><span>Total do contrato</span><strong id="previa_total">-</strong></div>
@@ -561,6 +612,37 @@ function aoTrocarTurma(inicial) {
     atualizarPrevia();
 }
 
+// Cupom conferido no servidor (null = sem cupom). Mudar turma, aluno ou o
+// código desfaz; ao salvar, o servidor confere de novo.
+var cupomAplicado = null;
+async function conferirCupom() {
+    const campo = document.getElementById('cupom');
+    const mensagem = document.getElementById('cupom_mensagem');
+    campo.value = campo.value.toUpperCase().replace(/\s/g, '');
+    cupomAplicado = null;
+    mensagem.className = 'form-text';
+    mensagem.textContent = '';
+    if (campo.value) {
+        const turma = turmaSelecionada();
+        if (!turma) {
+            mensagem.className = 'form-text text-danger';
+            mensagem.textContent = 'Escolha a turma antes do cupom.';
+        } else {
+            mensagem.textContent = 'Conferindo...';
+            const params = new URLSearchParams({ codigo: campo.value, turma_id: turma.id, aluno_id: document.getElementById('aluno_id').value || '' });
+            const r = await (await fetch('/matriculas/cupom.php?' + params)).json();
+            mensagem.className = 'form-text ' + (r.ok ? 'text-success' : 'text-danger');
+            mensagem.textContent = r.mensagem;
+            if (r.ok) cupomAplicado = r;
+        }
+    }
+    atualizarPrevia();
+}
+document.getElementById('cupom').addEventListener('input', () => {
+    if (cupomAplicado) { cupomAplicado = null; document.getElementById('cupom_mensagem').textContent = 'Clique em Aplicar para conferir.'; atualizarPrevia(); }
+});
+document.getElementById('cupom').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); conferirCupom(); } });
+
 function atualizarPrevia() {
     const turma = turmaSelecionada();
     const desconto = lerDecimal(document.getElementById('desconto_percentual').value);
@@ -577,17 +659,38 @@ function atualizarPrevia() {
 
     // Mesma conta de gerarCobrancasMatricula() no PHP: total menos a bolsa,
     // dividido nas parcelas (a última leva a diferença de centavos).
-    const total = totalDoCurso(turma, Math.max(1, qtd));
+    const totalSemCupom = totalDoCurso(turma, Math.max(1, qtd));
+    // Cupom (mesma conta de aplicarCupom() no PHP): sai do curso antes da
+    // bolsa; "matrícula zero" zera a taxa.
+    let total = totalSemCupom;
+    let taxaFinal = taxa;
+    let descontoCupom = 0;
+    if (cupomAplicado) {
+        if (cupomAplicado.tipo === 'matricula_zero') {
+            descontoCupom = taxa;
+            taxaFinal = 0;
+        } else {
+            descontoCupom = cupomAplicado.tipo === 'percentual'
+                ? Math.round(totalSemCupom * Math.min(100, cupomAplicado.valor)) / 100
+                : Math.min(cupomAplicado.valor, totalSemCupom);
+            total = Math.round((totalSemCupom - descontoCupom) * 100) / 100;
+        }
+    }
+    document.getElementById('linha_cupom').classList.toggle('d-none', !cupomAplicado);
+    if (cupomAplicado) {
+        document.getElementById('previa_cupom_codigo').textContent = cupomAplicado.codigo;
+        document.getElementById('previa_cupom').textContent = '− ' + formatarMoeda(descontoCupom);
+    }
     const totalComDesconto = Math.round(total * (1 - desconto / 100) * 100) / 100;
     const n = Math.max(1, qtd);
     const comDesconto = Math.floor(Math.round(totalComDesconto * 100) / n) / 100;
     const ultima = Math.round(totalComDesconto * 100 - Math.round(comDesconto * 100) * (n - 1)) / 100;
 
-    document.getElementById('mensalidade_turma').value = formatarMoeda(total);
+    document.getElementById('mensalidade_turma').value = formatarMoeda(totalSemCupom);
     document.getElementById('previa_mensalidade').textContent = formatarMoeda(comDesconto);
     document.getElementById('previa_qtd').textContent = qtd + ' × ' + formatarMoeda(comDesconto) + (qtd > 1 && Math.abs(ultima - comDesconto) > 0.001 ? ' (última ' + formatarMoeda(ultima) + ')' : '');
-    document.getElementById('previa_taxa').textContent = taxa > 0 ? formatarMoeda(taxa) : 'Sem taxa';
-    document.getElementById('previa_total').textContent = formatarMoeda(totalComDesconto + taxa);
+    document.getElementById('previa_taxa').textContent = taxaFinal > 0 ? formatarMoeda(taxaFinal) : (taxa > 0 ? 'Grátis (cupom)' : 'Sem taxa');
+    document.getElementById('previa_total').textContent = formatarMoeda(totalComDesconto + taxaFinal);
 
     // Mesma conta de descontoPontualidadeParcela() no PHP.
     const tipoPontualidade = document.getElementById('desconto_pontualidade_tipo').value;
@@ -623,7 +726,7 @@ const buscaAluno = montarBusca({
     titulo: (a) => a.nome,
     detalhe: (a) => a.cpf ? 'CPF ' + String(a.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : 'Sem CPF cadastrado',
     vazio: 'Nenhum aluno encontrado.<?= $podeCriarAluno ? ' Use o botão <i class="bi bi-person-plus"></i> para cadastrar.' : '' ?>',
-    aoEscolher: () => atualizarInadimplencia(),
+    aoEscolher: () => { atualizarInadimplencia(); if (document.getElementById('cupom').value) conferirCupom(); },
 });
 
 /* -------------------- aluno inadimplente (parcela vencida) -------------------- */
@@ -691,7 +794,7 @@ const buscaTurma = montarBusca({
     detalhe: (t) => t.ocupadas + '/' + t.vagas + ' alunos · início ' + (t.inicio ? deISO(t.inicio).toLocaleDateString('pt-BR') : 'a definir') + ' · ' + formatarMoeda(t.mensalidade) + '/mês',
     bloqueado: (t) => t.ocupadas >= t.vagas && String(t.id) !== document.getElementById('turma_id').value ? 'Lotada (' + t.ocupadas + '/' + t.vagas + ')' : '',
     vazio: 'Nenhuma turma aberta encontrada.<?= $podeCriarTurma ? ' Use o botão <i class="bi bi-plus-lg"></i> para criar.' : '' ?>',
-    aoEscolher: () => aoTrocarTurma(),
+    aoEscolher: () => { aoTrocarTurma(); if (document.getElementById('cupom').value) conferirCupom(); },
 });
 
 /* ----------------------------- cadastros rápidos ----------------------------- */
@@ -761,8 +864,21 @@ function atualizarPontualidade() {
 }
 
 atualizarPontualidade();
+// Texto "vence em dd/mm/aaaa" do prazo da taxa de matrícula.
+function atualizarVencimentoTaxa() {
+    const data = document.querySelector('[name="data_matricula"]').value;
+    const dias = parseInt(document.getElementById('prazo_taxa_dias').value, 10) || 0;
+    const texto = document.getElementById('vencimento_taxa_texto');
+    if (!data) { texto.textContent = ''; return; }
+    const vencimento = deISO(data);
+    vencimento.setDate(vencimento.getDate() + dias);
+    texto.textContent = (dias ? 'Vence em ' : 'Vence no dia da matrícula, ') + vencimento.toLocaleDateString('pt-BR') + '.';
+}
+atualizarVencimentoTaxa();
+
 aoTrocarTurma(true);
 atualizarInadimplencia();
+if (document.getElementById('cupom').value) conferirCupom(); // voltou com erro: confere de novo
 <?php if ($reserva && !$dados['aluno_id']): ?>
 document.getElementById('aluno-busca').value = <?= json_encode($reserva['nome'], JSON_UNESCAPED_UNICODE) ?>;
 <?php endif; ?>

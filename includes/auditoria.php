@@ -15,6 +15,7 @@ function modulosAuditoria(): array
         'matriculas'             => 'Matrículas',
         'fornecedores'           => 'Fornecedores',
         'formas_pagamento'       => 'Formas de pagamento',
+        'cupons'                 => 'Cupons de desconto',
         'contas_pagar'           => 'Contas a pagar',
         'contas_receber'         => 'Contas a receber',
         'categorias_financeiras' => 'Categorias financeiras',

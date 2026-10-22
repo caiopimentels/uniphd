@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
-exigirPortal();
+exigirEditarDocumentos();
 
 // Sem ?modelo: lista dos modelos. Com ?modelo=ID: editor daquele modelo.
 $pdo = getDB();
@@ -189,23 +189,32 @@ $modulosCertificado = modulosExemploCertificado();
 // =====================================================================
 if (!$modelo):
     $modelos = modelosCertificado($pdo);
+    garantirContratoPadrao($pdo);
+    $contratos = modelosContrato($pdo);
+    $doc = documentoDados($pdo);
+    $valoresExemplo = valoresExemploContrato($pdo);
     $pageTitle = 'Modelos de documentos';
     $pageBreadcrumb = 'Acadêmico · Portal do aluno';
     $activeMenu = 'certificado';
-    $pageAction = '<a href="/configuracoes/certificado.php?modelo=novo" class="btn btn-brand"><i class="bi bi-plus-lg"></i> Novo modelo</a>';
+    // "+": primeiro escolhe o tipo — certificado/declaração (folha montada
+    // com fundo e textos) ou contrato (texto, como no Word).
+    $pageAction = '<button type="button" class="btn btn-brand" data-bs-toggle="modal" data-bs-target="#modal-tipo-documento"><i class="bi bi-plus-lg"></i> Novo modelo</button>';
     require __DIR__ . '/../../includes/layout_header.php';
 ?>
 <link href="<?= e(assetUrl('/assets/css/certificado.css')) ?>" rel="stylesheet">
 <style>
     .modelo-card { background: var(--surface, #fff); border: 1px solid var(--border, #e6e8eb); border-radius: 12px; overflow: hidden; height: 100%; display: flex; flex-direction: column; }
-    .modelo-card .miniatura { display: block; padding: 12px; background: #eef1f4; }
-    .modelo-card .miniatura .cert-folha { pointer-events: none; }
+    /* Miniaturas do mesmo tamanho (4 por linha): folha deitada até a largura
+       do cartão; folha em pé (vertical e contrato) com a mesma altura. */
+    .modelo-card .miniatura { display: flex; align-items: center; justify-content: center; height: 196px; padding: 10px; background: #eef1f4; text-decoration: none; }
+    .modelo-card .miniatura .cert-folha { pointer-events: none; width: 100%; max-width: 249px; margin: 0; }
+    .modelo-card .miniatura .cert-folha.cert-vertical { width: 125px; max-width: 125px; }
+    .modelo-card .corpo .fw-semibold { font-size: .95rem !important; }
     .modelo-card .corpo { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
 </style>
 <p class="text-muted" style="max-width: 900px;">
-    Modelos dos documentos que o aluno recebe: certificado, declarações de módulo... Cada curso escolhe, em "Documentos emitidos" (Acadêmico › Cursos),
-    qual modelo usar em cada documento; sem escolha, vale o <strong>padrão</strong>. Cada modelo pode ser horizontal ou vertical.
-    Clique num modelo para editar.
+    Modelos dos documentos: <strong>certificados e declarações</strong> (folha montada, horizontal ou vertical) e <strong>contratos</strong> (texto, como no Word).
+    Cada curso escolhe, no cadastro do curso, qual modelo usar; sem escolha, vale o <strong>padrão</strong> de cada tipo. Clique num modelo para editar.
 </p>
 <div class="row g-3">
     <?php foreach ($modelos as $m):
@@ -213,14 +222,14 @@ if (!$modelo):
         $paginasCertificado = [$paginas[0]];
         $orientacaoCertificado = $m['orientacao'] ?? 'horizontal';
         $marcaDaguaCertificado = marcaDaguaModelo($m); ?>
-        <div class="col-md-6 col-xl-4">
+        <div class="col-sm-6 col-lg-4 col-xl-3">
             <div class="modelo-card">
                 <a class="miniatura" href="/configuracoes/certificado.php?modelo=<?= (int) $m['id'] ?>" title="Editar"><?php require __DIR__ . '/../../includes/certificado_render.php'; ?></a>
                 <div class="corpo">
                     <div class="d-flex align-items-center gap-2">
                         <a href="/configuracoes/certificado.php?modelo=<?= (int) $m['id'] ?>" class="fw-semibold fs-6 text-decoration-none"><?= e($m['nome']) ?></a>
                         <?php if ($m['padrao']): ?><span class="badge text-bg-warning"><i class="bi bi-star-fill"></i> Padrão</span><?php endif; ?>
-                        <span class="badge text-bg-light border ms-auto"><?= count($paginas) ?> folha(s)</span>
+                        <span class="badge tipo-modelo tipo-certificado ms-auto" title="<?= count($paginas) ?> folha(s)"><i class="bi bi-award"></i> Certificado</span>
                     </div>
                     <div class="small text-muted">
                         <?= $m['cursos'] ? 'Cursos: ' . e($m['cursos']) : ($m['padrao'] ? 'Cursos sem modelo escolhido' : 'Nenhum curso usa este modelo') ?>
@@ -241,7 +250,82 @@ if (!$modelo):
             </div>
         </div>
     <?php endforeach; ?>
+
+    <?php foreach ($contratos as $ct): ?>
+        <div class="col-sm-6 col-lg-4 col-xl-3">
+            <div class="modelo-card">
+                <a class="miniatura miniatura-contrato" href="/configuracoes/contrato.php?modelo=<?= (int) $ct['id'] ?>" title="Editar">
+                    <?= miniaturaContrato($ct, $valoresExemplo, $doc) ?>
+                </a>
+                <div class="corpo">
+                    <div class="d-flex align-items-center gap-2">
+                        <a href="/configuracoes/contrato.php?modelo=<?= (int) $ct['id'] ?>" class="fw-semibold fs-6 text-decoration-none"><?= e($ct['nome']) ?></a>
+                        <?php if ($ct['padrao']): ?><span class="badge text-bg-warning"><i class="bi bi-star-fill"></i> Padrão</span><?php endif; ?>
+                        <span class="badge tipo-modelo tipo-contrato ms-auto"><i class="bi bi-file-earmark-text"></i> Contrato</span>
+                    </div>
+                    <div class="small text-muted"><?= $ct['cursos'] ? 'Cursos: ' . e($ct['cursos']) : ($ct['padrao'] ? 'Cursos sem contrato escolhido' : 'Nenhum curso usa este contrato') ?></div>
+                    <div class="d-flex flex-wrap gap-1 mt-auto pt-2">
+                        <a href="/configuracoes/contrato.php?modelo=<?= (int) $ct['id'] ?>" class="btn btn-sm btn-brand"><i class="bi bi-pencil"></i> Editar</a>
+                        <form method="post" action="/configuracoes/contrato.php"><input type="hidden" name="acao" value="duplicar"><input type="hidden" name="modelo_id" value="<?= (int) $ct['id'] ?>">
+                            <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-copy"></i> Duplicar</button></form>
+                        <?php if (!$ct['padrao']): ?>
+                            <form method="post" action="/configuracoes/contrato.php"><input type="hidden" name="acao" value="tornar_padrao"><input type="hidden" name="voltar" value="lista"><input type="hidden" name="modelo_id" value="<?= (int) $ct['id'] ?>">
+                                <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-star"></i> Tornar padrão</button></form>
+                            <form method="post" action="/configuracoes/contrato.php" class="ms-auto" onsubmit="return confirm(<?= e(json_encode('Excluir o contrato "' . $ct['nome'] . '"?' . ($ct['cursos'] ? ' Os cursos ' . $ct['cursos'] . ' passarão a usar o contrato padrão.' : ''))) ?>)">
+                                <input type="hidden" name="acao" value="excluir"><input type="hidden" name="modelo_id" value="<?= (int) $ct['id'] ?>">
+                                <button class="btn btn-sm btn-outline-danger" title="Excluir"><i class="bi bi-trash"></i></button></form>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <?php endforeach; ?>
 </div>
+
+<div class="modal fade" id="modal-tipo-documento" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Que tipo de documento?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body d-grid gap-2">
+                <a href="/configuracoes/certificado.php?modelo=novo" class="tipo-documento">
+                    <i class="bi bi-award"></i>
+                    <span><strong>Certificado ou declaração</strong><small>Folha montada com arte de fundo, textos, imagens e QR Code.</small></span>
+                </a>
+                <a href="/configuracoes/contrato.php?modelo=novo" class="tipo-documento">
+                    <i class="bi bi-file-earmark-text"></i>
+                    <span><strong>Contrato</strong><small>Texto editável como no Word, com as variáveis do aluno e da matrícula.</small></span>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .miniatura-contrato { text-decoration: none; }
+    .tipo-modelo { font-weight: 600; } .tipo-certificado { background: #fff4d6; color: #8a6100; } .tipo-contrato { background: #e3efff; color: #1d4f91; }
+    /* Miniatura do contrato: a 1ª folha de verdade (cabeçalho, imagens e texto
+       com dados de exemplo), reduzida. 794 × 1123 px = A4. */
+    .mini-contrato { position: relative; width: 125px; height: 176px; overflow: hidden; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+    .mini-contrato .mini-folha { position: absolute; top: 0; left: 0; width: 794px; height: 1123px; transform: scale(calc(125 / 794)); transform-origin: top left; font-family: Arial, sans-serif; box-sizing: border-box; overflow: hidden; }
+    .mini-contrato .mini-cabecalho { border-bottom: 1.5px solid var(--cor-doc); padding-bottom: 3mm; margin-bottom: 18px; font-size: 11px; line-height: 1.35; }
+    .mini-contrato .img-livre { position: absolute; } .mini-contrato .img-livre img { width: 100%; display: block; }
+    <?= cssContrato() ?>
+    :root { --cor-doc: <?= e($doc['cor']) ?>; }
+    .tipo-documento { display: flex; gap: 14px; align-items: center; padding: 14px 16px; border: 1px solid var(--border, #e6e8eb); border-radius: 10px; text-decoration: none; color: inherit; }
+    .tipo-documento:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .tipo-documento i { font-size: 1.8rem; color: var(--accent); }
+    .tipo-documento small { display: block; color: var(--text-muted); }
+</style>
+<script src="<?= e(assetUrl('/assets/js/contrato-tabs.js')) ?>"></script>
+<script>
+// Miniaturas dos contratos: TAB até as marcas da régua, na folha reduzida.
+document.querySelectorAll('.mini-folha').forEach((folha) => {
+    const marcas = JSON.parse(folha.dataset.tabulacoes || '[]');
+    folha.querySelectorAll('.mini-cabecalho, .texto-contrato').forEach((area) => aplicarTabulacoes(area, marcas, 125 / 794));
+});
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="<?= e(assetUrl('/assets/js/certificado.js')) ?>"></script>
 <script>(document.fonts ? document.fonts.ready : Promise.resolve()).then(() => ajustarCertificado());</script>

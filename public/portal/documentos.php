@@ -37,6 +37,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $grupos = documentosDoAluno($pdo, $alunoId);
 $anexosLiberados = anexosAluno($pdo, $alunoId, true);
+// Contratos das matrículas em turmas que liberam o contrato no portal.
+$stmt = $pdo->prepare(
+    "SELECT m.id, c.nome AS curso_nome, t.nome AS turma_nome, m.data_matricula
+     FROM matriculas m JOIN turmas t ON t.id = m.turma_id JOIN cursos c ON c.id = t.curso_id
+     WHERE m.aluno_id = ? AND t.contrato_portal = 1 AND m.status <> 'cancelada'
+     ORDER BY m.data_matricula DESC, m.id DESC"
+);
+$stmt->execute([$alunoId]);
+$contratos = $stmt->fetchAll();
 $status = statusDocumentoAluno();
 $tituloPagina = 'Meus documentos';
 require __DIR__ . '/../../includes/portal_header.php';
@@ -44,7 +53,20 @@ require __DIR__ . '/../../includes/portal_header.php';
 <h1 class="portal-titulo">Meus documentos</h1>
 <p class="portal-sub">Alguns cursos pedem documentos (por exemplo, para emitir o certificado). Envie em PDF ou foto (JPG/PNG), bem legível.</p>
 
-<?php if (!$grupos && !$anexosLiberados): ?>
+<?php if ($contratos): ?>
+    <div class="portal-card mb-3">
+        <h2 class="h5 mb-3">Contratos</h2>
+        <?php foreach ($contratos as $ct): ?>
+            <div class="lista-linha">
+                <i class="bi bi-file-earmark-pdf fs-4"></i>
+                <div class="principal"><div class="t">Contrato — <?= e($ct['curso_nome']) ?></div><div class="s"><?= e($ct['turma_nome']) ?> · matrícula de <?= formatDate($ct['data_matricula']) ?></div></div>
+                <a href="/portal/contrato.php?matricula=<?= (int) $ct['id'] ?>" target="_blank" class="btn btn-sm btn-outline-brand"><i class="bi bi-file-earmark-pdf"></i> Abrir PDF</a>
+            </div>
+        <?php endforeach; ?>
+    </div>
+<?php endif; ?>
+
+<?php if (!$grupos && !$anexosLiberados && !$contratos): ?>
     <div class="portal-card text-center text-muted">Nenhum dos seus cursos pede documentos.</div>
 <?php endif; ?>
 

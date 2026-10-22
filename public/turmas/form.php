@@ -67,6 +67,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $agendaJson = $agenda ? json_encode($agenda) : null;
     $portal = [
         'portal_publicar' => isset($_POST['portal_publicar']) ? 1 : 0,
+        'contrato_portal' => isset($_POST['contrato_portal']) ? 1 : 0,
         'portal_descricao' => trim((string) ($_POST['portal_descricao'] ?? '')),
         'portal_inscricoes_ate' => input('portal_inscricoes_ate'),
         'portal_modo_vaga' => array_key_exists(input('portal_modo_vaga'), modosVagaPortal()) ? input('portal_modo_vaga') : 'reserva',
@@ -203,13 +204,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $imagemAtual = $turma['portal_imagem'] ?? null;
         $imagem = $novaImagem ?? (isset($_POST['remover_imagem']) ? null : $imagemAtual);
         $stmt = $pdo->prepare(
-            'UPDATE turmas SET dias_semana = ?, hora_inicio = ?, hora_fim = ?, agenda = ?, minimo_alunos = ?, portal_publicar = ?, portal_descricao = ?, portal_imagem = ?,
+            'UPDATE turmas SET dias_semana = ?, hora_inicio = ?, hora_fim = ?, agenda = ?, minimo_alunos = ?, portal_publicar = ?, contrato_portal = ?, portal_descricao = ?, portal_imagem = ?,
                 portal_inscricoes_ate = ?, portal_modo_vaga = ?, portal_prazo_pagamento_dias = ?, portal_taxa_matricula = ?,
                 portal_num_parcelas = ?, portal_dia_vencimento = ?, portal_forma_pagamento_id = ?, forma_mensalidade_id = ?, data_conclusao = ? WHERE id = ?'
         );
         $stmt->execute([
             $diasSemana ? implode(',', $diasSemana) : null, $horaInicio ?: null, $horaFim ?: null, $agendaJson, $minimoAlunos,
-            $portal['portal_publicar'], $portal['portal_descricao'] ?: null, $imagem, $portal['portal_inscricoes_ate'] ?: null,
+            $portal['portal_publicar'], $portal['contrato_portal'], $portal['portal_descricao'] ?: null, $imagem, $portal['portal_inscricoes_ate'] ?: null,
             $portal['portal_modo_vaga'], $portal['portal_prazo_pagamento_dias'], $portal['portal_taxa_matricula'],
             $portal['portal_num_parcelas'], $portal['portal_dia_vencimento'], $portal['portal_forma_pagamento_id'], $portal['forma_mensalidade_id'],
             $situacao['comportamento'] === 'concluida' ? $dataConclusao : null, $id,
@@ -471,6 +472,12 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="form-check form-switch mb-3">
         <input type="checkbox" class="form-check-input" role="switch" name="portal_publicar" id="portal_publicar" <?= !empty($turma['portal_publicar']) ? 'checked' : '' ?> onchange="atualizarPortal()">
         <label class="form-check-label fw-semibold" for="portal_publicar">Mostrar esta turma no portal e aceitar inscrições online</label>
+    </div>
+    <div class="form-check form-switch mb-3">
+        <?php // Turma nova já vem com o contrato liberado; as antigas, como estavam. ?>
+        <input type="checkbox" class="form-check-input" role="switch" name="contrato_portal" id="contrato_portal" <?= (isset($turma['contrato_portal']) ? $turma['contrato_portal'] : !$id) ? 'checked' : '' ?>>
+        <label class="form-check-label fw-semibold" for="contrato_portal">Contrato disponível para o aluno baixar no portal (em Documentos)</label>
+        <div class="form-text">O contrato é o do curso (Acadêmico › Cursos), preenchido com os dados de cada matrícula.</div>
     </div>
     <div id="bloco-portal" class="row g-3">
         <div class="col-md-8">

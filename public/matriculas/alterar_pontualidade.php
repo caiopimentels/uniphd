@@ -38,6 +38,15 @@ if ($tipo !== 'nenhum') {
     if ($dias < 0 || $dias > 31) {
         $erros[] = 'O prazo vai de 0 (até o vencimento) a 31 dias antes.';
     }
+    // Cupom que não acumula: a matrícula não ganha outro desconto depois.
+    if ($matricula['cupom_id']) {
+        $stmt = $pdo->prepare('SELECT codigo, acumula FROM cupons WHERE id = ?');
+        $stmt->execute([$matricula['cupom_id']]);
+        $cupom = $stmt->fetch();
+        if ($cupom && !$cupom['acumula']) {
+            $erros[] = 'Esta matrícula usou o cupom ' . $cupom['codigo'] . ', que não acumula com o desconto por pontualidade.';
+        }
+    }
     $percentual = $tipo === 'percentual' ? $valor : ($mensalidadeFinal > 0 ? $valor / $mensalidadeFinal * 100 : 100);
     if (!$erros && $percentual > usuarioDescontoMax()) {
         $erros[] = 'Este desconto equivale a ' . formatPercent($percentual) . ' da mensalidade; seu perfil pode conceder até ' . formatPercent(usuarioDescontoMax()) . '.';

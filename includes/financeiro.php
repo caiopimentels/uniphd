@@ -130,7 +130,8 @@ function gerarCobrancasMatricula(PDO $pdo, array $matricula, string $turmaNome, 
         $stmt->execute([
             $matricula['aluno_id'], $matricula['id'], categoriaSistemaId($pdo, 'taxa_matricula'),
             "Taxa de matrícula - {$turmaNome}", $matricula['taxa_matricula'],
-            $matricula['data_matricula'], $matricula['data_matricula'],
+            // Vence na data da matrícula, ou no prazo dado pela secretaria.
+            $matricula['data_matricula'], $matricula['vencimento_taxa'] ?? $matricula['data_matricula'],
             $matricula['forma_pagamento_id'] ?: null, $usuarioId,
         ]);
     }
