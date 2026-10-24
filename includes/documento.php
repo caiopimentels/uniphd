@@ -131,6 +131,10 @@ function documentoInicio(PDO $pdo, string $titulo, string $voltar): array
     .assinaturas div { flex:1; border-top:1px solid #333; padding-top:1.5mm; text-align:center; font-size:11px; }
     .doc-rodape { margin-top:8mm; font-size:10px; color:#999; text-align:center; }
     .duas-vias { border-top:1px dashed #999; margin:8mm 0; position:relative; }
+    .text-nowrap { white-space:nowrap; }
+    .opcoes-impressao { display:flex; flex-wrap:wrap; gap:4mm 8mm; align-items:center; margin:0 0 6mm; padding:3mm 4mm; background:#f4f6f9; border-radius:2mm; font-size:12px; }
+    .opcoes-impressao label { display:inline-flex; align-items:center; gap:1.5mm; cursor:pointer; }
+    @media print { .opcoes-impressao { display:none; } }
     .duas-vias span { position:absolute; top:-2.2mm; left:50%; transform:translateX(-50%); background:#fff; padding:0 3mm; font-size:9px; color:#999; }
 </style>
 </head>

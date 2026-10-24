@@ -274,6 +274,10 @@ require __DIR__ . '/../../includes/layout_header.php';
     <?php endif; ?>
     <li class="nav-item"><a class="nav-link <?= $tabAtiva === 'documentos' ? 'active' : '' ?>" href="#" data-tab="documentos">Documentos
         <?php if ($documentosAguardando): ?><span class="badge text-bg-warning"><?= $documentosAguardando ?> para analisar</span><?php endif; ?></a></li>
+    <?php if (usuarioPodeVerProtocolos()): $protocolosAberto = protocolosAguardandoSecretaria($pdo, (int) $id); ?>
+    <li class="nav-item"><a class="nav-link <?= $tabAtiva === 'protocolos' ? 'active' : '' ?>" href="#" data-tab="protocolos">Protocolos
+        <?php if ($protocolosAberto): ?><span class="badge text-bg-warning"><?= $protocolosAberto ?> para responder</span><?php endif; ?></a></li>
+    <?php endif; ?>
     <li class="nav-item"><a class="nav-link <?= $tabAtiva === 'historico' ? 'active' : '' ?>" href="#" data-tab="historico">Histórico</a></li>
     <?php endif; ?>
 </ul>
@@ -612,6 +616,48 @@ require __DIR__ . '/../../includes/layout_header.php';
 </div>
 <?php require __DIR__ . '/../../includes/modal_documento.php'; ?>
 
+<?php if (usuarioPodeVerProtocolos()): ?>
+<div class="tab-pane" id="pane-protocolos" style="<?= $tabAtiva === 'protocolos' ? '' : 'display:none;' ?>">
+    <?php
+    $stmt = $pdo->prepare(
+        "SELECT p.id, p.numero, p.criado_em, p.atualizado_em, p.aguardando, p.data_referencia, pa.nome AS assunto_nome, ps.nome AS status_nome, ps.cor AS status_cor, ps.encerra,
+                c.nome AS curso_nome, t.nome AS turma_nome, cm.nome AS modulo_nome
+         FROM protocolos p JOIN protocolo_assuntos pa ON pa.id = p.assunto_id JOIN protocolo_status ps ON ps.id = p.status_id
+         LEFT JOIN matriculas m ON m.id = p.matricula_id LEFT JOIN turmas t ON t.id = m.turma_id LEFT JOIN cursos c ON c.id = t.curso_id
+         LEFT JOIN curso_modulos cm ON cm.id = p.curso_modulo_id
+         WHERE p.aluno_id = ? ORDER BY ps.encerra, p.atualizado_em DESC"
+    );
+    $stmt->execute([(int) $id]);
+    $protocolosAluno = $stmt->fetchAll();
+    ?>
+    <div class="secao">
+        <div class="secao-titulo"><i class="bi bi-chat-left-text"></i> Protocolos do aluno
+            <?php if (usuarioPodeAbrirProtocolo()): ?><span class="ms-auto"><a href="/protocolos/novo.php?aluno=<?= (int) $id ?>" class="btn btn-sm btn-brand"><i class="bi bi-plus-lg"></i> Abrir protocolo</a></span><?php endif; ?></div>
+        <?php if (!$protocolosAluno): ?>
+            <p class="text-muted mb-0">Nenhum protocolo. O aluno abre pelo portal (Meus protocolos), por exemplo para justificar uma falta ou pedir reposição — ou a secretaria abre por ele aqui.</p>
+        <?php else: ?>
+            <div class="card"><div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead><tr><th>Nº</th><th>Assunto</th><th>Turma / módulo</th><th>Aberto em</th><th>Atualizado</th><th>Status</th></tr></thead>
+                    <tbody>
+                    <?php foreach ($protocolosAluno as $pr): ?>
+                        <tr class="cursor-pointer" onclick="location.href='/protocolos/ver.php?id=<?= (int) $pr['id'] ?>'">
+                            <td class="fw-semibold"><?= numeroProtocolo($pr) ?></td>
+                            <td><?= e($pr['assunto_nome']) ?><?php if ($pr['data_referencia']): ?><div class="small text-muted">data: <?= formatDate($pr['data_referencia']) ?></div><?php endif; ?></td>
+                            <td class="small"><?= $pr['turma_nome'] ? e($pr['curso_nome'] . ' · ' . $pr['turma_nome']) . ($pr['modulo_nome'] ? '<div class="text-muted">' . e($pr['modulo_nome']) . '</div>' : '') : '<span class="text-muted">—</span>' ?></td>
+                            <td class="small text-nowrap"><?= formatDateTime($pr['criado_em']) ?></td>
+                            <td class="small text-nowrap"><?= formatDateTime($pr['atualizado_em']) ?></td>
+                            <td><?= badgeStatusProtocolo($pr['status_nome'], $pr['status_cor']) ?><?php if (!$pr['encerra'] && $pr['aguardando'] === 'secretaria'): ?> <span class="badge text-bg-warning">Responder</span><?php endif; ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div></div>
+        <?php endif; ?>
+    </div>
+</div>
+<?php endif; ?>
+
 <div class="tab-pane" id="pane-historico" style="<?= $tabAtiva === 'historico' ? '' : 'display:none;' ?>">
         <?php $historicoAluno = historicoAluno($pdo, (int) $id, 200); ?>
         <div class="secao">
@@ -684,8 +730,8 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <?php endif; ?>
                 <?php foreach ($parcelas as $p): ?>
                     <?php $vencida = $p['status'] === 'pendente' && $p['data_vencimento'] < date('Y-m-d'); ?>
-                    <tr>
-                        <td><a href="#" onclick="abrirHistoricoParcela(<?= (int) $p['id'] ?>); return false;" title="Ver o histórico desta parcela"><?= e($p['descricao']) ?></a> <i class="bi bi-clock-history text-muted small"></i><?php if ($seloBanco = seloBancoParcela($pdo, (int) $p['id'])): ?><div class="mt-1"><?= $seloBanco ?></div><?php endif; ?></td>
+                    <tr class="cursor-pointer" onclick="abrirParcela(<?= (int) $p['id'] ?>)" title="Clique para ver o boleto, alterar e ver o histórico">
+                        <td><?= e($p['descricao']) ?><?php if ($seloBanco = seloBancoParcela($pdo, (int) $p['id'])): ?><div class="mt-1"><?= $seloBanco ?></div><?php endif; ?></td>
                         <td class="<?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($p['data_vencimento']) ?></td>
                         <td class="text-end"><?= formatMoney($p['valor']) ?></td>
                         <td>
@@ -704,12 +750,9 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <span class="badge <?= contaStatusBadgeClass($p['status']) ?>"><?= contaStatusLabel($p['status']) ?></span>
                             <?php endif; ?>
                         </td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap" onclick="event.stopPropagation();">
                             <?php if ($p['status'] === 'pendente'): ?>
                                 <?= botoesCobrancaParcela($pdo, $p) ?>
-                            <?php endif; ?>
-                            <?php if ($p['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $p), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $p['boleto_no_banco'] ? 'Alterar (o boleto é alterado também no banco)' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
                             <?php endif; ?>
                             <?php if ($p['status'] === 'pendente' && usuarioPodeBaixarReceber()): ?>
                                 <a href="/financeiro/contas_receber/baixar.php?id=<?= (int) $p['id'] ?>&voltar=aluno" class="btn btn-sm btn-outline-success" title="Dar baixa (receber)"><i class="bi bi-check-lg"></i></a>
@@ -818,6 +861,5 @@ document.querySelectorAll('[data-tab]').forEach(function (link) {
 </script>
 
 <?php require __DIR__ . '/../../includes/modal_pix.php'; ?>
-<?php require __DIR__ . '/../../includes/modal_historico_parcela.php'; ?>
-<?php $voltarEdicaoParcela = 'aluno'; require __DIR__ . '/../../includes/modal_editar_parcela.php'; ?>
+<?php $voltarParcela = 'aluno'; require __DIR__ . '/../../includes/modal_parcela.php'; ?>
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

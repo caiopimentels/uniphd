@@ -1250,6 +1250,24 @@ function blocoDescontoItau(?array $pontualidade): array
     return ['codigo_tipo_desconto' => '02', 'descontos' => [$item]];
 }
 
+/**
+ * Desconto de um bloco no formato do Itaú (o gravado no boleto ou o que
+ * iria agora), para mostrar e comparar: null = sem desconto; senão
+ * ['tipo' => 'valor'|'percentual', 'valor' => float, 'data' => 'Y-m-d'].
+ */
+function descontoDoBlocoItau(?array $bloco): ?array
+{
+    $item = $bloco['descontos'][0] ?? null;
+    $codigo = (string) ($bloco['codigo_tipo_desconto'] ?? '00');
+    if (!$item || !in_array($codigo, ['01', '02'], true)) {
+        return null;
+    }
+    $numero = fn ($v) => ctype_digit((string) $v) && strlen((string) $v) > 10 ? (int) $v / 100 : (float) $v;
+    return $codigo === '01'
+        ? ['tipo' => 'valor', 'valor' => round($numero($item['valor_desconto'] ?? 0), 2), 'data' => (string) ($item['data_desconto'] ?? '')]
+        : ['tipo' => 'percentual', 'valor' => round((float) ($item['percentual_desconto'] ?? 0), 5), 'data' => (string) ($item['data_desconto'] ?? '')];
+}
+
 // ---------------------------------------------------------------------
 // Tarifas do banco: quanto a conta cobra por boleto emitido, pago (liquidado),
 // baixado ou alterado (configurado na conta bancária). Cada ocorrência fica
@@ -1461,6 +1479,59 @@ function alterarBoletoBancoItau(PDO $pdo, array $antes, array $depois): array
     }
     return ['ok' => $recusa === null, 'havia_boleto' => true, 'reemitir' => false, 'aceito' => $aceito, 'aguardando_aprovacao' => $aguardando,
         'mensagem' => ($recusa ?? 'Boleto alterado também no banco.') . ($aguardando ? ' ' . AVISO_APROVACAO_ITAU : '')];
+}
+
+/**
+ * Mensalidades da matrícula com boleto registrado no banco que seguem a
+ * regra de pontualidade da matrícula (sem desconto próprio) e ainda não
+ * venceram: o desconto delas está gravado no boleto e muda com a regra.
+ * (Boleto de parcela vencida já foi sem desconto.)
+ */
+function boletosSeguemPontualidade(PDO $pdo, int $matriculaId): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT cr.* FROM contas_receber cr
+         WHERE cr.matricula_id = ? AND cr.status = 'pendente' AND cr.desconto_valor IS NULL AND cr.categoria_id = ? AND cr.data_vencimento >= ?
+           AND EXISTS (SELECT 1 FROM cobrancas_bancarias cb WHERE cb.conta_receber_id = cr.id AND cb.status = 'registrada')
+         ORDER BY cr.data_vencimento, cr.id"
+    );
+    $stmt->execute([$matriculaId, categoriaSistemaId($pdo, 'mensalidade'), date('Y-m-d')]);
+    return $stmt->fetchAll();
+}
+
+/**
+ * Leva ao banco a mudança do desconto por pontualidade da matrícula. O Itaú
+ * não aceita a instrução de desconto (ver alterarBoletoBancoItau), então
+ * cada boleto cujo desconto muda é baixado e emitido de novo, já com a
+ * regra nova. $parcelas vem de boletosSeguemPontualidade(); chame depois de
+ * gravar a regra nova na matrícula.
+ * Retorna ['reemitidos' => int, 'falhas' => string[], 'aguardando' => bool].
+ */
+function reemitirBoletosPontualidade(PDO $pdo, int $matriculaId, array $parcelas, array $regraAntes, array $regraDepois, ?int $usuarioId): array
+{
+    regraPontualidadeMatricula($pdo, $matriculaId, true);
+    $resultado = ['reemitidos' => 0, 'falhas' => [], 'aguardando' => false];
+    foreach ($parcelas as $parcela) {
+        if (blocoDescontoItau(descontoPontualidadeParcela($pdo, $parcela, $regraAntes)) === blocoDescontoItau(descontoPontualidadeParcela($pdo, $parcela, $regraDepois))) {
+            continue;
+        }
+        $id = (int) $parcela['id'];
+        $baixa = baixarBoletoBancoItau($pdo, $id);
+        if (!$baixa['ok']) {
+            $resultado['falhas'][] = $parcela['descricao'] . ': ' . $baixa['mensagem'];
+            continue;
+        }
+        $resultado['aguardando'] = $resultado['aguardando'] || str_contains($baixa['mensagem'], AVISO_APROVACAO_ITAU);
+        $novo = registrarCobrancaItau($pdo, $id, $usuarioId);
+        registrarHistoricoParcela($pdo, $id, 'edicao', 'Desconto por pontualidade da matrícula alterado — boleto baixado e '
+            . ($novo['ok'] ? 'emitido de novo' : 'o novo não foi emitido (' . $novo['mensagem'] . ')'));
+        if ($novo['ok']) {
+            $resultado['reemitidos']++;
+        } else {
+            $resultado['falhas'][] = $parcela['descricao'] . ': o boleto antigo foi baixado, mas o novo não foi emitido (' . $novo['mensagem'] . ') — clique no ícone do boleto para tentar de novo';
+        }
+    }
+    return $resultado;
 }
 
 function atualizarCodigoBoletoCobranca(PDO $pdo, array $cobranca, string $vencimento, float $valor): void

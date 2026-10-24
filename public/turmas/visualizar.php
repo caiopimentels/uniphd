@@ -72,7 +72,7 @@ $inadimplentes = count(array_filter($matriculas, fn ($m) => (float) $m['valor_ve
 
 // Despesas da turma (professor, palestrante, material...) e o resultado.
 $podeLancarDespesa = usuarioTemAcessoFinanceiro();
-$podeVerDespesas = usuarioPodeVerFinanceiro();
+$podeVerDespesas = usuarioPodeVerDespesasTurma();
 $despesasTurma = [];
 $resultadoTurma = null;
 if ($podeVerDespesas) {
@@ -134,7 +134,7 @@ foreach ($matriculas as $m) {
         $documentosModal[(int) $m['id']] = ['aluno' => $m['aluno_nome'], 'documentos' => array_map(fn ($d) => [
             'nome' => $d['nome'], 'situacao' => $d['situacao'], 'cor' => $d['cor'], 'texto' => $d['texto'],
             'codigo' => $d['emitido'] ? formatarCodigoCertificado($d['emitido']['codigo']) : null,
-            'abrir' => $d['emitido'] ? '/portal/certificado.php?documento=' . (int) $d['emitido']['id'] : null,
+            'abrir' => $d['emitido'] ? '/portal/certificado.php?c=' . $d['emitido']['codigo'] : null,
             'emissao' => (int) $d['id'],
             'liberado' => (bool) $d['liberado'],
             // Liberar direto (disponível e sem pendência) ou só forçando (admin).
@@ -154,6 +154,10 @@ $stmt = $pdo->prepare(
 $stmt->execute([$id, $turma['curso_id']]);
 $modulosTurma = $stmt->fetchAll();
 $podeConcluirModulo = usuarioPodeConcluirTurma() || usuarioPodeEditarTurma();
+// Presença por módulo (clique no nome do módulo): alunos ativos e concluídos.
+$alunosPresenca = array_values(array_map(fn ($m) => ['id' => (int) $m['aluno_id'], 'nome' => $m['aluno_nome']],
+    array_filter($matriculas, fn ($m) => in_array($m['status'], ['ativa', 'concluida'], true))));
+$presencasTurma = $modulosTurma ? presencasModuloTurma($pdo, $id) : [];
 $situacoes = buscarSituacoesTurma($pdo, true);
 
 $stmt = $pdo->prepare(
@@ -208,12 +212,16 @@ $situacoesPermitidas = array_values(array_filter($situacoes, function ($sit) use
     </ul>
 </div>
 <?php endif; ?>
+<a href="/turmas/lista_alunos.php?id=<?= (int) $id ?>" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Lista de alunos</a>
 <a href="/turmas/aulas.php?id=<?= (int) $id ?>" class="btn btn-outline-secondary"><i class="bi bi-calendar-week"></i> Calendário</a>
 <?php if ($turma['portal_publicar'] && $turmaAceitaMatricula): ?>
     <a href="/portal/turma.php?id=<?= (int) $id ?>" target="_blank" class="btn btn-outline-secondary" title="Ver como o aluno vê"><i class="bi bi-globe2"></i> No portal</a>
 <?php endif; ?>
 <?php if (usuarioPodeEditarTurma()): ?>
 <a href="/turmas/form.php?id=<?= (int) $id ?>" class="btn btn-outline-secondary"><i class="bi bi-pencil"></i> Editar</a>
+<?php endif; ?>
+<?php if (usuarioPodeCriarTurma()): ?>
+<a href="/turmas/form.php?duplicar=<?= (int) $id ?>" class="btn btn-outline-secondary" title="Criar uma turma nova com os mesmos dados (sem os alunos)"><i class="bi bi-copy"></i> Duplicar</a>
 <?php endif; ?>
 <?php if (usuarioPodeExcluirTurma()): ?>
 <?php
@@ -295,6 +303,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <div class="col-md-3"><div class="kpi-rotulo">Valor</div><div>
                 <?php $parcelasTurma = numParcelasPortal($turma); $totalTurma = valorTotalTurma($turma); ?>
                 <?= $totalTurma > 0 ? formatMoney($totalTurma) . ' em ' . $parcelasTurma . 'x de ' . formatMoney(mensalidadeDoTotal($totalTurma, $parcelasTurma)) : 'Gratuito' ?>
+                <?php if (valorAvistaTurma($turma) !== null): ?><div>ou <?= formatMoney(valorAvistaTurma($turma)) ?> à vista</div><?php endif; ?>
                 <div class="small text-muted">
                     <?= (float) $turma['portal_taxa_matricula'] > 0 ? 'Matrícula ' . formatMoney($turma['portal_taxa_matricula']) . ($turma['forma_taxa_nome'] ? ' (' . e($turma['forma_taxa_nome']) . ')' : '') . ' · ' : '' ?>
                     <?= $turma['forma_mensalidade_nome'] ? 'mensalidades: ' . e($turma['forma_mensalidade_nome']) : '' ?>
@@ -342,13 +351,15 @@ require __DIR__ . '/../../includes/layout_header.php';
         </div></div>
     </div>
     <?php endif; ?>
-    <?php if ($podeVerFinanceiro): ?>
+    <?php if (usuarioPodeVerReceitaTurma()): ?>
     <div class="col-6 col-lg-3">
         <div class="card h-100"><div class="card-body">
             <div class="kpi-rotulo">Receita mensal prevista</div>
             <div class="kpi-valor"><?= formatMoney($receitaMensalPrevista) ?></div>
         </div></div>
     </div>
+    <?php endif; ?>
+    <?php if ($podeVerFinanceiro): ?>
     <div class="col-6 col-lg-3">
         <div class="card h-100"><div class="card-body">
             <div class="kpi-rotulo">Em atraso</div>
@@ -369,7 +380,9 @@ require __DIR__ . '/../../includes/layout_header.php';
             <?php foreach ($modulosTurma as $i => $mod): ?>
                 <tr>
                     <td class="text-muted"><?= $i + 1 ?></td>
-                    <td><?= e($mod['nome']) ?><?= $mod['carga_horaria'] ? ' <span class="small text-muted">· ' . (int) $mod['carga_horaria'] . ' h</span>' : '' ?></td>
+                    <?php $presentes = count(array_filter($presencasTurma[(int) $mod['id']] ?? [], fn ($p) => $p['presente'])); ?>
+                    <td><a href="#" onclick="abrirPresenca(<?= (int) $mod['id'] ?>); return false;" title="Lista de presença do módulo"><?= e($mod['nome']) ?></a><?= $mod['carga_horaria'] ? ' <span class="small text-muted">· ' . (int) $mod['carga_horaria'] . ' h</span>' : '' ?>
+                        <div class="small text-muted" id="resumo-presenca-<?= (int) $mod['id'] ?>"><i class="bi bi-person-check"></i> <?= $presentes ?>/<?= count($alunosPresenca) ?> presentes</div></td>
                     <td class="small"><?= $mod['documentos'] ? e($mod['documentos']) : '<span class="text-muted">—</span>' ?></td>
                     <td>
                         <?php if ($mod['concluido_em']): ?>
@@ -579,7 +592,7 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="secao-titulo">
         <i class="bi bi-receipt"></i> Despesas da turma
         <span class="ms-auto d-flex gap-2">
-            <a href="/financeiro/turma_resultado.php?id=<?= (int) $id ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up"></i> Resultado da turma</a>
+            <?php if (usuarioPodeVerFinanceiro()): ?><a href="/financeiro/turma_resultado.php?id=<?= (int) $id ?>" class="btn btn-sm btn-outline-secondary"><i class="bi bi-graph-up"></i> Resultado da turma</a><?php endif; ?>
             <?php if ($podeLancarDespesa): ?><a href="/financeiro/contas_pagar/form.php?turma_id=<?= (int) $id ?>&voltar=turma" class="btn btn-sm btn-outline-secondary"><i class="bi bi-plus-lg"></i> Lançar despesa</a><?php endif; ?>
         </span>
     </div>
@@ -815,4 +828,130 @@ function enviarConclusao() {
 }
 </script>
 
+<?php if ($modulosTurma): ?>
+<div class="modal fade" id="modal-presenca" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="lh-sm">
+                    <h5 class="modal-title"><i class="bi bi-person-check"></i> Presença</h5>
+                    <div class="small text-muted" id="presenca-modulo"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <?php if ($podeConcluirModulo): ?>
+                <div class="d-flex flex-wrap align-items-end gap-2 mb-3">
+                    <div>
+                        <label class="form-label small mb-0">Data</label>
+                        <input type="date" id="presenca-data" class="form-control form-control-sm" value="<?= date('Y-m-d') ?>">
+                    </div>
+                    <button type="button" class="btn btn-sm btn-success" onclick="marcarPresenca('presente')"><i class="bi bi-check-lg"></i> Presente</button>
+                    <button type="button" class="btn btn-sm btn-outline-danger" onclick="marcarPresenca('falta')"><i class="bi bi-x-lg"></i> Falta</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="marcarPresenca('limpar')"><i class="bi bi-eraser"></i> Limpar</button>
+                    <span class="small text-muted ms-auto" id="presenca-selecionados"></span>
+                </div>
+                <?php endif; ?>
+                <div id="presenca-erro" class="alert alert-danger small py-2 d-none"></div>
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead><tr>
+                        <?php if ($podeConcluirModulo): ?><th style="width: 36px;"><input type="checkbox" class="form-check-input" id="presenca-todos" title="Selecionar todos"></th><?php endif; ?>
+                        <th>Aluno</th><th>Presença</th>
+                    </tr></thead>
+                    <tbody id="presenca-lista"></tbody>
+                </table>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <a href="#" target="_blank" class="btn btn-outline-secondary" id="presenca-imprimir"><i class="bi bi-printer"></i> Imprimir</a>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+// Presença por módulo: lista os alunos, marca os selecionados como
+// presentes (na data escolhida), com falta, ou limpa — e já salva.
+const PRESENCA = {
+    turma: <?= (int) $id ?>,
+    alunos: <?= json_encode($alunosPresenca, JSON_UNESCAPED_UNICODE) ?>,
+    modulos: <?= json_encode(array_map(fn ($m) => ['id' => (int) $m['id'], 'nome' => $m['nome']], $modulosTurma), JSON_UNESCAPED_UNICODE) ?>,
+    marcacoes: <?= json_encode((object) array_map(fn ($p) => (object) $p, $presencasTurma)) ?>,
+    podeMarcar: <?= $podeConcluirModulo ? 'true' : 'false' ?>,
+    modulo: null,
+};
+const dataBr = (iso) => iso ? iso.split('-').reverse().join('/') : '';
+
+function abrirPresenca(moduloId) {
+    PRESENCA.modulo = moduloId;
+    const indice = PRESENCA.modulos.findIndex((m) => m.id === moduloId);
+    document.getElementById('presenca-modulo').textContent = 'Módulo ' + (indice + 1) + '. ' + PRESENCA.modulos[indice].nome;
+    document.getElementById('presenca-imprimir').href = '/turmas/lista_presenca.php?id=' + PRESENCA.turma + '&modulo=' + moduloId;
+    document.getElementById('presenca-erro').classList.add('d-none');
+    desenharPresenca();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-presenca')).show();
+}
+
+function desenharPresenca() {
+    const marcas = PRESENCA.marcacoes[PRESENCA.modulo] || {};
+    const lista = document.getElementById('presenca-lista');
+    if (!PRESENCA.alunos.length) {
+        lista.innerHTML = '<tr><td colspan="3" class="text-muted text-center py-3">Nenhum aluno ativo na turma.</td></tr>';
+        return;
+    }
+    lista.innerHTML = PRESENCA.alunos.map((a) => {
+        const m = marcas[a.id];
+        const situacao = !m ? '<span class="text-muted">—</span>'
+            : (m.presente ? '<span class="badge text-bg-success">Presente em ' + dataBr(m.data) + '</span>' : '<span class="badge text-bg-danger">Falta</span>');
+        return '<tr' + (PRESENCA.podeMarcar ? ' class="cursor-pointer" onclick="if (event.target.type !== \'checkbox\') { const c = this.querySelector(\'input\'); c.checked = !c.checked; contarPresenca(); }"' : '') + '>'
+            + (PRESENCA.podeMarcar ? '<td><input type="checkbox" class="form-check-input presenca-aluno" value="' + a.id + '" onchange="contarPresenca()"></td>' : '')
+            + '<td>' + escapeHtml(a.nome) + '</td><td>' + situacao + '</td></tr>';
+    }).join('');
+    const todos = document.getElementById('presenca-todos');
+    if (todos) todos.checked = false;
+    contarPresenca();
+    const presentes = Object.values(marcas).filter((m) => m.presente).length;
+    const resumo = document.getElementById('resumo-presenca-' + PRESENCA.modulo);
+    if (resumo) resumo.innerHTML = '<i class="bi bi-person-check"></i> ' + presentes + '/' + PRESENCA.alunos.length + ' presentes';
+}
+
+function contarPresenca() {
+    const campo = document.getElementById('presenca-selecionados');
+    if (!campo) return;
+    const marcados = document.querySelectorAll('.presenca-aluno:checked').length;
+    campo.textContent = marcados ? marcados + ' selecionado(s)' : 'Selecione os alunos';
+    const todos = document.getElementById('presenca-todos');
+    if (todos) todos.checked = marcados > 0 && marcados === document.querySelectorAll('.presenca-aluno').length;
+}
+document.getElementById('presenca-todos')?.addEventListener('change', (ev) => {
+    document.querySelectorAll('.presenca-aluno').forEach((c) => { c.checked = ev.target.checked; });
+    contarPresenca();
+});
+
+async function marcarPresenca(acao) {
+    const erro = document.getElementById('presenca-erro');
+    erro.classList.add('d-none');
+    const alunos = [...document.querySelectorAll('.presenca-aluno:checked')].map((c) => c.value);
+    if (!alunos.length) {
+        erro.textContent = 'Selecione os alunos (ou marque o quadradinho do topo para todos).';
+        erro.classList.remove('d-none');
+        return;
+    }
+    const dados = new FormData();
+    dados.append('turma_id', PRESENCA.turma);
+    dados.append('modulo_id', PRESENCA.modulo);
+    dados.append('acao', acao);
+    dados.append('data', document.getElementById('presenca-data').value);
+    alunos.forEach((id) => dados.append('alunos[]', id));
+    try {
+        const r = await (await fetch('/turmas/presenca_salvar.php', { method: 'POST', body: dados })).json();
+        if (!r.ok) throw new Error(r.mensagem);
+        PRESENCA.marcacoes[PRESENCA.modulo] = r.presencas;
+        desenharPresenca();
+    } catch (e) {
+        erro.textContent = e.message || 'Não foi possível salvar a presença.';
+        erro.classList.remove('d-none');
+    }
+}
+</script>
+<?php endif; ?>
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

@@ -229,7 +229,7 @@ $rotuloTitulo = match ($tipo) {
 
 $voltar = '/configuracoes/portal.php?pagina=' . (int) $bloco['pagina_id'];
 $pageTitle = ($id ? 'Editar: ' : 'Novo bloco: ') . mb_strtolower($tipos[$tipo][0]);
-$pageBreadcrumb = 'Acadêmico · Portal do aluno · ' . $paginaAtual['titulo'];
+$pageBreadcrumb = 'Secretaria · Portal do aluno · ' . $paginaAtual['titulo'];
 $activeMenu = 'portal';
 $pageAction = '<a href="' . e($voltar) . '" class="btn btn-outline-secondary">Cancelar</a>'
     . '<button type="submit" form="form-bloco" class="btn btn-brand"><i class="bi bi-check-lg"></i> Salvar</button>';

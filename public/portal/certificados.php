@@ -41,7 +41,7 @@ require __DIR__ . '/../../includes/portal_header.php';
                     <div class="s"><?php if ($d['situacao'] === 'liberado'): ?>código <?= e(formatarCodigoCertificado($d['emitido']['codigo'])) ?><?php else: ?><?= e($d['texto']) ?><?php endif; ?></div>
                 </div>
                 <?php if ($d['situacao'] === 'liberado'): ?>
-                    <a href="/portal/certificado.php?documento=<?= (int) $d['emitido']['id'] ?>" class="btn btn-sm btn-brand">Abrir</a>
+                    <a href="/portal/certificado.php?c=<?= e($d['emitido']['codigo']) ?>" class="btn btn-sm btn-brand">Abrir</a>
                 <?php elseif ($d['situacao'] === 'pendente'): ?>
                     <?php $bloq = bloqueiosDocumentosMatricula($pdo, matriculaParaDocumentos($pdo, (int) $c['id'])); ?>
                     <div class="d-flex flex-column align-items-end gap-1">

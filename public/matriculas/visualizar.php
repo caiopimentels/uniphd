@@ -107,7 +107,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <div class="small text-muted">lançada em <?= formatDateTime($matricula['criado_em']) ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Período da turma</div><div><?= e(periodoTurma($matricula)) ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Mensalidade</div><div><?= formatMoney($mensalidadeCheia) ?><?php if ((float) $matricula['desconto_percentual'] > 0): ?> <span class="small text-muted">(<?= formatMoney($matricula['valor_mensalidade']) ?> − <?= formatPercent($matricula['desconto_percentual']) ?>)</span><?php endif; ?><?php if ($cupomNoCurso): ?><div class="small text-success"><?= formatMoney($mensalidadeFinal) ?> com o cupom</div><?php endif; ?></div></div>
-                <div class="col-md-3"><div class="kpi-rotulo">Mensalidades</div><div><?= (int) $matricula['num_parcelas'] ?>× a partir de <?= formatDate($matricula['primeiro_vencimento']) ?><?php if ($matricula['valor_total'] !== null): ?><div class="small text-muted">curso: <?= formatMoney((float) $matricula['valor_total'] + ($cupomNoCurso ? (float) $matricula['cupom_desconto'] : 0)) ?><?= $cupomNoCurso ? ' · <span class="text-success">' . formatMoney($matricula['valor_total']) . ' com o cupom</span>' : '' ?></div><?php endif; ?></div></div>
+                <div class="col-md-3"><div class="kpi-rotulo">Mensalidades</div><div><?= $matricula['pagamento_avista'] ? '<strong>À vista</strong> em ' . formatDate($matricula['primeiro_vencimento']) : (int) $matricula['num_parcelas'] . '× a partir de ' . formatDate($matricula['primeiro_vencimento']) ?><?php if ($matricula['valor_total'] !== null): ?><div class="small text-muted">curso: <?= formatMoney((float) $matricula['valor_total'] + ($cupomNoCurso ? (float) $matricula['cupom_desconto'] : 0)) ?><?= $cupomNoCurso ? ' · <span class="text-success">' . formatMoney($matricula['valor_total']) . ' com o cupom</span>' : '' ?></div><?php endif; ?></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Taxa de matrícula</div><div><?php if ($tipoCupom === 'matricula_zero'): ?><?= formatMoney($matricula['cupom_desconto']) ?><div class="small text-success">isenta com o cupom</div><?php else: ?><?= (float) $matricula['taxa_matricula'] > 0 ? formatMoney($matricula['taxa_matricula']) : 'Sem taxa' ?><?php endif; ?></div></div>
                 <div class="col-md-6"><div class="kpi-rotulo">Desconto por pontualidade</div><div><?= e(textoDescontoPontualidade($matricula)) ?></div></div>
                 <?php if ($textoCupom = resumoCupomMatricula($pdo, $matricula)): ?>
@@ -142,8 +142,8 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <?php endif; ?>
                     <?php foreach ($parcelas as $p): ?>
                         <?php $vencida = $p['status'] === 'pendente' && $p['data_vencimento'] < $hoje; ?>
-                        <tr>
-                            <td><a href="#" onclick="abrirHistoricoParcela(<?= (int) $p['id'] ?>); return false;" title="Ver o histórico desta parcela"><?= e($p['descricao']) ?></a> <i class="bi bi-clock-history text-muted small"></i><?php if ($seloBanco = seloBancoParcela($pdo, (int) $p['id'])): ?><div class="mt-1"><?= $seloBanco ?></div><?php endif; ?></td>
+                        <tr class="cursor-pointer" onclick="abrirParcela(<?= (int) $p['id'] ?>)" title="Clique para ver o boleto, alterar e ver o histórico">
+                            <td><?= e($p['descricao']) ?><?php if ($seloBanco = seloBancoParcela($pdo, (int) $p['id'])): ?><div class="mt-1"><?= $seloBanco ?></div><?php endif; ?></td>
                             <td class="<?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($p['data_vencimento']) ?></td>
                             <td class="text-end"><?= formatMoney($p['valor']) ?></td>
                             <td>
@@ -162,12 +162,9 @@ require __DIR__ . '/../../includes/layout_header.php';
                                     <span class="badge <?= contaStatusBadgeClass($p['status']) ?>"><?= contaStatusLabel($p['status']) ?></span>
                                 <?php endif; ?>
                             </td>
-                            <td class="text-end">
+                            <td class="text-end text-nowrap" onclick="event.stopPropagation();">
                                 <?php if ($p['status'] === 'pendente'): ?>
                                     <?= botoesCobrancaParcela($pdo, $p) ?>
-                                <?php endif; ?>
-                                <?php if ($p['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $p), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $p['boleto_no_banco'] ? 'Alterar (o boleto é alterado também no banco)' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
                                 <?php endif; ?>
                                 <?php if ($p['status'] === 'pendente' && usuarioPodeBaixarReceber()): ?>
                                     <a href="/financeiro/contas_receber/baixar.php?id=<?= (int) $p['id'] ?>&voltar=matricula" class="btn btn-sm btn-outline-success" title="Dar baixa (receber)"><i class="bi bi-check-lg"></i></a>
@@ -198,7 +195,8 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-alarm"></i> Desconto por pontualidade</div>
         <div class="card"><div class="card-body">
-            <form action="/matriculas/alterar_pontualidade.php" method="post">
+            <?php $boletosPontualidade = count(boletosSeguemPontualidade($pdo, (int) $id)); ?>
+            <form action="/matriculas/alterar_pontualidade.php" method="post" id="form-pontualidade" data-boletos="<?= $boletosPontualidade ?>">
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
                 <div class="row g-2">
                     <div class="col-12">
@@ -217,7 +215,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                         <input type="number" name="desconto_pontualidade_dias" class="form-control form-control-sm" min="0" max="31" value="<?= (int) $matricula['desconto_pontualidade_dias'] ?>">
                     </div>
                 </div>
-                <p class="small text-muted my-2">Vale para as mensalidades em aberto. Boletos já registrados no banco mantêm o desconto com que foram registrados.</p>
+                <p class="small text-muted my-2">Vale para as mensalidades em aberto (menos as que têm desconto próprio).<?= $boletosPontualidade ? ' ' . $boletosPontualidade . ' delas já têm boleto no Itaú: ao salvar, eles são baixados e emitidos de novo com o desconto novo.' : '' ?></p>
                 <button type="submit" class="btn btn-outline-secondary btn-sm w-100"><i class="bi bi-check-lg"></i> Salvar desconto</button>
             </form>
         </div></div>
@@ -237,7 +235,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                         <?php if ($doc['emitido'] && $doc['emitido']['liberado_por']): ?><div class="small text-muted"><?= $doc['emitido']['liberado'] ? 'liberado' : 'bloqueado' ?> por <?= e($doc['emitido']['liberado_por']) ?> em <?= formatDateTime($doc['emitido']['liberado_em']) ?></div><?php endif; ?>
                     </div>
                     <?php if ($doc['emitido']): ?>
-                        <a href="/portal/certificado.php?documento=<?= (int) $doc['emitido']['id'] ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Abrir / imprimir"><i class="bi bi-box-arrow-up-right"></i></a>
+                        <a href="/portal/certificado.php?c=<?= e($doc['emitido']['codigo']) ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Abrir / imprimir"><i class="bi bi-box-arrow-up-right"></i></a>
                     <?php endif; ?>
                     <form action="/matriculas/documentos_liberar.php" method="post" class="d-inline-flex gap-1 align-items-center">
                         <input type="hidden" name="ids[]" value="<?= (int) $id ?>">
@@ -323,6 +321,28 @@ require __DIR__ . '/../../includes/layout_header.php';
 </div>
 
 <?php require __DIR__ . '/../../includes/modal_pix.php'; ?>
-<?php require __DIR__ . '/../../includes/modal_historico_parcela.php'; ?>
-<?php $voltarEdicaoParcela = 'matricula'; require __DIR__ . '/../../includes/modal_editar_parcela.php'; ?>
+<?php require __DIR__ . '/../../includes/modal_confirmar.php'; ?>
+<?php $voltarParcela = 'matricula'; require __DIR__ . '/../../includes/modal_parcela.php'; ?>
+<script>
+// Mudou o desconto e há boletos no Itaú: confirma antes, porque eles serão
+// baixados e emitidos de novo.
+(() => {
+    const form = document.getElementById('form-pontualidade');
+    if (!form || !Number(form.dataset.boletos)) return;
+    const inicial = new URLSearchParams(new FormData(form)).toString();
+    form.addEventListener('submit', async (ev) => {
+        if (form.dataset.confirmado || new URLSearchParams(new FormData(form)).toString() === inicial) return;
+        ev.preventDefault();
+        const n = Number(form.dataset.boletos);
+        const ok = await confirmarNoModal({
+            titulo: 'Alterar o desconto também no banco?',
+            html: '<p>Esta matrícula tem <strong>' + n + ' boleto(s) já registrado(s) no Itaú</strong> com o desconto antigo.</p>'
+                + '<p class="mb-0">Ao confirmar, esses boletos serão <strong>baixados e emitidos de novo</strong> com o desconto novo. '
+                + 'O boleto e o Pix já enviados ao aluno deixam de valer — mande os novos.</p>',
+            botao: 'Confirmar e alterar no banco',
+        });
+        if (ok) { form.dataset.confirmado = '1'; form.requestSubmit(); }
+    });
+})();
+</script>
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

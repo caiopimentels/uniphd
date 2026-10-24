@@ -25,6 +25,27 @@ if ($id) {
 
 $erros = [];
 
+// Duplicar (botão na tela da turma): a turma nova já vem preenchida com a
+// original — sem alunos, presenças nem módulos concluídos, fora do portal
+// até alguém marcar. A imagem de divulgação ganha uma cópia própria ao salvar.
+$duplicarId = $id ? 0 : (int) ($_GET['duplicar'] ?? 0);
+$imagemDuplicada = $id ? '' : (string) ($_POST['imagem_duplicada'] ?? '');
+if ($duplicarId && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $stmt = $pdo->prepare('SELECT * FROM turmas WHERE id = ?');
+    $stmt->execute([$duplicarId]);
+    if ($origem = $stmt->fetch()) {
+        $turma = array_merge($origem, [
+            'nome' => mb_substr($origem['nome'] . ' (cópia)', 0, 100),
+            'situacao_id' => situacaoPadraoTurmaId($pdo),
+            'data_conclusao' => null,
+            'portal_publicar' => 0,
+            'sem_data' => empty($origem['data_inicio']),
+        ]);
+        unset($turma['id']);
+        $imagemDuplicada = (string) $origem['portal_imagem'];
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $cursoId = (int) ($_POST['curso_id'] ?? 0);
     $professorId = (int) ($_POST['professor_id'] ?? 0) ?: null;
@@ -38,6 +59,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $duracaoUnidade = input('duracao_unidade') === 'dia' ? 'dia' : 'mes';
     // Valor do curso (sem a matrícula); a mensalidade sai de total ÷ parcelas.
     $valorTotal = decimalInput('valor_total', 0);
+    // Preço à vista (uma parcela só); em branco = sem opção à vista.
+    $valorAvista = trim(input('valor_avista')) === '' ? null : decimalInput('valor_avista', 0);
     $parceria = mb_substr(input('parceria'), 0, 255);
     $horario = input('horario');
     $local = input('local');
@@ -67,6 +90,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $agendaJson = $agenda ? json_encode($agenda) : null;
     $portal = [
         'portal_publicar' => isset($_POST['portal_publicar']) ? 1 : 0,
+        'portal_exibir_prazo' => isset($_POST['portal_exibir_prazo']) ? 1 : 0,
+        'portal_exibir_avista' => isset($_POST['portal_exibir_avista']) ? 1 : 0,
         'contrato_portal' => isset($_POST['contrato_portal']) ? 1 : 0,
         'portal_descricao' => trim((string) ($_POST['portal_descricao'] ?? '')),
         'portal_inscricoes_ate' => input('portal_inscricoes_ate'),
@@ -110,6 +135,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($valorTotal < 0) {
         $erros[] = 'O valor do curso não pode ser negativo.';
     }
+    if ($valorAvista !== null && $valorAvista < 0) {
+        $erros[] = 'O valor à vista não pode ser negativo.';
+    }
     $stmt = $pdo->prepare('SELECT * FROM situacoes_turma WHERE id = ?');
     $stmt->execute([$situacaoId]);
     $situacao = $stmt->fetch();
@@ -136,6 +164,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $erros[] = 'O número de mensalidades vai de 1 a 120.';
     }
     if ($portal['portal_publicar']) {
+        if (!$portal['portal_exibir_prazo'] && !($portal['portal_exibir_avista'] && $valorAvista !== null)) {
+            $erros[] = 'Portal: marque pelo menos um valor (a prazo ou à vista) para aparecer no site — é com ele que o aluno se inscreve.';
+        }
         if ($portal['portal_prazo_pagamento_dias'] < 1 || $portal['portal_prazo_pagamento_dias'] > 30) {
             $erros[] = 'O prazo para pagar a inscrição vai de 1 a 30 dias.';
         }
@@ -203,12 +234,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!$erros) {
         $imagemAtual = $turma['portal_imagem'] ?? null;
         $imagem = $novaImagem ?? (isset($_POST['remover_imagem']) ? null : $imagemAtual);
+        // Turma duplicada: cópia própria da imagem da original (excluir uma
+        // não apaga a da outra); sem conseguir copiar, fica sem imagem.
+        if (!$imagem && !isset($_POST['remover_imagem']) && str_starts_with($imagemDuplicada, '/uploads/portal/')) {
+            $copia = copiarImagemPortal($imagemDuplicada);
+            $imagem = $copia !== $imagemDuplicada ? $copia : null;
+        }
         $stmt = $pdo->prepare(
-            'UPDATE turmas SET dias_semana = ?, hora_inicio = ?, hora_fim = ?, agenda = ?, minimo_alunos = ?, portal_publicar = ?, contrato_portal = ?, portal_descricao = ?, portal_imagem = ?,
+            'UPDATE turmas SET valor_avista = ?, portal_exibir_prazo = ?, portal_exibir_avista = ?,
+                dias_semana = ?, hora_inicio = ?, hora_fim = ?, agenda = ?, minimo_alunos = ?, portal_publicar = ?, contrato_portal = ?, portal_descricao = ?, portal_imagem = ?,
                 portal_inscricoes_ate = ?, portal_modo_vaga = ?, portal_prazo_pagamento_dias = ?, portal_taxa_matricula = ?,
                 portal_num_parcelas = ?, portal_dia_vencimento = ?, portal_forma_pagamento_id = ?, forma_mensalidade_id = ?, data_conclusao = ? WHERE id = ?'
         );
         $stmt->execute([
+            $valorAvista, $portal['portal_exibir_prazo'], $portal['portal_exibir_avista'],
             $diasSemana ? implode(',', $diasSemana) : null, $horaInicio ?: null, $horaFim ?: null, $agendaJson, $minimoAlunos,
             $portal['portal_publicar'], $portal['contrato_portal'], $portal['portal_descricao'] ?: null, $imagem, $portal['portal_inscricoes_ate'] ?: null,
             $portal['portal_modo_vaga'], $portal['portal_prazo_pagamento_dias'], $portal['portal_taxa_matricula'],
@@ -220,19 +259,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             apagarImagemPortal($imagemAtual);
         }
 
-        registrarAtividade('turmas', $operacao, ($operacao === 'criacao' ? 'Turma criada: ' : 'Turma editada: ') . $nome);
+        registrarAtividade('turmas', $operacao, ($operacao === 'criacao' ? ($duplicarId ? 'Turma duplicada: ' : 'Turma criada: ') : 'Turma editada: ') . $nome);
 
-        flash('success', 'Turma salva com sucesso.' . $resumoSituacao);
+        flash('success', ($duplicarId ? 'Turma duplicada com sucesso.' : 'Turma salva com sucesso.') . $resumoSituacao);
         redirect('/turmas/visualizar.php?id=' . $id);
     }
 
     $turma = [
         'curso_id' => $cursoId, 'professor_id' => $professorId, 'nome' => $nome, 'vagas' => $vagas,
-        'data_inicio' => $dataInicio, 'duracao_meses' => $duracaoMeses, 'duracao_unidade' => $duracaoUnidade, 'valor_mensalidade' => $valorMensalidade, 'valor_total' => $valorTotal, 'parceria' => $parceria,
+        'data_inicio' => $dataInicio, 'duracao_meses' => $duracaoMeses, 'duracao_unidade' => $duracaoUnidade, 'valor_mensalidade' => $valorMensalidade, 'valor_total' => $valorTotal, 'valor_avista' => $valorAvista, 'parceria' => $parceria,
         'horario' => $horario, 'local' => $local, 'situacao_id' => $situacaoId, 'observacao' => $observacao, 'data_conclusao' => $dataConclusao,
         'dias_semana' => implode(',', $diasSemana), 'hora_inicio' => $horaInicio, 'hora_fim' => $horaFim,
         'agenda' => $agendaJson, 'minimo_alunos' => $minimoAlunos, 'sem_data' => $semData,
-    ] + $portal + ($turma ?? []);
+    ] + $portal + ($turma ?? []) + ['portal_imagem' => $imagemDuplicada ?: null];
     if ($novaImagem) {
         apagarImagemPortal($novaImagem);
     }
@@ -282,8 +321,8 @@ foreach ($cursos as $c) {
     }
 }
 
-$voltar = $id ? '/turmas/visualizar.php?id=' . $id : '/turmas/listar.php';
-$pageTitle = $id ? 'Editar turma' : 'Nova turma';
+$voltar = $id ? '/turmas/visualizar.php?id=' . $id : ($duplicarId ? '/turmas/visualizar.php?id=' . $duplicarId : '/turmas/listar.php');
+$pageTitle = $id ? 'Editar turma' : ($duplicarId ? 'Duplicar turma' : 'Nova turma');
 $pageBreadcrumb = 'Acadêmico · Turmas';
 $activeMenu = 'turmas';
 $pageAction = '<a href="' . e($voltar) . '" class="btn btn-outline-secondary">Cancelar</a>'
@@ -299,7 +338,11 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="alert alert-warning">Cadastre um curso antes de abrir uma turma. <a href="/cursos/form.php">Cadastrar curso</a></div>
 <?php endif; ?>
 
+<?php if ($duplicarId): ?>
+    <div class="alert alert-info"><i class="bi bi-copy"></i> Duplicando uma turma: confira o <strong>nome</strong> e as <strong>datas</strong> antes de salvar. Alunos, presenças e módulos concluídos não são copiados, e a turma nova fica fora do portal até você marcar "Publicar".</div>
+<?php endif; ?>
 <form method="post" id="form-principal" enctype="multipart/form-data">
+<?php if ($imagemDuplicada): ?><input type="hidden" name="imagem_duplicada" value="<?= e($imagemDuplicada) ?>"><?php endif; ?>
 <div class="secao" style="max-width: 900px;">
     <div class="secao-titulo"><i class="bi bi-people"></i> Dados da turma</div>
     <div class="row g-3">
@@ -390,7 +433,6 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="col-md-3">
             <label class="form-label">Valor da matrícula</label>
             <input type="text" name="portal_taxa_matricula" class="form-control" value="<?= e(number_format((float) ($turma['portal_taxa_matricula'] ?? 0), 2, ',', '')) ?>" oninput="atualizarValores()">
-            <div class="form-text">0 = sem taxa. Fica fora do valor do curso. No site, é ela que confirma a vaga.</div>
         </div>
         <div class="col-md-3">
             <label class="form-label">Matrícula paga com</label>
@@ -398,9 +440,22 @@ require __DIR__ . '/../../includes/layout_header.php';
         </div>
         <div class="col-12"><hr class="my-1"><div class="fw-semibold">Curso (mensalidades)</div></div>
         <div class="col-md-3">
-            <label class="form-label">Valor total do curso *</label>
+            <label class="form-label">Valor à vista</label>
+            <input type="text" name="valor_avista" id="valor_avista" class="form-control" placeholder="Sem opção à vista" value="<?= isset($turma['valor_avista']) && $turma['valor_avista'] !== null ? e(number_format((float) $turma['valor_avista'], 2, ',', '')) : '' ?>" oninput="atualizarValores()">
+            <div class="form-check form-check-sm mt-1">
+                <input type="checkbox" class="form-check-input" name="portal_exibir_avista" id="portal_exibir_avista" <?= ($turma['portal_exibir_avista'] ?? 1) ? 'checked' : '' ?>>
+                <label class="form-check-label small" for="portal_exibir_avista">Mostrar no portal</label>
+            </div>
+            <div class="form-text">Uma parcela só. Em branco: sem opção à vista.</div>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Valor a prazo *</label>
             <input type="text" name="valor_total" id="valor_total" class="form-control" required value="<?= e(number_format((float) ($turma['valor_total'] ?? 0), 2, ',', '')) ?>" oninput="atualizarValores()">
-            <?php if ($id): ?><div class="form-text">Mudar aqui só vale para novas matrículas.</div><?php endif; ?>
+            <div class="form-check form-check-sm mt-1">
+                <input type="checkbox" class="form-check-input" name="portal_exibir_prazo" id="portal_exibir_prazo" <?= ($turma['portal_exibir_prazo'] ?? 1) ? 'checked' : '' ?>>
+                <label class="form-check-label small" for="portal_exibir_prazo">Mostrar no portal</label>
+            </div>
+            <?php if ($id): ?><div class="form-text">Mudar os valores só vale para novas matrículas.</div><?php endif; ?>
         </div>
         <div class="col-md-3">
             <label class="form-label">Dividido em</label>
@@ -615,6 +670,8 @@ function atualizarValores() {
     const ler = (v) => parseFloat(String(v || '0').replace(/\./g, '').replace(',', '.')) || 0;
     const moeda = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
     const total = ler(document.getElementById('valor_total').value);
+    const campoAvista = document.getElementById('valor_avista').value.trim();
+    const avista = ler(campoAvista);
     const taxa = ler(document.querySelector('[name="portal_taxa_matricula"]').value);
     const campo = document.getElementById('portal_num_parcelas');
     const n = parseInt(campo.value || campo.placeholder, 10) || 1;
@@ -625,6 +682,10 @@ function atualizarValores() {
             + (Math.abs(ultima - parcela) > 0.001 ? ' (a última de ' + moeda(ultima) + ')' : '')
             + (taxa > 0 ? ' + matrícula de ' + moeda(taxa) + ' · total para o aluno ' + moeda(total + taxa) : '') + '.'
         : (taxa > 0 ? 'Só a matrícula: ' + moeda(taxa) + '.' : 'Curso gratuito.');
+    if (campoAvista !== '') {
+        document.getElementById('resumo_valores').innerHTML += ' Ou à vista: <strong>' + moeda(avista) + '</strong> em 1 parcela'
+            + (total > avista && total > 0 ? ' (' + ((total - avista) / total * 100).toFixed(1).replace('.', ',') + '% de desconto)' : '') + '.';
+    }
 }
 atualizarValores();
 

@@ -152,7 +152,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                 <?php endif; ?>
             <?php foreach ($grupo['contas'] as $c): ?>
                 <?php $vencida = $c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d'); ?>
-                <tr <?= $agrupar ? 'data-linha-grupo="' . e($grupo['id']) . '" style="display:none"' : '' ?> class="cursor-pointer" onclick="abrirHistoricoParcela(<?= (int) $c['id'] ?>)" title="Clique para ver o histórico desta parcela">
+                <tr <?= $agrupar ? 'data-linha-grupo="' . e($grupo['id']) . '" style="display:none"' : '' ?> class="cursor-pointer" onclick="abrirParcela(<?= (int) $c['id'] ?>)" title="Clique para ver os dados do boleto, alterar e ver o histórico">
                     <td onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $temPendente): ?>
                             <input type="checkbox" class="form-check-input lote-item" value="<?= (int) $c['id'] ?>" data-grupo="<?= $indiceGrupo ?>" data-valor="<?= e((string) $c['valor']) ?>" data-aluno="<?= (int) $c['aluno_id'] ?>">
@@ -162,9 +162,6 @@ require __DIR__ . '/../../../includes/layout_header.php';
                     <td class="text-end text-nowrap" onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $c['aluno_id']): ?>
                             <?= botoesCobrancaParcela($pdo, $c) ?>
-                        <?php endif; ?>
-                        <?php if ($c['status'] === 'pendente' && usuarioPodeEditarFinanceiroAluno()): ?>
-                            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="editarParcela(this)" data-parcela="<?= e(json_encode(dadosEdicaoParcela($pdo, $c), JSON_UNESCAPED_UNICODE)) ?>" title="<?= $c['boleto_no_banco'] ? 'Alterar (o boleto é alterado também no banco)' : 'Alterar valor, vencimento ou desconto' ?>"><i class="bi bi-pencil"></i></button>
                         <?php endif; ?>
                         <?php if ($c['status'] === 'pendente' && usuarioPodeBaixarReceber()): ?>
                             <a href="/financeiro/contas_receber/baixar.php?id=<?= (int) $c['id'] ?>" class="btn btn-sm btn-outline-success" title="Dar baixa (receber)"><i class="bi bi-check-lg"></i></a>
@@ -513,6 +510,5 @@ function acaoLoteReceber(acao, pergunta) {
 <script src="/assets/js/selecao-massa.js"></script>
 
 <?php require __DIR__ . '/../../../includes/modal_pix.php'; ?>
-<?php require __DIR__ . '/../../../includes/modal_historico_parcela.php'; ?>
-<?php $voltarEdicaoParcela = 'lista'; require __DIR__ . '/../../../includes/modal_editar_parcela.php'; ?>
+<?php $voltarParcela = 'lista'; require __DIR__ . '/../../../includes/modal_parcela.php'; ?>
 <?php require __DIR__ . '/../../../includes/layout_footer.php'; ?>

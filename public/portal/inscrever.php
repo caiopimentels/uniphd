@@ -27,7 +27,7 @@ if (!validarCpf((string) $aluno['cpf']) || !enderecoCompletoAluno(enderecoPrinci
     redirect('/portal/conta.php?voltar=' . urlencode($voltarTurma));
 }
 
-$resultado = inscreverAlunoPortal($pdo, (int) $aluno['id'], $turmaId, $cupom);
+$resultado = inscreverAlunoPortal($pdo, (int) $aluno['id'], $turmaId, $cupom, (string) ($_POST['modalidade'] ?? ''));
 if (!$resultado['ok']) {
     flash('danger', $resultado['mensagem']);
     redirect('/portal/turma.php?id=' . $turmaId . ($cupom !== '' ? '&cupom=' . urlencode($cupom) : ''));

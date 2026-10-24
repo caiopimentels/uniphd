@@ -266,6 +266,33 @@ function usuarioPodeGerenciarMatriculas(): bool
 // Quem cuida do financeiro enxerga a situação dos alunos de qualquer forma;
 // a permissão própria existe para a secretaria ver "quem deve" sem ganhar
 // acesso a contas a pagar, DRE etc.
+// Protocolos dos alunos: ver/responder e configurar (assuntos e status).
+function usuarioPodeVerProtocolos(): bool
+{
+    return usuarioTemPermissao('ver_protocolos');
+}
+
+function usuarioPodeAbrirProtocolo(): bool
+{
+    return usuarioTemPermissao('abrir_protocolo');
+}
+
+function usuarioPodeConfigurarProtocolos(): bool
+{
+    return usuarioTemPermissao('configurar_protocolos');
+}
+
+// Tela da turma: card "Receita mensal prevista" e quadro "Despesas da turma".
+function usuarioPodeVerReceitaTurma(): bool
+{
+    return usuarioTemPermissao('ver_receita_turma');
+}
+
+function usuarioPodeVerDespesasTurma(): bool
+{
+    return usuarioTemPermissao('ver_despesas_turma');
+}
+
 function usuarioPodeVerInadimplencia(): bool
 {
     return usuarioTemPermissao('ver_inadimplencia') || usuarioPodeVerFinanceiro();

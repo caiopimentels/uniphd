@@ -68,6 +68,7 @@ $enderecoAtual = $enderecoAtual === '/portal/' ? '/portal/index.php' : $endereco
                     <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item" href="/portal/conta.php"><i class="bi bi-person"></i> Meus dados</a></li>
                         <li><a class="dropdown-item" href="/portal/documentos.php"><i class="bi bi-folder2-open"></i> Meus documentos</a></li>
+                        <li><a class="dropdown-item" href="/portal/protocolos.php"><i class="bi bi-chat-left-text"></i> Meus protocolos</a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="/portal/sair.php"><i class="bi bi-box-arrow-right"></i> Sair</a></li>
                     </ul>

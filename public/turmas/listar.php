@@ -173,6 +173,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" href="/turmas/visualizar.php?id=<?= (int) $t['id'] ?>"><i class="bi bi-eye"></i> Ver turma</a></li>
                                 <?php if (usuarioPodeEditarTurma()): ?><li><a class="dropdown-item" href="/turmas/form.php?id=<?= (int) $t['id'] ?>"><i class="bi bi-pencil"></i> Editar</a></li><?php endif; ?>
+                                <?php if (usuarioPodeCriarTurma()): ?><li><a class="dropdown-item" href="/turmas/form.php?duplicar=<?= (int) $t['id'] ?>"><i class="bi bi-copy"></i> Duplicar</a></li><?php endif; ?>
                                 <?php if (usuarioPodeGerenciarMatriculas() && in_array($t['comportamento'], COMPORTAMENTOS_TURMA_ABERTA, true) && !$lotada): ?>
                                     <li><a class="dropdown-item" href="/matriculas/form.php?turma_id=<?= (int) $t['id'] ?>"><i class="bi bi-person-plus"></i> Matricular aluno</a></li>
                                 <?php endif; ?>

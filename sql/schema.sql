@@ -492,6 +492,8 @@ CREATE TABLE turmas (
     valor_mensalidade DECIMAL(12,2) NOT NULL DEFAULT 0,
     -- Valor do curso sem a matrícula; valor_mensalidade = total ÷ parcelas.
     valor_total DECIMAL(12,2) DEFAULT NULL,
+    -- Preço à vista (uma parcela só); NULL = sem opção à vista.
+    valor_avista DECIMAL(12,2) DEFAULT NULL,
     horario VARCHAR(100) DEFAULT NULL,
     -- Agenda: dias da semana (1 = segunda ... 7 = domingo, separados por
     -- vírgula) e horário — de onde o calendário de aulas é gerado.
@@ -511,6 +513,9 @@ CREATE TABLE turmas (
     --   apos_pagamento -> só conta vaga quem pagou (os outros esperam)
     --   inscricao      -> a vaga é ocupada na inscrição, sem pagar antes
     portal_publicar TINYINT(1) NOT NULL DEFAULT 0,
+    -- Quais preços aparecem (e podem ser escolhidos) no portal.
+    portal_exibir_prazo TINYINT(1) NOT NULL DEFAULT 1,
+    portal_exibir_avista TINYINT(1) NOT NULL DEFAULT 1,
     -- Contrato da matrícula disponível para o aluno no portal (em Documentos).
     contrato_portal TINYINT(1) NOT NULL DEFAULT 0,
     portal_descricao TEXT DEFAULT NULL,
@@ -591,6 +596,8 @@ CREATE TABLE matriculas (
     certificado_liberado TINYINT(1) NOT NULL DEFAULT 1,
     valor_mensalidade DECIMAL(12,2) NOT NULL,
     valor_total DECIMAL(12,2) DEFAULT NULL,
+    -- 1 = pagamento à vista (o preço à vista da turma, em uma parcela).
+    pagamento_avista TINYINT(1) NOT NULL DEFAULT 0,
     -- Desconto fixo (bolsa): reduz toda mensalidade, pague quando pagar.
     desconto_percentual DECIMAL(5,2) NOT NULL DEFAULT 0,
     -- Desconto condicional por pontualidade: só vale pagando até N dias
@@ -851,6 +858,22 @@ CREATE TABLE turma_modulos (
     PRIMARY KEY (turma_id, curso_modulo_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Presença dos alunos em cada módulo da turma: presente (com a data) ou
+-- falta. Sem linha = ainda não marcado.
+CREATE TABLE turma_presencas (
+    turma_id INT NOT NULL,
+    curso_modulo_id INT NOT NULL,
+    aluno_id INT NOT NULL,
+    presente TINYINT(1) NOT NULL,
+    data DATE DEFAULT NULL,
+    registrado_por VARCHAR(150) DEFAULT NULL,
+    atualizado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (turma_id, curso_modulo_id, aluno_id),
+    CONSTRAINT fk_presenca_turma FOREIGN KEY (turma_id) REFERENCES turmas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_presenca_modulo FOREIGN KEY (curso_modulo_id) REFERENCES curso_modulos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_presenca_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE parcela_historico (
     id INT AUTO_INCREMENT PRIMARY KEY,
     conta_receber_id INT NOT NULL,
@@ -1029,6 +1052,10 @@ CREATE TABLE certificados (
     liberado_em DATETIME DEFAULT NULL,
     liberado_por VARCHAR(150) DEFAULT NULL,
     emitido_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    -- Quando o aluno abriu/baixou pelo portal: primeira vez, última e quantas.
+    aluno_baixou_em DATETIME DEFAULT NULL,
+    aluno_ultimo_download DATETIME DEFAULT NULL,
+    aluno_downloads INT NOT NULL DEFAULT 0,
     UNIQUE KEY uk_certificado_documento (matricula_id, curso_emissao_id),
     CONSTRAINT fk_certificado_matricula FOREIGN KEY (matricula_id) REFERENCES matriculas(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1159,6 +1186,9 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('ativar_aluno', 'Ativar e desativar alunos', 'Alunos', 13),
 ('excluir_aluno', 'Excluir alunos (só quem não tem matrícula nem lançamento financeiro)', 'Alunos', 14),
 ('avaliar_documentos', 'Aprovar, recusar ou dispensar documentos dos alunos', 'Alunos', 15),
+('ver_protocolos', 'Ver e responder os protocolos dos alunos', 'Alunos', 16),
+('abrir_protocolo', 'Abrir protocolo em nome do aluno', 'Alunos', 17),
+('configurar_protocolos', 'Configurar os protocolos (temas, assuntos e status)', 'Alunos', 18),
 ('ver_cursos', 'Ver cursos, turmas, professores e calendário de aulas', 'Cursos, turmas e professores', 20),
 ('criar_curso', 'Cadastrar cursos', 'Cursos, turmas e professores', 21),
 ('editar_curso', 'Editar cursos (e ativar/desativar)', 'Cursos, turmas e professores', 22),
@@ -1170,6 +1200,8 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('gerenciar_professores', 'Cadastrar professores', 'Cursos, turmas e professores', 28),
 ('editar_professor', 'Editar professores (e ativar/desativar)', 'Cursos, turmas e professores', 29),
 ('excluir_professor', 'Excluir professores (só sem turmas)', 'Cursos, turmas e professores', 30),
+('ver_receita_turma', 'Ver a receita mensal prevista na tela da turma', 'Cursos, turmas e professores', 31),
+('ver_despesas_turma', 'Ver as despesas da turma na tela da turma', 'Cursos, turmas e professores', 32),
 ('gerenciar_matriculas', 'Matricular, reservar vaga, confirmar inscrição e concluir/reativar matrícula', 'Matrículas', 40),
 ('cancelar_matricula', 'Cancelar matrícula, excluir matrícula e tirar aluno da turma', 'Matrículas', 41),
 ('liberar_certificado', 'Liberar e bloquear documentos dos alunos (certificados e declarações)', 'Matrículas', 42),
@@ -1201,7 +1233,7 @@ SELECT 1, id FROM permissoes;
 INSERT INTO perfil_permissoes (perfil_id, permissao_id)
 SELECT 2, id FROM permissoes
 WHERE chave IN ('ver_dashboard', 'ver_alunos', 'cadastrar_aluno', 'editar_aluno', 'ativar_aluno', 'ver_cursos', 'gerenciar_matriculas',
-                'liberar_certificado', 'avaliar_documentos', 'ver_inadimplencia', 'baixar_receber');
+                'liberar_certificado', 'avaliar_documentos', 'ver_inadimplencia', 'baixar_receber', 'ver_receita_turma', 'ver_protocolos', 'abrir_protocolo');
 
 -- Usuário padrão: email admin@sistema.com / senha admin123
 -- (troque a senha após o primeiro acesso)
@@ -1237,3 +1269,110 @@ INSERT INTO formas_pagamento (nome, instrumento) VALUES
 ('Cartão de débito', 'manual'),
 ('Cartão de crédito', 'manual'),
 ('Transferência', 'manual');
+
+-- Protocolos: o aluno abre pelo portal (justificativa de ausência, pedido
+-- de reposição...), com anexo (ex.: atestado); a secretaria responde e muda
+-- o status. Temas, assuntos e status são configuráveis (Protocolos › Configurar).
+
+-- Temas: agrupam os assuntos (Acadêmico, Financeiro...).
+CREATE TABLE protocolo_temas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(60) NOT NULL,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    ordem INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Assuntos (cada um num tema). pede_turma: o aluno escolhe a turma (e o módulo); pede_data:
+-- informa a data (ex.: da falta); anexo: não pede, opcional ou obrigatório.
+CREATE TABLE protocolo_assuntos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tema_id INT DEFAULT NULL,
+    nome VARCHAR(100) NOT NULL,
+    instrucao VARCHAR(255) DEFAULT NULL,
+    pede_turma TINYINT(1) NOT NULL DEFAULT 0,
+    pede_data TINYINT(1) NOT NULL DEFAULT 0,
+    anexo ENUM('nao', 'opcional', 'obrigatorio') NOT NULL DEFAULT 'opcional',
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    ordem INT NOT NULL DEFAULT 0,
+    CONSTRAINT fk_protocolo_assunto_tema FOREIGN KEY (tema_id) REFERENCES protocolo_temas(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Status. inicial: o do protocolo recém-aberto; encerra: protocolo
+-- finalizado (o aluno não responde mais nele).
+CREATE TABLE protocolo_status (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(60) NOT NULL,
+    cor VARCHAR(7) NOT NULL DEFAULT '#6c757d',
+    inicial TINYINT(1) NOT NULL DEFAULT 0,
+    encerra TINYINT(1) NOT NULL DEFAULT 0,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    ordem INT NOT NULL DEFAULT 0
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- numero: o que aparece para todos — data de abertura + sequência
+-- (ex.: 2026102400001). codigo: aleatório, vai no link do aluno.
+-- aguardando: quem precisa agir agora (secretaria responder / aluno).
+CREATE TABLE protocolos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    numero VARCHAR(20) DEFAULT NULL UNIQUE,
+    codigo CHAR(12) NOT NULL UNIQUE,
+    aluno_id INT NOT NULL,
+    assunto_id INT NOT NULL,
+    status_id INT NOT NULL,
+    matricula_id INT DEFAULT NULL,
+    curso_modulo_id INT DEFAULT NULL,
+    data_referencia DATE DEFAULT NULL,
+    descricao TEXT NOT NULL,
+    origem ENUM('portal', 'secretaria') NOT NULL DEFAULT 'portal',
+    aguardando ENUM('secretaria', 'aluno', 'ninguem') NOT NULL DEFAULT 'secretaria',
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    encerrado_em DATETIME DEFAULT NULL,
+    KEY idx_protocolos_aluno (aluno_id, criado_em),
+    KEY idx_protocolos_status (status_id, atualizado_em),
+    CONSTRAINT fk_protocolo_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id),
+    CONSTRAINT fk_protocolo_assunto FOREIGN KEY (assunto_id) REFERENCES protocolo_assuntos(id),
+    CONSTRAINT fk_protocolo_status FOREIGN KEY (status_id) REFERENCES protocolo_status(id),
+    CONSTRAINT fk_protocolo_matricula FOREIGN KEY (matricula_id) REFERENCES matriculas(id) ON DELETE SET NULL,
+    CONSTRAINT fk_protocolo_modulo FOREIGN KEY (curso_modulo_id) REFERENCES curso_modulos(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Conversa do protocolo. autor: aluno, secretaria ou sistema (mudança de
+-- status). interna = nota da secretaria que o aluno não vê. Anexo guardado
+-- em storage/documentos/aluno_N/ (como os documentos do aluno).
+CREATE TABLE protocolo_mensagens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    protocolo_id INT NOT NULL,
+    autor ENUM('aluno', 'secretaria', 'sistema') NOT NULL,
+    usuario_id INT DEFAULT NULL,
+    autor_nome VARCHAR(150) DEFAULT NULL,
+    texto TEXT DEFAULT NULL,
+    interna TINYINT(1) NOT NULL DEFAULT 0,
+    anexo VARCHAR(255) DEFAULT NULL,
+    anexo_nome VARCHAR(200) DEFAULT NULL,
+    anexo_mime VARCHAR(50) DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_protocolo_mensagens (protocolo_id, id),
+    CONSTRAINT fk_protocolo_mensagem FOREIGN KEY (protocolo_id) REFERENCES protocolos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO protocolo_temas (id, nome, ordem) VALUES
+(1, 'Acadêmico', 1),
+(2, 'Financeiro', 2),
+(3, 'Documentos', 3),
+(4, 'Outros', 4);
+
+INSERT INTO protocolo_assuntos (tema_id, nome, instrucao, pede_turma, pede_data, anexo, ordem) VALUES
+(1, 'Justificativa de ausência', 'Conte o motivo da falta. Se tiver atestado ou declaração, anexe aqui.', 1, 1, 'opcional', 1),
+(1, 'Solicitação de reposição', 'Diga qual aula ou módulo você perdeu e a sua disponibilidade para repor.', 1, 1, 'opcional', 2),
+(2, 'Dúvida sobre pagamento', 'Se for sobre uma parcela ou comprovante, anexe aqui.', 0, 0, 'opcional', 3),
+(3, 'Solicitação de documento', 'Diga qual documento você precisa (declaração, histórico...).', 1, 0, 'nao', 4),
+(4, 'Outros assuntos', NULL, 0, 0, 'opcional', 5);
+
+INSERT INTO protocolo_status (nome, cor, inicial, encerra, ordem) VALUES
+('Aberto', '#0d6efd', 1, 0, 1),
+('Em análise', '#fd7e14', 0, 0, 2),
+('Aguardando o aluno', '#6f42c1', 0, 0, 3),
+('Deferido', '#198754', 0, 1, 4),
+('Indeferido', '#dc3545', 0, 1, 5),
+('Concluído', '#6c757d', 0, 1, 6);

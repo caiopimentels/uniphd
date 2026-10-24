@@ -83,6 +83,7 @@ $matriculas = $stmt->fetchAll();
             <div class="mt-3 d-flex gap-2 flex-wrap">
                 <a href="/portal/calendario.php" class="btn btn-sm btn-outline-brand"><i class="bi bi-calendar-week"></i> Calendário</a>
                 <a href="/portal/financeiro.php" class="btn btn-sm btn-outline-brand"><i class="bi bi-wallet2"></i> Pagamentos</a>
+                <a href="/portal/protocolos.php?novo=1&matricula=<?= (int) $m['id'] ?>" class="btn btn-sm btn-outline-brand"><i class="bi bi-chat-left-text"></i> Justificar falta / pedir reposição</a>
                 <?php if (array_filter(documentosMatricula($pdo, (int) $m['id']), fn ($d) => $d['situacao'] === 'liberado')): ?><a href="/portal/certificados.php" class="btn btn-sm btn-outline-brand"><i class="bi bi-award"></i> Declarações</a><?php endif; ?>
             </div>
         <?php elseif ($m['status'] === 'concluida'): ?>

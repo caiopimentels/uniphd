@@ -42,7 +42,9 @@ $logoDeslocamentoY = ($logoPosY - 50) * 0.9;
 // Espera que as páginas definam $pageTitle e $activeMenu antes de incluir este arquivo.
 // Opcionalmente $pageAction (HTML do botão principal) e $pageBreadcrumb (texto).
 
-// Menus do topo: chave => [rótulo, permissão, itens[]]
+// Menus do topo: chave => [rótulo, itens[]]. Item: [texto, link, pode ver,
+// chave do $activeMenu, nova aba?, divisória antes?, número em destaque].
+$protocolosParaResponder = usuarioPodeVerProtocolos() ? protocolosAguardandoSecretaria(getDB()) : 0;
 $menus = [
     'academico' => [
         'rotulo' => 'Acadêmico',
@@ -51,8 +53,16 @@ $menus = [
             ['Turmas', '/turmas/listar.php', usuarioPodeVerCursos(), 'turmas'],
             ['Cursos', '/cursos/listar.php', usuarioPodeVerCursos(), 'cursos'],
             ['Professores', '/professores/listar.php', usuarioPodeVerCursos(), 'professores'],
+        ],
+    ],
+    // Atendimento ao aluno e o que ele vê no portal.
+    'secretaria' => [
+        'rotulo' => 'Secretaria',
+        'itens' => [
+            ['Protocolos', '/protocolos/listar.php', usuarioPodeVerProtocolos(), 'protocolos', false, false, $protocolosParaResponder],
+            ['Certificados emitidos', '/documentos/emitidos.php', usuarioPodeLiberarCertificado() || usuarioPodeVerAlunos(), 'certificados-emitidos'],
+            ['Documentos (modelos)', '/configuracoes/certificado.php', usuarioPodeEditarDocumentos(), 'certificado', false, true],
             ['Portal do aluno', '/configuracoes/portal.php', usuarioPodeGerenciarPortal(), 'portal'],
-            ['Documentos', '/configuracoes/certificado.php', usuarioPodeEditarDocumentos(), 'certificado'],
         ],
     ],
     'financeiro' => [
@@ -146,8 +156,10 @@ $menus = [
                         <?= e($menu['rotulo']) ?> <i class="bi bi-chevron-down topnav-seta"></i>
                     </button>
                     <div class="dropdown-menu topnav-dropdown">
-                        <?php foreach ($itensVisiveis as $item): ?>
-                            <a class="dropdown-item" href="<?= e($item[1]) ?>" <?= ($item[4] ?? false) ? 'target="_blank" rel="noopener"' : '' ?>><?= e($item[0]) ?></a>
+                        <?php foreach ($itensVisiveis as $i => $item): ?>
+                            <?php if ($i > 0 && ($item[5] ?? false)): ?><div class="dropdown-divider"></div><?php endif; ?>
+                            <a class="dropdown-item d-flex align-items-center gap-2" href="<?= e($item[1]) ?>" <?= ($item[4] ?? false) ? 'target="_blank" rel="noopener"' : '' ?>><?= e($item[0]) ?>
+                                <?php if (!empty($item[6])): ?><span class="badge rounded-pill text-bg-warning ms-auto" title="Para responder"><?= (int) $item[6] ?></span><?php endif; ?></a>
                         <?php endforeach; ?>
                     </div>
                 </div>

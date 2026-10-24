@@ -309,3 +309,18 @@ function excluirTurma(PDO $pdo, int $turmaId): array
 
     return ['ok' => true, 'mensagem' => ''];
 }
+
+/**
+ * Presença marcada num módulo da turma: [aluno_id => ['presente' => bool,
+ * 'data' => ?string]]. Sem modulo: todos, [modulo_id => [aluno_id => ...]].
+ */
+function presencasModuloTurma(PDO $pdo, int $turmaId, ?int $moduloId = null): array
+{
+    $stmt = $pdo->prepare('SELECT curso_modulo_id, aluno_id, presente, data FROM turma_presencas WHERE turma_id = ?' . ($moduloId ? ' AND curso_modulo_id = ?' : ''));
+    $stmt->execute($moduloId ? [$turmaId, $moduloId] : [$turmaId]);
+    $presencas = [];
+    foreach ($stmt->fetchAll() as $p) {
+        $presencas[(int) $p['curso_modulo_id']][(int) $p['aluno_id']] = ['presente' => (bool) $p['presente'], 'data' => $p['data']];
+    }
+    return $moduloId ? ($presencas[$moduloId] ?? []) : $presencas;
+}

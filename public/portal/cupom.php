@@ -18,8 +18,10 @@ if (!$turma) {
     responderJson(['ok' => false, 'mensagem' => 'Esta turma não está mais com inscrições abertas.']);
 }
 $validacao = validarCupom($pdo, (string) ($_GET['codigo'] ?? ''), (int) $turma['curso_id'], alunoAtualId());
-$parcelas = numParcelasPortal($turma);
-$aplicado = $validacao['ok'] ? aplicarCupom($validacao['cupom'], valorTotalTurma($turma), (float) $turma['portal_taxa_matricula']) : $validacao;
+// O desconto sai do preço da forma escolhida (à vista ou a prazo).
+$modalidade = in_array($_GET['modalidade'] ?? '', modalidadesPortal($turma), true) ? $_GET['modalidade'] : modalidadesPortal($turma)[0];
+['total' => $valorCurso, 'parcelas' => $parcelas] = condicoesModalidadeTurma($turma, $modalidade);
+$aplicado = $validacao['ok'] ? aplicarCupom($validacao['cupom'], $valorCurso, (float) $turma['portal_taxa_matricula']) : $validacao;
 if (!$aplicado['ok']) {
     registrarTentativaAcesso($pdo, 'cupom', $identificador);
     responderJson(['ok' => false, 'mensagem' => $aplicado['mensagem']]);
@@ -34,5 +36,5 @@ responderJson([
     'taxa' => formatMoney($aplicado['taxa']),
     'taxa_zero' => $aplicado['taxa'] <= 0,
     'curso' => formatMoney($aplicado['valor_total']),
-    'parcelas' => $parcelas . 'x de ' . formatMoney($mensalidade),
+    'parcelas' => $modalidade === 'avista' ? 'à vista' : $parcelas . 'x de ' . formatMoney($mensalidade),
 ]);

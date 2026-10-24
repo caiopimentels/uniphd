@@ -41,6 +41,7 @@ $dados = [
     'observacao' => '',
     'cupom' => '',
     'prazo_taxa_dias' => 2,
+    'pagamento_avista' => 0,
 ];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -60,7 +61,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'observacao' => input('observacao'),
         'cupom' => normalizarCodigoCupom(input('cupom')),
         'prazo_taxa_dias' => (int) ($_POST['prazo_taxa_dias'] ?? 2),
+        'pagamento_avista' => input('modalidade') === 'avista' ? 1 : 0,
     ];
+    // À vista: o curso vai numa parcela só.
+    if ($dados['pagamento_avista']) {
+        $dados['num_parcelas'] = 1;
+    }
 
     $stmt = $pdo->prepare('SELECT * FROM alunos WHERE id = ?');
     $stmt->execute([$dados['aluno_id']]);
@@ -171,6 +177,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Valor do curso (o da turma) dividido nas parcelas escolhidas.
             // Turma antiga sem valor total: mensalidade da turma × parcelas.
             $valorTotalCurso = $turma ? ($turma['valor_total'] !== null ? (float) $turma['valor_total'] : (float) $turma['valor_mensalidade'] * max(1, $dados['num_parcelas'])) : 0.0;
+            // À vista: o preço à vista da turma.
+            if ($turma && $dados['pagamento_avista']) {
+                if ($turma['valor_avista'] === null) {
+                    $erros[] = 'Esta turma não tem valor à vista.';
+                } else {
+                    $valorTotalCurso = (float) $turma['valor_avista'];
+                }
+            }
             // Cupom: conferido com trava (o último não sai duas vezes) e
             // aplicado antes da bolsa — desconto no curso ou taxa zerada.
             // Não entra na alçada de desconto do perfil.
@@ -216,14 +230,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $stmt = $pdo->prepare(
                     'INSERT INTO matriculas
-                        (turma_id, aluno_id, data_matricula, valor_mensalidade, valor_total, desconto_percentual,
+                        (turma_id, aluno_id, data_matricula, valor_mensalidade, valor_total, pagamento_avista, desconto_percentual,
                          desconto_pontualidade_tipo, desconto_pontualidade_valor, desconto_pontualidade_dias, num_parcelas,
                          primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id, observacao, usuario_id,
                          cupom_id, cupom_desconto)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
                 );
                 $stmt->execute([
-                    $turma['id'], $aluno['id'], $dados['data_matricula'], $mensalidadeBase, $valorTotalCurso,
+                    $turma['id'], $aluno['id'], $dados['data_matricula'], $mensalidadeBase, $valorTotalCurso, $dados['pagamento_avista'],
                     $dados['desconto_percentual'], $dados['desconto_pontualidade_tipo'], $dados['desconto_pontualidade_valor'],
                     $dados['desconto_pontualidade_dias'], $dados['num_parcelas'], $dados['primeiro_vencimento'],
                     $taxaMatriculaFinal, $dados['forma_pagamento_id'] ?: null, $dados['forma_mensalidade_id'] ?: null, $dados['observacao'] ?: null,
@@ -250,7 +264,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     . ($cupomUsado ? ' — cupom ' . $cupomUsado['codigo'] . ' (' . ($cupomUsado['tipo'] === 'matricula_zero' ? 'matrícula grátis' : formatMoney($cupomDesconto) . ' de desconto') . ')' : '')
                     . ($autorizacaoInadimplente ? ' (inadimplente: ' . formatMoney($atrasoAluno) . ' em atraso — autorizado por ' . $autorizacaoInadimplente . ')' : ''));
 
-                flash('success', 'Matrícula realizada. ' . $dados['num_parcelas'] . ' mensalidade(s) lançada(s) em contas a receber.');
+                flash('success', 'Matrícula realizada. ' . ($dados['pagamento_avista'] ? 'Curso à vista: 1 parcela lançada' : $dados['num_parcelas'] . ' mensalidade(s) lançada(s)') . ' em contas a receber.');
                 redirect('/matriculas/visualizar.php?id=' . $matriculaId);
             }
         } catch (Throwable $e) {
@@ -265,7 +279,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // Só turmas que ainda aceitam aluno; a escolhida via URL entra mesmo se
 // estiver lotada, para a mensagem de erro fazer sentido no formulário.
 $stmt = $pdo->prepare(
-    "SELECT t.id, t.nome, t.vagas, t.data_inicio, t.data_termino, t.duracao_meses, t.duracao_unidade, t.valor_mensalidade, t.valor_total, c.nome AS curso_nome,
+    "SELECT t.id, t.nome, t.vagas, t.data_inicio, t.data_termino, t.duracao_meses, t.duracao_unidade, t.valor_mensalidade, t.valor_total, t.valor_avista, c.nome AS curso_nome,
             t.portal_taxa_matricula, t.portal_num_parcelas, t.portal_dia_vencimento, t.portal_forma_pagamento_id, t.forma_mensalidade_id,
             ((SELECT COUNT(*) FROM matriculas m WHERE m.turma_id = t.id AND " . SQL_MATRICULA_OCUPA_VAGA . ") + " . SQL_RESERVAS_TURMA . ") AS ocupadas
      FROM turmas t
@@ -316,6 +330,7 @@ $turmasJson = array_map(fn ($t) => [
     'mensalidade' => (float) $t['valor_mensalidade'],
     // Valor do curso; turma antiga sem ele: null (vale a mensalidade × parcelas).
     'total' => $t['valor_total'] !== null ? (float) $t['valor_total'] : null,
+    'avista' => $t['valor_avista'] !== null ? (float) $t['valor_avista'] : null,
     'forma_taxa' => $t['portal_forma_pagamento_id'] ? (int) $t['portal_forma_pagamento_id'] : null,
     'forma_mensalidade' => $t['forma_mensalidade_id'] ? (int) $t['forma_mensalidade_id'] : null,
     'taxa' => (float) $t['portal_taxa_matricula'],
@@ -426,6 +441,13 @@ require __DIR__ . '/../../includes/layout_header.php';
             </div>
 
             <div class="col-12"><hr class="my-1"><div class="fw-semibold">Curso (mensalidades)</div></div>
+            <div class="col-md-4" id="col_modalidade" style="display: none;">
+                <label class="form-label">Pagamento do curso</label>
+                <select name="modalidade" id="modalidade" class="form-select" onchange="aoTrocarModalidade()">
+                    <option value="prazo">A prazo</option>
+                    <option value="avista" <?= $dados['pagamento_avista'] ? 'selected' : '' ?>>À vista</option>
+                </select>
+            </div>
             <div class="col-md-4">
                 <label class="form-label">Valor do curso</label>
                 <input type="text" id="mensalidade_turma" class="form-control" disabled value="-">
@@ -530,8 +552,14 @@ const PARCELAS_DIGITADAS = <?= $dados['num_parcelas'] ? 'true' : 'false' ?>;
 const VENCIMENTO_DIGITADO = <?= $dados['primeiro_vencimento'] ? 'true' : 'false' ?>;
 const TAXA_DIGITADA = <?= $_SERVER['REQUEST_METHOD'] === 'POST' ? 'true' : 'false' ?>;
 
-// Valor do curso: o total da turma (turma antiga: mensalidade × parcelas).
+// Valor do curso: o total da turma (turma antiga: mensalidade × parcelas);
+// à vista, o preço à vista.
+function ehAvista() {
+    const turma = turmaSelecionada();
+    return !!turma && turma.avista !== null && document.getElementById('modalidade').value === 'avista';
+}
 function totalDoCurso(turma, qtd) {
+    if (ehAvista()) return turma.avista;
     return turma.total !== null && turma.total !== undefined ? turma.total : (parseFloat(turma.mensalidade) || 0) * qtd;
 }
 
@@ -608,6 +636,28 @@ function aoTrocarTurma(inicial) {
             document.getElementById('num_parcelas').value = restantes;
         }
         document.getElementById('dica_parcelas').textContent = 'Turma de ' + (turma.duracao || turma.meses + ' meses') + '; sugerido: ' + restantes + '.';
+        document.getElementById('num_parcelas').dataset.sugerido = restantes;
+    }
+    // À vista só aparece em turma que tem o preço à vista.
+    const temAvista = !!turma && turma.avista !== null;
+    document.getElementById('col_modalidade').style.display = temAvista ? '' : 'none';
+    if (temAvista) {
+        document.getElementById('modalidade').options[1].textContent = 'À vista (' + formatarMoeda(turma.avista) + ')';
+    } else {
+        document.getElementById('modalidade').value = 'prazo';
+    }
+    aoTrocarModalidade();
+}
+
+// À vista: uma parcela só (o nº de mensalidades fica travado em 1).
+function aoTrocarModalidade() {
+    const campo = document.getElementById('num_parcelas');
+    if (ehAvista()) {
+        campo.value = 1;
+        campo.readOnly = true;
+    } else if (campo.readOnly) {
+        campo.readOnly = false;
+        if (campo.dataset.sugerido) campo.value = campo.dataset.sugerido;
     }
     atualizarPrevia();
 }

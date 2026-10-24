@@ -2,17 +2,23 @@
 require_once __DIR__ . '/../../includes/bootstrap.php';
 
 // Abre um documento emitido (certificado, declaração de módulo...) para o
-// próprio aluno ou para a secretaria. ?documento=ID; o link antigo
-// ?matricula=ID abre o certificado de conclusão daquela matrícula.
+// próprio aluno ou para a secretaria. ?c=CODIGO (o código de verificação,
+// aleatório: trocar um número na URL não leva a outro documento); o link
+// antigo ?matricula=ID abre o certificado de conclusão daquela matrícula.
+// Seja qual for o link, o aluno só abre os documentos dele.
 $pdo = getDB();
-if (isset($_GET['matricula'])) {
+$codigo = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) ($_GET['c'] ?? '')));
+if ($codigo !== '') {
+    $documentoId = (int) (documentoEmitidoCompleto($pdo, 'codigo', $codigo)['id'] ?? 0);
+} elseif (isset($_GET['matricula'])) {
     $stmt = $pdo->prepare(
         'SELECT ce.id FROM certificados ce JOIN curso_emissoes e ON e.id = ce.curso_emissao_id WHERE ce.matricula_id = ? AND e.modulo_id IS NULL AND e.avulso = 0 ORDER BY ce.id LIMIT 1'
     );
     $stmt->execute([(int) $_GET['matricula']]);
     $documentoId = (int) $stmt->fetchColumn();
 } else {
-    $documentoId = (int) ($_GET['documento'] ?? 0);
+    // Pelo número, só a secretaria (o aluno abre pelo código).
+    $documentoId = usuarioLogado() ? (int) ($_GET['documento'] ?? 0) : 0;
 }
 $documento = $documentoId ? documentoEmitidoCompleto($pdo, 'id', $documentoId) : null;
 
@@ -88,6 +94,11 @@ $html = ob_get_clean();
 // A barra (Imprimir / Voltar) muda conforme quem abre e não vai para o PDF.
 $pdf = pdfDocumentoEmitido((int) $documento['id'], preg_replace('~<div class="cert-barra">.*?</div>~s', '', $html, 1));
 if ($pdf) {
+    // Controle da secretaria: quando o próprio aluno baixou (e quantas vezes).
+    if ($ehDono && !$ehSecretaria) {
+        $pdo->prepare('UPDATE certificados SET aluno_baixou_em = COALESCE(aluno_baixou_em, NOW()), aluno_ultimo_download = NOW(), aluno_downloads = aluno_downloads + 1 WHERE id = ?')
+            ->execute([$documento['id']]);
+    }
     $nomeArquivo = preg_replace('/[^A-Za-z0-9 ._-]+/', '', iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', ($documento['documento_nome'] ?: 'Certificado') . ' - ' . $documento['aluno_nome'])) ?: 'documento';
     header('Content-Type: application/pdf');
     header('Content-Disposition: inline; filename="' . $nomeArquivo . '.pdf"');

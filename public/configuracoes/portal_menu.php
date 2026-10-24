@@ -82,7 +82,7 @@ $redes = redesConfiguradasPortal($config);
 $itensMenu = ['topo' => itensMenuPortal($pdo, 'topo', false), 'rodape' => itensMenuPortal($pdo, 'rodape', false)];
 
 $pageTitle = 'Menu, rodapé e ajustes';
-$pageBreadcrumb = 'Acadêmico · Portal do aluno';
+$pageBreadcrumb = 'Secretaria · Portal do aluno';
 $activeMenu = 'portal';
 $pageAction = '<a href="/configuracoes/portal.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Páginas</a>'
     . '<button type="submit" form="form-menu" class="btn btn-brand"><i class="bi bi-check-lg"></i> Salvar</button>';

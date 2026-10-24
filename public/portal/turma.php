@@ -25,6 +25,14 @@ if (alunoLogado()) {
 $taxa = (float) $turma['portal_taxa_matricula'];
 $valorTotal = valorTotalTurma($turma);
 $mensalidade = mensalidadeDoTotal($valorTotal, $parcelas);
+// À vista e/ou a prazo, conforme o que a turma mostra no portal.
+$modalidades = modalidadesPortal($turma);
+$temPrazo = in_array('prazo', $modalidades, true);
+$valorAvista = in_array('avista', $modalidades, true) ? valorAvistaTurma($turma) : null;
+if (!$temPrazo) {
+    // Só à vista: o curso é uma parcela com o preço à vista.
+    [$valorTotal, $parcelas, $mensalidade] = [$valorAvista, 1, $valorAvista];
+}
 // Mensalidades no cartão/dinheiro: o aluno paga na secretaria.
 $formaMensalidadeSecretaria = formaPagaNaSecretaria($pdo, ($turma['forma_mensalidade_id'] ?? null) ? (int) $turma['forma_mensalidade_id'] : null);
 $pagaNaInscricao = $turma['portal_modo_vaga'] !== 'inscricao' && ($taxa > 0 || $mensalidade > 0);
@@ -82,9 +90,12 @@ require __DIR__ . '/../../includes/portal_header.php';
     <div class="col-lg-5">
         <div class="portal-card" style="position: sticky; top: 80px;">
             <div class="small text-muted">Investimento</div>
-            <?php if ($mensalidade > 0): ?>
+            <?php if ($mensalidade > 0 && !$temPrazo): ?>
+                <div class="fs-3 fw-bold" style="color: var(--accent-dark);"><?= formatMoney($valorAvista) ?> <span class="fs-6 fw-semibold">à vista</span></div>
+            <?php elseif ($mensalidade > 0): ?>
                 <div class="fs-3 fw-bold" style="color: var(--accent-dark);"><?= $parcelas ?>x de <?= formatMoney($mensalidade) ?></div>
                 <?php if ($parcelas > 1): ?><div class="small text-muted">total do curso <?= formatMoney($valorTotal) ?></div><?php endif; ?>
+                <?php if ($valorAvista !== null): ?><div class="fw-semibold mt-1">ou <?= formatMoney($valorAvista) ?> à vista</div><?php endif; ?>
                 <?php if ($formaMensalidadeSecretaria): ?><div class="small"><i class="bi bi-credit-card"></i> Mensalidades: <?= e(mb_strtolower($formaMensalidadeSecretaria)) ?>, pago na secretaria</div><?php endif; ?>
             <?php else: ?>
                 <div class="fs-3 fw-bold" style="color: var(--accent-dark);">Gratuito</div>
@@ -133,6 +144,7 @@ require __DIR__ . '/../../includes/portal_header.php';
     <div class="modal-dialog modal-dialog-centered">
         <form class="modal-content" method="post" action="/portal/inscrever.php" onsubmit="this.querySelector('[type=submit]').disabled = true; this.querySelector('[type=submit]').innerHTML = 'Inscrevendo...';">
             <input type="hidden" name="turma_id" value="<?= (int) $turma['id'] ?>">
+            <input type="hidden" name="modalidade" id="modalidade" value="<?= $temPrazo ? 'prazo' : 'avista' ?>">
             <div class="modal-header">
                 <h5 class="modal-title">Confirme sua inscrição</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -145,13 +157,27 @@ require __DIR__ . '/../../includes/portal_header.php';
                     <?php if ($agenda = textoAgendaTurma($turma)): ?><div><i class="bi bi-clock"></i> <?= e($agenda) ?></div><?php endif; ?>
                     <?php if ($turma['local']): ?><div><i class="bi bi-geo-alt"></i> <?= e($turma['local']) ?></div><?php endif; ?>
                 </div>
+                <?php if ($temPrazo && $valorAvista !== null): ?>
+                <div class="mb-3">
+                    <div class="small text-muted mb-1">Como você prefere pagar o curso?</div>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="escolha_modalidade" id="mod-prazo" value="prazo" checked>
+                        <label class="btn btn-outline-secondary" for="mod-prazo"><?= $parcelas ?>x de <?= formatMoney($mensalidade) ?></label>
+                        <input type="radio" class="btn-check" name="escolha_modalidade" id="mod-avista" value="avista">
+                        <label class="btn btn-outline-secondary" for="mod-avista"><?= formatMoney($valorAvista) ?> à vista</label>
+                    </div>
+                </div>
+                <?php endif; ?>
                 <div class="border rounded p-3 mb-3">
                     <?php if ($taxa > 0): ?>
                         <div class="d-flex justify-content-between"><span>Matrícula <span class="text-muted small">(paga agora)</span></span><strong id="valor-taxa" data-original="<?= e(formatMoney($taxa)) ?>"><?= formatMoney($taxa) ?></strong></div>
                     <?php endif; ?>
                     <?php if ($mensalidade > 0): ?>
-                        <div class="d-flex justify-content-between mt-1"><span>Curso <span class="text-muted small" id="parcelas-curso" data-original="(<?= $parcelas ?>x de <?= e(formatMoney($mensalidade)) ?>)">(<?= $parcelas ?>x de <?= formatMoney($mensalidade) ?>)</span></span><strong id="valor-curso" data-original="<?= e(formatMoney($valorTotal)) ?>"><?= formatMoney($valorTotal) ?></strong></div>
-                        <div class="small text-muted">1ª mensalidade em <?= formatDate($primeiroVencimento) ?><?= $formaMensalidadeSecretaria ? ' · ' . e(mb_strtolower($formaMensalidadeSecretaria)) . ', pago na secretaria' : '' ?></div>
+                        <?php $textoParcelas = $temPrazo ? '(' . $parcelas . 'x de ' . formatMoney($mensalidade) . ')' : '(à vista)'; ?>
+                        <div class="d-flex justify-content-between mt-1"><span>Curso <span class="text-muted small" id="parcelas-curso" data-original="<?= e($textoParcelas) ?>"
+                            data-prazo="<?= e('(' . $parcelas . 'x de ' . formatMoney($mensalidade) . ')') ?>" data-avista="(à vista)"><?= e($textoParcelas) ?></span></span><strong id="valor-curso" data-original="<?= e(formatMoney($valorTotal)) ?>"
+                            data-prazo="<?= e(formatMoney($valorTotal)) ?>" data-avista="<?= e(formatMoney((float) $valorAvista)) ?>"><?= formatMoney($valorTotal) ?></strong></div>
+                        <div class="small text-muted"><span id="texto-vencimento" data-prazo="1ª mensalidade em" data-avista="Pagamento do curso em"><?= $temPrazo ? '1ª mensalidade em' : 'Pagamento do curso em' ?></span> <?= formatDate($primeiroVencimento) ?><?= $formaMensalidadeSecretaria ? ' · ' . e(mb_strtolower($formaMensalidadeSecretaria)) . ', pago na secretaria' : '' ?></div>
                     <?php endif; ?>
                     <?php if ($taxa <= 0 && $mensalidade <= 0): ?><div class="fw-semibold">Curso gratuito</div><?php endif; ?>
                 </div>
@@ -192,6 +218,16 @@ require __DIR__ . '/../../includes/portal_header.php';
     if (!campo) return;
     const mensagem = document.getElementById('cupom-mensagem');
     const aplicado = document.getElementById('cupom-aplicado');
+    // À vista / a prazo: troca os valores mostrados e reconfere o cupom.
+    document.querySelectorAll('[name="escolha_modalidade"]').forEach((radio) => radio.addEventListener('change', () => {
+        const modo = radio.value;
+        document.getElementById('modalidade').value = modo;
+        ['parcelas-curso', 'valor-curso', 'texto-vencimento'].forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) { el.dataset.original = el.dataset[modo]; el.textContent = el.dataset[modo]; }
+        });
+        if (aplicado.value || campo.value) aplicar();
+    }));
     const restaurar = () => {
         aplicado.value = '';
         ['valor-taxa', 'parcelas-curso', 'valor-curso'].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = el.dataset.original; });
@@ -211,7 +247,7 @@ require __DIR__ . '/../../includes/portal_header.php';
         mensagem.className = 'small mt-1 text-muted';
         mensagem.textContent = 'Conferindo...';
         try {
-            const r = await (await fetch('/portal/cupom.php?turma_id=<?= (int) $turma['id'] ?>&codigo=' + encodeURIComponent(campo.value))).json();
+            const r = await (await fetch('/portal/cupom.php?turma_id=<?= (int) $turma['id'] ?>&modalidade=' + document.getElementById('modalidade').value + '&codigo=' + encodeURIComponent(campo.value))).json();
             mensagem.className = 'small mt-1 ' + (r.ok ? 'text-success fw-semibold' : 'text-danger');
             mensagem.textContent = r.mensagem;
             if (!r.ok) return;

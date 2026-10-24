@@ -405,8 +405,10 @@ function pdfDocumentoEmitido(int|string $documentoId, string $html): ?string
     $publico = BASE_PATH . '/public';
     $html = preg_replace_callback('~data-logo="(/[^"?]+)[^"]*"~', function ($m) use ($publico) {
         $caminho = realpath($publico . $m[1]);
+        // Logo que não está no disco: sai sem marca d'água (com o arquivo
+        // faltando, o navegador ficava esperando e o PDF nunca terminava).
         if (!$caminho || !str_starts_with($caminho, $publico) || !is_file($caminho)) {
-            return $m[0];
+            return '';
         }
         $tipo = mime_content_type($caminho) ?: 'image/png';
         return 'data-logo="data:' . $tipo . ';base64,' . base64_encode(file_get_contents($caminho)) . '"';
@@ -429,12 +431,11 @@ function pdfDocumentoEmitido(int|string $documentoId, string $html): ?string
     if (PHP_OS_FAMILY === 'Linux') {
         $argumentos[] = '--no-sandbox'; // usuário do Apache (www-data) não tem sandbox do Chrome
     }
-    $comando = (PHP_OS_FAMILY === 'Linux' && is_executable('/usr/bin/timeout') ? '/usr/bin/timeout 60 ' : '')
-        . escapeshellarg($navegador) . ' ' . implode(' ', array_map('escapeshellarg', $argumentos))
-        . ' ' . escapeshellarg('file://' . $temporario) . ' 2>&1';
+    $comando = escapeshellarg($navegador) . ' ' . implode(' ', array_map('escapeshellarg', $argumentos))
+        . ' ' . escapeshellarg('file://' . $temporario);
     $ambiente = getenv('HOME');
     putenv('HOME=' . $perfil);
-    exec($comando, $log, $codigo);
+    [$codigo, $log] = executarComTempoLimite($comando, 60);
     putenv('HOME=' . ($ambiente ?: ''));
     @unlink($temporario);
 
@@ -449,6 +450,35 @@ function pdfDocumentoEmitido(int|string $documentoId, string $html): ?string
     }
     rename($saida, $arquivo);
     return $arquivo;
+}
+
+/**
+ * Roda um comando e o encerra se passar de $segundos (o navegador que gera
+ * o PDF pode travar numa página; sem limite, a página do usuário ficava
+ * carregando até a conexão cair). Retorna [código de saída, linhas da saída].
+ */
+function executarComTempoLimite(string $comando, int $segundos): array
+{
+    $processo = proc_open('exec ' . $comando, [1 => ['pipe', 'w'], 2 => ['redirect', 1]], $tubos);
+    if (!is_resource($processo)) {
+        return [-1, ['não foi possível iniciar o navegador']];
+    }
+    stream_set_blocking($tubos[1], false);
+    $saida = '';
+    $limite = microtime(true) + $segundos;
+    while (($estado = proc_get_status($processo))['running']) {
+        $saida .= (string) stream_get_contents($tubos[1]);
+        if (microtime(true) > $limite) {
+            proc_terminate($processo, 9);
+            $saida .= ' [encerrado: passou de ' . $segundos . 's]';
+            break;
+        }
+        usleep(100000);
+    }
+    $saida .= (string) stream_get_contents($tubos[1]);
+    fclose($tubos[1]);
+    $codigo = proc_close($processo);
+    return [$estado['running'] ? 124 : ($estado['exitcode'] ?? $codigo), explode("\n", trim($saida))];
 }
 
 // Cidade da empresa para o documento: "Vitória da Conquista - BA" (só a

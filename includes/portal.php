@@ -296,6 +296,48 @@ function valorTotalTurma(array $turma): float
         : (float) $turma['valor_mensalidade'] * numParcelasPortal($turma);
 }
 
+// Preço à vista da turma (uma parcela só); null = a turma não tem.
+function valorAvistaTurma(array $turma): ?float
+{
+    return isset($turma['valor_avista']) && $turma['valor_avista'] !== null ? (float) $turma['valor_avista'] : null;
+}
+
+// Formas de contratar que o portal mostra e deixa escolher: 'prazo' e/ou
+// 'avista', conforme os "mostrar no portal" da turma.
+function modalidadesPortal(array $turma): array
+{
+    $modalidades = [];
+    if ((int) ($turma['portal_exibir_prazo'] ?? 1)) {
+        $modalidades[] = 'prazo';
+    }
+    if (valorAvistaTurma($turma) !== null && (int) ($turma['portal_exibir_avista'] ?? 1)) {
+        $modalidades[] = 'avista';
+    }
+    return $modalidades ?: ['prazo'];
+}
+
+// Valor do curso e parcelas numa forma de contratar (à vista = 1 parcela).
+function condicoesModalidadeTurma(array $turma, string $modalidade): array
+{
+    return $modalidade === 'avista' && valorAvistaTurma($turma) !== null
+        ? ['total' => valorAvistaTurma($turma), 'parcelas' => 1]
+        : ['total' => valorTotalTurma($turma), 'parcelas' => numParcelasPortal($turma)];
+}
+
+// Preço no cartão da turma: "6x de R$ 500,00 ou R$ 2.700,00 à vista".
+function precoCartaoPortal(array $turma): string
+{
+    $modalidades = modalidadesPortal($turma);
+    $textos = [];
+    if (in_array('prazo', $modalidades, true) && valorTotalTurma($turma) > 0) {
+        $textos[] = numParcelasPortal($turma) . 'x de ' . formatMoney(mensalidadeDoTotal(valorTotalTurma($turma), numParcelasPortal($turma)));
+    }
+    if (in_array('avista', $modalidades, true) && valorAvistaTurma($turma) > 0) {
+        $textos[] = ($textos ? 'ou ' : '') . formatMoney(valorAvistaTurma($turma)) . ' à vista';
+    }
+    return $textos ? implode(' ', $textos) : 'Gratuito';
+}
+
 /**
  * Primeira mensalidade: no dia de vencimento da turma, no mês de início
  * das aulas — ou no primeiro mês seguinte em que essa data ainda não
@@ -325,7 +367,7 @@ function primeiroVencimentoPortal(array $turma, string $hoje): string
  * (com trava) e aplicado: desconto no curso ou taxa de matrícula zerada.
  * Retorna ['ok' => bool, 'mensagem' => string, 'matricula_id' => ?int].
  */
-function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codigoCupom = ''): array
+function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codigoCupom = '', string $modalidade = ''): array
 {
     $falha = fn (string $m) => ['ok' => false, 'mensagem' => $m, 'matricula_id' => null];
 
@@ -378,8 +420,10 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codi
         $pendente = $modo !== 'inscricao';
         $prazo = $pendente ? date('Y-m-d 23:59:59', strtotime('+' . max(1, (int) $turma['portal_prazo_pagamento_dias']) . ' days')) : null;
 
-        $numParcelas = numParcelasPortal($turma);
-        $valorTotal = valorTotalTurma($turma);
+        // À vista ou a prazo: só as que a turma mostra no portal.
+        $modalidades = modalidadesPortal($turma);
+        $modalidade = in_array($modalidade, $modalidades, true) ? $modalidade : $modalidades[0];
+        ['total' => $valorTotal, 'parcelas' => $numParcelas] = condicoesModalidadeTurma($turma, $modalidade);
         $taxa = (float) $turma['portal_taxa_matricula'];
         $cupom = null;
         $cupomDesconto = 0.0;
@@ -400,6 +444,7 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codi
             'segura_vaga' => $modo === 'reserva' ? 1 : 0,
             'valor_mensalidade' => mensalidadeDoTotal($valorTotal, $numParcelas),
             'valor_total' => $valorTotal,
+            'pagamento_avista' => $modalidade === 'avista' ? 1 : 0,
             'num_parcelas' => $numParcelas,
             'primeiro_vencimento' => primeiroVencimentoPortal($turma, $hoje),
             'taxa_matricula' => $taxa,
@@ -413,7 +458,7 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codi
             // Reinscrição: as cobranças da tentativa anterior já estão canceladas.
             $stmt = $pdo->prepare(
                 "UPDATE matriculas SET data_matricula = ?, status = ?, origem = 'portal', pagamento_ate = ?, segura_vaga = ?, lista_espera = 0,
-                        valor_mensalidade = ?, valor_total = ?, desconto_percentual = 0, desconto_pontualidade_tipo = 'nenhum', desconto_pontualidade_valor = 0,
+                        valor_mensalidade = ?, valor_total = ?, pagamento_avista = ?, desconto_percentual = 0, desconto_pontualidade_tipo = 'nenhum', desconto_pontualidade_valor = 0,
                         desconto_pontualidade_dias = 0, num_parcelas = ?, primeiro_vencimento = ?, taxa_matricula = ?, forma_pagamento_id = ?, forma_mensalidade_id = ?,
                         cupom_id = ?, cupom_desconto = ?, data_cancelamento = NULL, conta_receber_confirmacao_id = NULL, usuario_id = NULL
                  WHERE id = ?"
@@ -423,9 +468,9 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codi
         } else {
             $stmt = $pdo->prepare(
                 "INSERT INTO matriculas (turma_id, aluno_id, origem, data_matricula, status, pagamento_ate, segura_vaga, valor_mensalidade,
-                                         valor_total, num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id,
+                                         valor_total, pagamento_avista, num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id,
                                          cupom_id, cupom_desconto)
-                 VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                 VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
             $stmt->execute([$turmaId, $alunoId, ...array_values($valores)]);
             $matriculaId = (int) $pdo->lastInsertId();
@@ -821,6 +866,7 @@ function historicoAluno(PDO $pdo, int $alunoId, int $limite = 200): array
         'reativacao' => ['Matrícula reativada', 'bi-arrow-counterclockwise', 'warning'],
         'exclusao' => ['Matrícula excluída', 'bi-trash', 'danger'],
         'documento' => ['Documento', 'bi-file-earmark-check', 'primary'],
+        'protocolo' => ['Protocolo', 'bi-chat-left-text', 'info'],
     ];
     $item = fn ($quando, $quem, $titulo, $detalhe, $icone, $cor) => compact('quando', 'quem', 'titulo', 'detalhe', 'icone', 'cor');
     $itens = [];

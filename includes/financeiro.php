@@ -173,13 +173,30 @@ function textoDescontoPontualidade(array $matricula): string
     return "{$quanto}, pagando {$ate}";
 }
 
+// Regra de pontualidade gravada na matrícula (guardada durante a
+// requisição; $esquecer = true descarta a guardada, depois de alterá-la).
+function regraPontualidadeMatricula(PDO $pdo, int $matriculaId, bool $esquecer = false): ?array
+{
+    static $matriculas = [];
+    if ($esquecer) {
+        unset($matriculas[$matriculaId]);
+        return null;
+    }
+    if (!array_key_exists($matriculaId, $matriculas)) {
+        $stmt = $pdo->prepare('SELECT desconto_pontualidade_tipo, desconto_pontualidade_valor, desconto_pontualidade_dias FROM matriculas WHERE id = ?');
+        $stmt->execute([$matriculaId]);
+        $matriculas[$matriculaId] = $stmt->fetch() ?: null;
+    }
+    return $matriculas[$matriculaId];
+}
+
 /**
  * Desconto de pontualidade que vale para UMA parcela: quanto desconta, até
  * quando e quanto fica. Null quando não há desconto — a parcela não é
  * mensalidade (taxa de matrícula, lançamento avulso) ou a matrícula não
  * tem a regra.
  */
-function descontoPontualidadeParcela(PDO $pdo, array $parcela): ?array
+function descontoPontualidadeParcela(PDO $pdo, array $parcela, ?array $regraMatricula = null): ?array
 {
     // Desconto combinado só para esta parcela (modal de edição) vale por
     // cima da regra da matrícula; 0 = esta parcela não tem desconto.
@@ -205,14 +222,9 @@ function descontoPontualidadeParcela(PDO $pdo, array $parcela): ?array
         return null;
     }
 
-    static $matriculas = [];
-    $matriculaId = (int) $parcela['matricula_id'];
-    if (!array_key_exists($matriculaId, $matriculas)) {
-        $stmt = $pdo->prepare('SELECT desconto_pontualidade_tipo, desconto_pontualidade_valor, desconto_pontualidade_dias FROM matriculas WHERE id = ?');
-        $stmt->execute([$matriculaId]);
-        $matriculas[$matriculaId] = $stmt->fetch() ?: null;
-    }
-    $regra = $matriculas[$matriculaId];
+    // $regraMatricula: a regra a usar no lugar da gravada (para comparar a
+    // regra de antes com a nova, ao alterar o desconto da matrícula).
+    $regra = $regraMatricula ?? regraPontualidadeMatricula($pdo, (int) $parcela['matricula_id']);
     if (!$regra || $regra['desconto_pontualidade_tipo'] === 'nenhum' || (float) $regra['desconto_pontualidade_valor'] <= 0) {
         return null;
     }
