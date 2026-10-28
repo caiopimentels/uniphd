@@ -60,6 +60,7 @@ $menus = [
         'rotulo' => 'Secretaria',
         'itens' => [
             ['Protocolos', '/protocolos/listar.php', usuarioPodeVerProtocolos(), 'protocolos', false, false, $protocolosParaResponder],
+            ['WhatsApp', '/whatsapp/conversas.php', usuarioTemPermissao('atender_whatsapp'), 'whatsapp', false, false, usuarioTemPermissao('atender_whatsapp') ? conversasAguardandoWhatsapp(getDB()) : 0],
             ['Certificados emitidos', '/documentos/emitidos.php', usuarioPodeLiberarCertificado() || usuarioPodeVerAlunos(), 'certificados-emitidos'],
             ['Documentos (modelos)', '/configuracoes/certificado.php', usuarioPodeEditarDocumentos(), 'certificado', false, true],
             ['Portal do aluno', '/configuracoes/portal.php', usuarioPodeGerenciarPortal(), 'portal'],

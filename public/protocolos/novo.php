@@ -7,6 +7,8 @@ exigirPermissao('abrir_protocolo', 'Seu perfil não pode abrir protocolo em nome
 // cadastro); trocar o aluno recarrega a página com as turmas dele.
 $pdo = getDB();
 $alunoId = (int) ($_POST['aluno_id'] ?? $_GET['aluno'] ?? 0);
+// Veio da aba Protocolos do aluno (?de=aluno): Cancelar volta para ela; senão, para a lista.
+$deAluno = ($_POST['de'] ?? $_GET['de'] ?? '') === 'aluno';
 $aluno = null;
 if ($alunoId) {
     $stmt = $pdo->prepare('SELECT id, nome, cpf, email FROM alunos WHERE id = ?');
@@ -46,7 +48,7 @@ $alunos = $pdo->query('SELECT id, nome, cpf FROM alunos WHERE ativo = 1 ORDER BY
 $pageTitle = 'Novo protocolo';
 $pageBreadcrumb = 'Secretaria · Protocolos';
 $activeMenu = 'protocolos';
-$pageAction = '<a href="' . e($aluno ? '/alunos/form.php?id=' . (int) $aluno['id'] . '&tab=protocolos' : '/protocolos/listar.php') . '" class="btn btn-outline-secondary">Cancelar</a>';
+$pageAction = '<a href="' . e($deAluno && $aluno ? '/alunos/form.php?id=' . (int) $aluno['id'] . '&tab=protocolos' : '/protocolos/listar.php') . '" class="btn btn-outline-secondary">Cancelar</a>';
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
 <?php if ($erro): ?><div class="alert alert-danger"><?= e($erro) ?></div><?php endif; ?>
@@ -72,7 +74,7 @@ montarBusca({
     vazio: 'Nenhum aluno encontrado.',
     aoEscolher: () => {
         const id = document.getElementById('aluno-escolhido').value;
-        if (id && id !== '<?= $aluno ? (int) $aluno['id'] : '' ?>') location.href = '/protocolos/novo.php?aluno=' + id;
+        if (id && id !== '<?= $aluno ? (int) $aluno['id'] : '' ?>') location.href = '/protocolos/novo.php?aluno=' + id<?= $deAluno ? " + '&de=aluno'" : '' ?>;
     },
 });
 </script>
@@ -81,6 +83,7 @@ montarBusca({
 <form method="post" enctype="multipart/form-data" class="secao" style="max-width: 900px;" onsubmit="this.querySelector('[type=submit]').disabled = true;">
     <div class="secao-titulo"><i class="bi bi-chat-left-text"></i> Protocolo</div>
     <input type="hidden" name="aluno_id" value="<?= (int) $aluno['id'] ?>">
+    <input type="hidden" name="de" value="<?= $deAluno ? 'aluno' : '' ?>">
     <div class="row g-3">
         <div class="col-md-6">
             <label class="form-label">Assunto *</label>

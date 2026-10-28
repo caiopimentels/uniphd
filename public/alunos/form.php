@@ -632,7 +632,7 @@ require __DIR__ . '/../../includes/layout_header.php';
     ?>
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-chat-left-text"></i> Protocolos do aluno
-            <?php if (usuarioPodeAbrirProtocolo()): ?><span class="ms-auto"><a href="/protocolos/novo.php?aluno=<?= (int) $id ?>" class="btn btn-sm btn-brand"><i class="bi bi-plus-lg"></i> Abrir protocolo</a></span><?php endif; ?></div>
+            <?php if (usuarioPodeAbrirProtocolo()): ?><span class="ms-auto"><a href="/protocolos/novo.php?aluno=<?= (int) $id ?>&de=aluno" class="btn btn-sm btn-brand"><i class="bi bi-plus-lg"></i> Abrir protocolo</a></span><?php endif; ?></div>
         <?php if (!$protocolosAluno): ?>
             <p class="text-muted mb-0">Nenhum protocolo. O aluno abre pelo portal (Meus protocolos), por exemplo para justificar uma falta ou pedir reposição — ou a secretaria abre por ele aqui.</p>
         <?php else: ?>

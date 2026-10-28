@@ -29,6 +29,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             gravarMensagemProtocolo($pdo, $id, 'aluno', mb_substr($texto, 0, 5000), $anexo['anexo']);
             $pdo->prepare("UPDATE protocolos SET aguardando = 'secretaria', atualizado_em = NOW() WHERE id = ?")->execute([$id]);
+            registrarHistoricoAluno($pdo, alunoAtualId(), 'protocolo', 'Protocolo nº ' . numeroProtocolo($protocolo) . ': o aluno respondeu' . ($anexo['anexo'] ? ' (com anexo)' : ''),
+                $protocolo['matricula_id'] ? (int) $protocolo['matricula_id'] : null);
             criarNotificacao($pdo, 'protocolo', 'Resposta no protocolo nº ' . numeroProtocolo($protocolo), alunoAtualNome() . ' respondeu (' . $protocolo['assunto_nome'] . ').',
                 '/protocolos/ver.php?id=' . $id, $id);
             flash('success', 'Mensagem enviada à secretaria.');

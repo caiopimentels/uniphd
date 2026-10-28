@@ -830,7 +830,10 @@ function copiarImagemPortal(string $url): string
 function registrarHistoricoAluno(PDO $pdo, int $alunoId, string $tipo, string $descricao, ?int $matriculaId = null): void
 {
     try {
-        $usuarioId = function_exists('usuarioLogado') && usuarioLogado() ? usuarioAtualId() : null;
+        // Numa página do portal, quem age é o aluno (mesmo que o navegador
+        // também esteja logado no sistema, como no teste no mesmo endereço).
+        $peloAlunoNoPortal = str_starts_with((string) ($_SERVER['SCRIPT_NAME'] ?? ''), '/portal/') && alunoLogado() && alunoAtualId() === $alunoId;
+        $usuarioId = !$peloAlunoNoPortal && function_exists('usuarioLogado') && usuarioLogado() ? usuarioAtualId() : null;
         if ($usuarioId) {
             $quem = usuarioAtualNome();
         } elseif (alunoLogado() && alunoAtualId() === $alunoId) {

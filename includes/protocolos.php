@@ -201,7 +201,7 @@ function abrirProtocolo(PDO $pdo, int $alunoId, array $dados, ?array $arquivo, s
         // Aberto pela secretaria: o anexo (ex.: atestado entregue no balcão) sai em nome dela.
         gravarMensagemProtocolo($pdo, $id, $origem === 'secretaria' ? 'secretaria' : 'aluno', '', $anexo['anexo']);
     }
-    registrarHistoricoAluno($pdo, $alunoId, 'protocolo', 'Protocolo nº ' . $numero . ' aberto' . ($origem === 'secretaria' ? ' pela secretaria' : '') . ': ' . $assunto['nome'], $matriculaId);
+    registrarHistoricoAluno($pdo, $alunoId, 'protocolo', 'Protocolo nº ' . $numero . ' aberto' . ($origem === 'secretaria' ? ' pela secretaria' : ' pelo aluno no portal') . ': ' . $assunto['nome'], $matriculaId);
     if ($origem === 'portal') {
         criarNotificacao($pdo, 'protocolo', 'Novo protocolo: ' . $assunto['nome'], alunoAtualNome() . ' abriu o protocolo nº ' . $numero . '.',
             '/protocolos/ver.php?id=' . $id, $id);

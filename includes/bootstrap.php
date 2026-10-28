@@ -92,6 +92,7 @@ require_once __DIR__ . '/colunas_telas.php';
 require_once __DIR__ . '/cupons.php';
 require_once __DIR__ . '/contratos.php';
 require_once __DIR__ . '/protocolos.php';
+require_once __DIR__ . '/whatsapp.php';
 
 // Garante que toda página (logada ou não — login e recuperação de senha
 // também enviam formulário) já tem um token de CSRF disponível pra colocar
