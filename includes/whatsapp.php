@@ -242,6 +242,13 @@ function chamarIaChat(string $provedor, string $chave, string $modelo, array $me
     curl_close($curl);
     $dados = is_string($resposta) ? json_decode($resposta, true) : null;
     $texto = trim((string) ($dados['choices'][0]['message']['content'] ?? ''));
+    // Modelos que "pensam alto" (ex.: Qwen) mandam o raciocínio entre
+    // <think>…</think>: isso nunca vai para o aluno. Sem o fechamento, a
+    // resposta veio cortada no meio do raciocínio: conta como falha.
+    $texto = trim((string) preg_replace('~<think>.*?</think>~s', '', $texto));
+    if (str_contains($texto, '<think>')) {
+        $texto = '';
+    }
     if ($status >= 200 && $status < 300 && $texto !== '') {
         return ['ok' => true, 'texto' => $texto, 'erro' => '', 'tokens' => (int) ($dados['usage']['total_tokens'] ?? 0)];
     }
