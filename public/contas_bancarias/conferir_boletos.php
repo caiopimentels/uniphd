@@ -7,6 +7,7 @@ exigirAdmin();
 // pagamento, a parcela é baixada como no aviso do webhook.
 //   GET              → a tela
 //   GET lista=1      → boletos a conferir (JSON)
+//   de / ate         → período de vencimento (padrão: todos os vencidos até ontem)
 //   POST cobranca    → consulta um boleto e baixa se estiver pago (JSON)
 $pdo = getDB();
 $id = (int) ($_GET['id'] ?? 0);
@@ -18,14 +19,20 @@ if (!$contaTela) {
     redirect('/contas_bancarias/listar.php');
 }
 
+$dataValida = fn (string $campo) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) ($_GET[$campo] ?? '')) ? $_GET[$campo] : '';
+$filtrou = isset($_GET['de']) || isset($_GET['ate']);
+$de = $dataValida('de');
+$ate = $filtrou ? $dataValida('ate') : date('Y-m-d', strtotime('-1 day'));
 $sqlAbertos = "FROM cobrancas_bancarias cb
          JOIN contas_receber cr ON cr.id = cb.conta_receber_id
          LEFT JOIN alunos a ON a.id = cr.aluno_id
-         WHERE cb.conta_bancaria_id = ? AND cb.status = 'registrada' AND cr.status = 'pendente' AND cr.excluido_em IS NULL";
+         WHERE cb.conta_bancaria_id = ? AND cb.status = 'registrada' AND cr.status = 'pendente' AND cr.excluido_em IS NULL"
+    . ($de !== '' ? ' AND cb.data_vencimento >= ?' : '') . ($ate !== '' ? ' AND cb.data_vencimento <= ?' : '');
+$paramsAbertos = array_merge([$id], array_values(array_filter([$de, $ate])));
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !empty($_GET['lista'])) {
     $stmt = $pdo->prepare('SELECT cb.id, cb.nosso_numero, cb.valor, cb.data_vencimento, cr.descricao, a.nome AS aluno ' . $sqlAbertos . ' ORDER BY cb.data_vencimento, cb.id');
-    $stmt->execute([$id]);
+    $stmt->execute($paramsAbertos);
     $linhas = $stmt->fetchAll();
     responderJson(['boletos' => array_map(fn ($l) => [
         'id' => (int) $l['id'],
@@ -89,7 +96,14 @@ responderJson(['resultado' => 'aberto', 'mensagem' => $situacao ?: 'Em aberto'])
 }
 
 $stmt = $pdo->prepare('SELECT COUNT(*) AS qtd, COALESCE(SUM(cb.valor), 0) AS total ' . $sqlAbertos);
-$stmt->execute([$id]);
+$stmt->execute($paramsAbertos);
+$ontem = date('Y-m-d', strtotime('-1 day'));
+$atalhos = [
+    'Vencidos' => ['', $ontem],
+    'Vencidos este mês' => [date('Y-m-01'), $ontem],
+    'A vencer' => [date('Y-m-d'), ''],
+    'Todos' => ['', ''],
+];
 $abertos = $stmt->fetch();
 
 $pageTitle = 'Configurações';
@@ -104,9 +118,21 @@ $contaAba = 'conferir';
 require __DIR__ . '/../../includes/abas_conta_bancaria.php';
 ?>
 <div style="max-width: 980px;">
+    <form method="get" class="card mb-3"><div class="card-body d-flex flex-wrap align-items-end gap-2">
+        <input type="hidden" name="id" value="<?= (int) $id ?>">
+        <div><label class="form-label small mb-1">Vencimento de</label><input type="date" name="de" class="form-control form-control-sm" value="<?= e($de) ?>"></div>
+        <div><label class="form-label small mb-1">até</label><input type="date" name="ate" class="form-control form-control-sm" value="<?= e($ate) ?>"></div>
+        <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-funnel"></i> Filtrar</button>
+        <div class="d-flex flex-wrap gap-1 ms-md-2">
+            <?php foreach ($atalhos as $rotulo => [$aDe, $aAte]): ?>
+                <a class="btn btn-sm <?= $aDe === $de && $aAte === $ate ? 'btn-brand' : 'btn-light border' ?>" href="?<?= e(http_build_query(['id' => $id, 'de' => $aDe, 'ate' => $aAte])) ?>"><?= e($rotulo) ?></a>
+            <?php endforeach; ?>
+        </div>
+        <div class="small text-muted w-100">Deixe uma data em branco para não limitar daquele lado.</div>
+    </div></form>
     <div class="card mb-3"><div class="card-body d-flex flex-wrap align-items-center gap-3">
         <div class="flex-grow-1">
-            <div class="fw-semibold"><?= e($contaTela['apelido']) ?> — boletos emitidos e ainda não pagos no sistema</div>
+            <div class="fw-semibold"><?= e($contaTela['apelido']) ?> — boletos ainda não pagos no sistema, <?= $de === '' && $ate === '' ? 'todos os vencimentos' : ($de === '' ? 'vencimento até ' . formatDate($ate) : ($ate === '' ? 'vencimento a partir de ' . formatDate($de) : 'vencimento de ' . formatDate($de) . ' a ' . formatDate($ate))) ?></div>
             <div class="small text-muted"><?= (int) $abertos['qtd'] ?> boleto(s) · <?= formatMoney($abertos['total']) ?>. A conferência pergunta ao Itaú a situação de cada um; o que estiver pago é baixado na hora, como no aviso automático.</div>
         </div>
         <button type="button" class="btn btn-brand" id="btn-conferir" onclick="conferirBoletos()" <?= (int) $abertos['qtd'] ? '' : 'disabled' ?>><i class="bi bi-arrow-repeat"></i> Conferir agora</button>
@@ -118,7 +144,7 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
         <div class="table-responsive"><table class="table table-sm align-middle mb-0"><tbody id="conferir-lista"></tbody></table></div>
     </div></div>
 </div>
-<script>const URL_CONFERIR = '/contas_bancarias/conferir_boletos.php?id=<?= (int) $id ?>';</script>
+<script>const URL_CONFERIR = <?= json_encode('/contas_bancarias/conferir_boletos.php?' . http_build_query(['id' => $id, 'de' => $de, 'ate' => $ate])) ?>;</script>
 <script>
 let conferindo = false;
 let houveBaixa = false;
@@ -143,7 +169,7 @@ async function conferirBoletos() {
         return;
     }
     if (!boletos.length) {
-        status.textContent = 'Nenhum boleto em aberto para conferir.';
+        status.textContent = 'Nenhum boleto em aberto neste período.';
         barra.className = 'progress-bar bg-success';
         barra.style.width = '100%';
         return;
