@@ -1,3 +1,8 @@
+    <?php if (!empty($acoesLaterais) && !empty($pageAction)): ?>
+    </div>
+    <aside class="pagina-acoes-lateral"><div class="titulo">Ações</div><?= $pageAction ?></aside>
+    </div>
+    <?php endif; ?>
     <div class="pagina-rodape">
         <?= e(nomeSistema()) ?> · <?= date('Y') ?>
     </div>

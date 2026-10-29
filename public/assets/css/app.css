@@ -1333,3 +1333,18 @@ a.lateral-acao { text-decoration: none; }
 .lista-colunas li { display: flex; align-items: center; gap: .6rem; padding: .55rem .25rem; border-bottom: 1px solid var(--border); background: var(--surface, #fff); }
 .lista-colunas li.arrastando { opacity: .5; }
 .lista-colunas .alca { cursor: grab; color: var(--text-muted); }
+
+/* Ações da página numa coluna fixa à direita ($acoesLaterais). */
+.pagina-grade-lateral { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 1.25rem; align-items: start; }
+.pagina-acoes-lateral { position: sticky; top: calc(var(--topnav-h, 58px) + 1rem); display: flex; flex-direction: column; gap: .4rem; background: var(--surface, #fff); border: 1px solid var(--border, #e6e8eb); border-radius: 12px; padding: .75rem; }
+.pagina-acoes-lateral .titulo { order: -2; font-size: .7rem; font-weight: 650; text-transform: uppercase; letter-spacing: .07em; color: var(--text-subtle); padding: 0 .25rem .25rem; }
+.pagina-acoes-lateral > .btn, .pagina-acoes-lateral > form, .pagina-acoes-lateral > form .btn, .pagina-acoes-lateral > .dropdown, .pagina-acoes-lateral > .dropdown > .btn { display: block; width: 100%; text-align: left; }
+.pagina-acoes-lateral > .dropdown > .dropdown-toggle::after { float: right; margin-top: .55em; }
+.pagina-acoes-lateral .btn-brand { order: -1; text-align: center; margin-bottom: .25rem; }
+.pagina-acoes.acoes-no-topo { display: none; }
+@media (max-width: 1199.98px) {
+    .pagina-grade-lateral { display: block; }
+    .pagina-acoes-lateral { display: none; }
+    .pagina-acoes.acoes-no-topo { display: flex; }
+}
+@media print { .pagina-acoes-lateral { display: none !important; } .pagina-grade-lateral { display: block; } }

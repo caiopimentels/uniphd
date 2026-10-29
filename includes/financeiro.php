@@ -300,6 +300,49 @@ function filtroBuscaAlunoReceber(string $busca): array
     return [$sql . ')', $params];
 }
 
+/** Situações do filtro do Contas a receber (podem ser marcadas várias). */
+function opcoesStatusReceber(): array
+{
+    return ['pendente' => 'Pendentes', 'vencido' => 'Vencidas', 'pago' => 'Recebidas', 'cancelado' => 'Canceladas', 'suspenso' => 'Suspensas', 'excluido' => 'Excluídas'];
+}
+
+/** Lista das situações marcadas, a partir de "pendente,vencido" ou de um array. */
+function listaStatusReceber($valor): array
+{
+    $itens = is_array($valor) ? $valor : explode(',', (string) $valor);
+    return array_values(array_intersect(array_keys(opcoesStatusReceber()), array_map('strval', $itens)));
+}
+
+/** Situações do filtro do Contas a pagar. */
+function opcoesStatusPagar(): array
+{
+    return ['pendente' => 'Pendentes', 'vencido' => 'Vencidas', 'pago' => 'Pagas', 'cancelado' => 'Canceladas'];
+}
+
+function listaStatusPagar($valor): array
+{
+    $itens = is_array($valor) ? $valor : explode(',', (string) $valor);
+    return array_values(array_intersect(array_keys(opcoesStatusPagar()), array_map('strval', $itens)));
+}
+
+/** WHERE das situações marcadas do Contas a pagar (nenhuma = todas). */
+function condicaoStatusPagar(array $marcados): string
+{
+    $condicoes = [
+        'pendente' => "cp.status = 'pendente'",
+        'vencido' => "(cp.status = 'pendente' AND cp.data_vencimento < CURDATE())",
+        'pago' => "cp.status = 'pago'",
+        'cancelado' => "cp.status = 'cancelado'",
+    ];
+    return $marcados ? ' AND (' . implode(' OR ', array_map(fn ($s) => $condicoes[$s], $marcados)) . ')' : '';
+}
+
+/** Texto do filtro: "Todas", "Pendentes" ou "Pendentes + Vencidas". */
+function rotuloStatusReceber(array $marcados): string
+{
+    return $marcados ? implode(' + ', array_map(fn ($s) => opcoesStatusReceber()[$s], $marcados)) : 'Todas';
+}
+
 function cancelarCobrancasFuturasMatricula(PDO $pdo, int $matriculaId, string $dataCorte): int
 {
     $stmt = $pdo->prepare("SELECT id FROM contas_receber WHERE matricula_id = ? AND status = 'pendente' AND data_vencimento >= ?");
@@ -380,66 +423,103 @@ function listarInadimplentes(PDO $pdo, array $filtros = []): array
 }
 
 /**
- * DRE (regime de competência) do período, agrupado por categoria.
- *
- * Receitas contam pela data de VENCIMENTO: as mensalidades de uma
- * matrícula são todas emitidas no dia em que o aluno se matricula, então
- * contar pela emissão jogaria o curso inteiro no mês da matrícula. Parcela
- * já paga entra pelo valor efetivamente recebido (pode ter havido desconto
- * de pontualidade). Despesas contam pela
- * data de emissão (o mês a que a despesa se refere). Lançamentos cancelados
- * não entram.
+ * DRE (regime de competência) do período, agrupado por categoria. Conta o
+ * fato gerador, pago ou não (só cancelados ficam de fora):
+ * - receita no mês do VENCIMENTO da parcela (o mês da aula/serviço: as
+ *   mensalidades são todas emitidas no dia da matrícula, então a emissão
+ *   jogaria o curso inteiro no mês da matrícula); parcela já recebida vale
+ *   o que entrou (pode ter havido desconto de pontualidade);
+ * - despesa no mês da EMISSÃO (o mês a que se refere).
+ * Cada linha e cada total trazem também quanto já foi recebido/pago e
+ * quanto falta. O dinheiro que de fato entrou/saiu fica no Fluxo de caixa.
+ * categoria_id (0 = sem categoria) abre o detalhamento (detalheDRE).
  */
 function calcularDRE(PDO $pdo, string $dataInicio, string $dataFim): array
 {
     $stmt = $pdo->prepare(
-        "SELECT c.nome AS categoria, COALESCE(SUM(IF(cr.status = 'pago', COALESCE(cr.valor_recebido, cr.valor), cr.valor)), 0) AS total
+        "SELECT COALESCE(c.id, 0) AS categoria_id, c.nome AS categoria, COUNT(*) AS quantidade,
+                COALESCE(SUM(IF(cr.status = 'pago', COALESCE(cr.valor_recebido, cr.valor), cr.valor)), 0) AS total,
+                COALESCE(SUM(IF(cr.status = 'pago', COALESCE(cr.valor_recebido, cr.valor), 0)), 0) AS realizado
          FROM contas_receber cr
          LEFT JOIN categorias_financeiras c ON c.id = cr.categoria_id
          WHERE cr.status <> 'cancelado' AND cr.data_vencimento BETWEEN ? AND ?
-         GROUP BY c.nome
+         GROUP BY c.id, c.nome
          ORDER BY total DESC"
     );
     $stmt->execute([$dataInicio, $dataFim]);
     $receitasPorCategoria = $stmt->fetchAll();
 
     $stmt = $pdo->prepare(
-        "SELECT c.nome AS categoria, COALESCE(SUM(cp.valor), 0) AS total
+        "SELECT COALESCE(c.id, 0) AS categoria_id, c.nome AS categoria, COUNT(*) AS quantidade,
+                COALESCE(SUM(cp.valor), 0) AS total,
+                COALESCE(SUM(IF(cp.status = 'pago', cp.valor, 0)), 0) AS realizado
          FROM contas_pagar cp
          LEFT JOIN categorias_financeiras c ON c.id = cp.categoria_id
          WHERE cp.status <> 'cancelado' AND cp.data_emissao BETWEEN ? AND ?
-         GROUP BY c.nome
+         GROUP BY c.id, c.nome
          ORDER BY total DESC"
     );
     $stmt->execute([$dataInicio, $dataFim]);
     $despesasPorCategoria = $stmt->fetchAll();
 
-    // Quebra das receitas de matrícula por curso — responde "qual curso
-    // está trazendo dinheiro", sem alterar o total do DRE.
-    $stmt = $pdo->prepare(
-        "SELECT cu.nome AS curso, COALESCE(SUM(IF(cr.status = 'pago', COALESCE(cr.valor_recebido, cr.valor), cr.valor)), 0) AS total
-         FROM contas_receber cr
-         JOIN matriculas m ON m.id = cr.matricula_id
-         JOIN turmas t ON t.id = m.turma_id
-         JOIN cursos cu ON cu.id = t.curso_id
-         WHERE cr.status <> 'cancelado' AND cr.data_vencimento BETWEEN ? AND ?
-         GROUP BY cu.nome
-         ORDER BY total DESC"
-    );
-    $stmt->execute([$dataInicio, $dataFim]);
-    $receitasPorCurso = $stmt->fetchAll();
-
-    $totalReceitas = array_sum(array_column($receitasPorCategoria, 'total'));
-    $totalDespesas = array_sum(array_column($despesasPorCategoria, 'total'));
+    $totalReceitas = (float) array_sum(array_column($receitasPorCategoria, 'total'));
+    $totalDespesas = (float) array_sum(array_column($despesasPorCategoria, 'total'));
+    $recebido = (float) array_sum(array_column($receitasPorCategoria, 'realizado'));
+    $pago = (float) array_sum(array_column($despesasPorCategoria, 'realizado'));
 
     return [
         'receitas_por_categoria' => $receitasPorCategoria,
         'total_receitas' => $totalReceitas,
+        'receitas_recebidas' => $recebido,
+        'receitas_a_receber' => $totalReceitas - $recebido,
         'despesas_por_categoria' => $despesasPorCategoria,
         'total_despesas' => $totalDespesas,
-        'receitas_por_curso' => $receitasPorCurso,
+        'despesas_pagas' => $pago,
+        'despesas_a_pagar' => $totalDespesas - $pago,
         'resultado_liquido' => $totalReceitas - $totalDespesas,
     ];
+}
+
+/**
+ * Lançamentos por trás de uma linha do DRE, com as mesmas regras de
+ * calcularDRE (pagos ou não). $tipo: receita ou despesa; $id: categoria
+ * (0 = sem categoria). Cada linha: data, descricao, quem, valor, situacao.
+ */
+function detalheDRE(PDO $pdo, string $tipo, int $id, string $dataInicio, string $dataFim): array
+{
+    $categoria = $id ? 'c.id = ?' : 'c.id IS NULL';
+    $params = $id ? [$dataInicio, $dataFim, $id] : [$dataInicio, $dataFim];
+    $hoje = date('Y-m-d');
+    if ($tipo === 'despesa') {
+        $stmt = $pdo->prepare(
+            "SELECT cp.id, cp.data_emissao AS data, cp.descricao, f.nome AS quem, t.nome AS turma, cp.valor, cp.status, cp.data_pagamento, cp.data_vencimento
+             FROM contas_pagar cp
+             LEFT JOIN categorias_financeiras c ON c.id = cp.categoria_id
+             LEFT JOIN fornecedores f ON f.id = cp.fornecedor_id
+             LEFT JOIN turmas t ON t.id = cp.turma_id
+             WHERE cp.status <> 'cancelado' AND cp.data_emissao BETWEEN ? AND ? AND $categoria
+             ORDER BY cp.data_emissao, cp.id"
+        );
+        $stmt->execute($params);
+        return array_map(fn ($l) => ['id' => (int) $l['id'], 'data' => $l['data'], 'descricao' => $l['descricao'] . ($l['turma'] ? ' (' . $l['turma'] . ')' : ''),
+            'quem' => (string) $l['quem'], 'valor' => (float) $l['valor'], 'pago' => $l['status'] === 'pago',
+            'situacao' => $l['status'] === 'pago' ? 'Pago em ' . formatDate($l['data_pagamento']) : ($l['data_vencimento'] < $hoje ? 'Vencido em ' . formatDate($l['data_vencimento']) : 'A pagar até ' . formatDate($l['data_vencimento']))],
+            $stmt->fetchAll());
+    }
+    $stmt = $pdo->prepare(
+        "SELECT cr.id, cr.data_vencimento AS data, cr.descricao, a.nome AS quem, cr.status, cr.data_recebimento,
+                IF(cr.status = 'pago', COALESCE(cr.valor_recebido, cr.valor), cr.valor) AS valor
+         FROM contas_receber cr
+         LEFT JOIN categorias_financeiras c ON c.id = cr.categoria_id
+         LEFT JOIN alunos a ON a.id = cr.aluno_id
+         WHERE cr.status <> 'cancelado' AND cr.data_vencimento BETWEEN ? AND ? AND $categoria
+         ORDER BY cr.data_vencimento, a.nome"
+    );
+    $stmt->execute($params);
+    return array_map(fn ($l) => ['id' => (int) $l['id'], 'data' => $l['data'], 'descricao' => $l['descricao'], 'quem' => (string) $l['quem'], 'valor' => (float) $l['valor'],
+        'pago' => $l['status'] === 'pago',
+        'situacao' => $l['status'] === 'pago' ? 'Recebido em ' . formatDate($l['data_recebimento']) : ($l['data'] < $hoje ? 'Vencido' : 'A receber')],
+        $stmt->fetchAll());
 }
 
 /**
@@ -686,25 +766,30 @@ function resultadoTurmas(PDO $pdo, array $filtros = []): array
 function buscarContasReceber(PDO $pdo, array $filtros): array
 {
     $params = [];
-    // Excluídas (já tinham passado pelo banco) só aparecem no filtro delas.
-    if (($filtros['status'] ?? '') === 'excluido') {
-        $where = 'cr.excluido_em IS NOT NULL';
-    } else {
-        $where = 'cr.excluido_em IS NULL';
-        if (in_array($filtros['status'] ?? '', ['pendente', 'pago', 'cancelado'], true)) {
-            $where .= ' AND cr.status = ?';
-            $params[] = $filtros['status'];
-        } elseif (($filtros['status'] ?? '') === 'vencido') {
-            // Vencidas: pendentes com vencimento já passado (também aparecem em Pendentes).
-            $where .= " AND cr.status = 'pendente' AND cr.data_vencimento < CURDATE()";
-        }
+    // Situações marcadas (várias = qualquer uma delas). Nenhuma = todas,
+    // menos as excluídas (já tinham passado pelo banco), que só aparecem
+    // quando marcadas.
+    $condicoesStatus = [
+        'pendente' => "cr.status = 'pendente'",
+        'vencido' => "cr.status = 'pendente' AND cr.data_vencimento < CURDATE()",
+        'pago' => "cr.status = 'pago'",
+        'cancelado' => "cr.status = 'cancelado' AND cr.suspensa_trancamento = 0",
+        'suspenso' => "cr.status = 'cancelado' AND cr.suspensa_trancamento = 1",
+    ];
+    $marcados = listaStatusReceber($filtros['status'] ?? '');
+    $partes = [];
+    foreach ($marcados as $st) {
+        $partes[] = $st === 'excluido' ? 'cr.excluido_em IS NOT NULL' : '(cr.excluido_em IS NULL AND ' . $condicoesStatus[$st] . ')';
     }
+    $where = $partes ? '(' . implode(' OR ', $partes) . ')' : 'cr.excluido_em IS NULL';
+    // Período pelo vencimento (padrão) ou pela data em que foi pago (só as recebidas têm).
+    $campoData = ($filtros['data_tipo'] ?? '') === 'pagamento' ? 'cr.data_recebimento' : 'cr.data_vencimento';
     if (($filtros['data_inicio'] ?? '') !== '') {
-        $where .= ' AND cr.data_vencimento >= ?';
+        $where .= " AND $campoData >= ?";
         $params[] = $filtros['data_inicio'];
     }
     if (($filtros['data_fim'] ?? '') !== '') {
-        $where .= ' AND cr.data_vencimento <= ?';
+        $where .= " AND $campoData <= ?";
         $params[] = $filtros['data_fim'];
     }
     // Situação do boleto: pela última cobrança da parcela no banco.
@@ -748,7 +833,7 @@ function colunasListaReceber(): array
         'valor' => 'valor',
         'pago_em' => fn ($c) => $c['status'] === 'pago' ? $c['data_recebimento'] : null,
         'valor_pago' => fn ($c) => $c['status'] === 'pago' ? ($c['valor_recebido'] ?? $c['valor']) : null,
-        'status' => fn ($c) => contaStatusLabel($c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d') ? 'vencido' : $c['status']),
+        'status' => fn ($c) => contaStatusLabel(statusTelaParcela($c)),
     ];
 }
 

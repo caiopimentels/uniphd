@@ -180,3 +180,31 @@ body.portal { background: var(--bg); color: var(--text); font-family: 'Inter', s
 .grupo-financeiro[open] > summary .seta { transform: rotate(180deg); }
 .grupo-financeiro .parcelas { padding: 0 16px 6px; border-top: 1px solid var(--border); }
 .valor-riscado { text-decoration: line-through; color: var(--text-muted); font-weight: 400; font-size: .85rem; }
+
+/* Avisos da secretaria (faixa no topo, janela e Meus avisos) */
+.portal-faixa-aviso { color: #fff; }
+.portal-faixa-aviso-inner { max-width: 1140px; margin: 0 auto; padding: 8px 16px; display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.portal-faixa-aviso a { color: #fff; text-decoration: underline; margin-left: auto; white-space: nowrap; }
+.portal-faixa-aviso button { border: 0; background: none; color: #fff; padding: 0 4px; opacity: .85; }
+.portal-faixa-aviso a + button { margin-left: 4px; }
+.portal-faixa-aviso strong + button { margin-left: auto; }
+.aviso-conteudo img { max-width: 100%; height: auto; border-radius: 6px; }
+.aviso-conteudo p:last-child { margin-bottom: 0; }
+.aviso-conteudo .ql-align-center { text-align: center; }
+.aviso-conteudo .ql-align-right { text-align: right; }
+.aviso-conteudo .ql-align-justify { text-align: justify; }
+.aviso-conteudo .ql-size-small { font-size: .8em; }
+.aviso-conteudo .ql-size-large { font-size: 1.4em; }
+.aviso-conteudo .ql-size-huge { font-size: 2em; }
+.aviso-cartao { border-left: 5px solid var(--cor-aviso); }
+.aviso-cartao .aviso-titulo { color: var(--cor-aviso); }
+.aviso-cartao.novo { box-shadow: 0 0 0 2px var(--cor-aviso); }
+.aviso-conteudo a { color: #2563eb; text-decoration: underline; }
+.modal-aviso-arte { position: relative; background: transparent; }
+.modal-aviso-arte .modal-footer { background: #fff; }
+.modal-aviso-fechar { position: absolute; top: 10px; right: 10px; z-index: 5; width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(0,0,0,.55); color: #fff; display: flex; align-items: center; justify-content: center; }
+.modal-aviso-fechar:hover { background: rgba(0,0,0,.75); }
+.aviso-arte-mural { max-width: var(--largura-arte, 600px); }
+.lista-avisos .list-group-item { padding: 14px 16px; }
+.lista-avisos .bolinha-aviso { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.lista-avisos .pendente .titulo-aviso { font-weight: 700; }

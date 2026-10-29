@@ -194,7 +194,7 @@ if (!$modelo):
     $doc = documentoDados($pdo);
     $valoresExemplo = valoresExemploContrato($pdo);
     $pageTitle = 'Modelos de documentos';
-    $pageBreadcrumb = 'Secretaria · Portal do aluno';
+    $pageBreadcrumb = 'Portal · Site do portal';
     $activeMenu = 'certificado';
     // "+": primeiro escolhe o tipo — certificado/declaração (folha montada
     // com fundo e textos) ou contrato (texto, como no Word).
@@ -348,7 +348,7 @@ $cursosDoModelo = $ehNovo ? null : ($modelo['padrao']
     : (array_column(modelosCertificado($pdo), 'cursos', 'id')[$modelo['id']] ?? null));
 
 $pageTitle = $modelo['nome'];
-$pageBreadcrumb = 'Secretaria · Documentos';
+$pageBreadcrumb = 'Portal · Documentos';
 $activeMenu = 'certificado';
 $pageAction = '<a href="/configuracoes/certificado.php" class="btn btn-outline-secondary" onclick="return confirmarSaida()"><i class="bi bi-arrow-left"></i> Modelos</a>'
     . '<span id="aviso-alterado" class="small text-warning mx-2 d-none"><i class="bi bi-dot"></i> Alterações não salvas</span>'

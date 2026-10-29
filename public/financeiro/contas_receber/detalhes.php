@@ -90,7 +90,7 @@ ob_start();
 ?>
 <div class="row g-3 mb-3">
     <?= $campo('Aluno', e($p['aluno_nome'] ?: '-')) ?>
-    <?= $campo('Situação', $vencida ? '<span class="badge text-bg-danger">Em atraso</span>' : '<span class="badge ' . contaStatusBadgeClass($p['status']) . '">' . contaStatusLabel($p['status']) . '</span>'
+    <?= $campo('Situação', $vencida ? '<span class="badge text-bg-danger">Em atraso</span>' : '<span class="badge ' . contaStatusBadgeClass(statusTelaParcela($p, false)) . '">' . contaStatusLabel(statusTelaParcela($p, false)) . '</span>'
         . ($p['status'] === 'pago' ? ' <span class="small text-success fw-semibold">' . formatMoney($p['valor_recebido'] ?? $p['valor']) . ' em ' . formatDate($p['data_recebimento']) . '</span>' : '')) ?>
     <?= $campo('Vencimento', formatDate($p['data_vencimento']), 'col-sm-4') ?>
     <?= $campo('Valor', '<strong>' . formatMoney($p['valor']) . '</strong>', 'col-sm-4') ?>

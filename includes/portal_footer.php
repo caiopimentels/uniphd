@@ -54,5 +54,32 @@ $itensRodape = itensRodapePortal($configPortal);
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="<?= e(assetUrl('/assets/js/csrf.js')) ?>"></script>
 <script src="<?= e(assetUrl('/assets/js/portal.js')) ?>"></script>
+<?php if (!empty($faixasAviso) || !empty($avisoJanela) || !empty($avisosMural)): ?>
+<?php foreach ($faixasAviso as $avisoModal): $idModal = 'modal-aviso-' . (int) $avisoModal['id']; require __DIR__ . '/portal_aviso_modal.php'; endforeach; ?>
+<?php foreach ($avisosMural ?? [] as $avisoModal): $idModal = 'modal-aviso-' . (int) $avisoModal['id']; require __DIR__ . '/portal_aviso_modal.php'; endforeach; ?>
+<?php if (!empty($avisoJanela)): $avisoModal = $avisoJanela; $idModal = 'modal-aviso-janela'; require __DIR__ . '/portal_aviso_modal.php'; endif; ?>
+<script>
+// Avisos da secretaria: abrir ou fechar conta como visto; "Li e entendi"
+// confirma. Faixa fechada: a persistente volta na próxima página; as
+// outras somem nesta visita (as de "uma vez" não voltam mais).
+function avisoLido(id, confirmar) {
+    const dados = new FormData();
+    dados.append('id', id);
+    dados.append('confirmar', confirmar ? '1' : '0');
+    return fetch('/portal/aviso_lido.php', { method: 'POST', body: dados }).catch(() => null);
+}
+function fecharFaixaAviso(id, lembrar) {
+    document.getElementById('faixa-aviso-' + id)?.remove();
+    if (lembrar) { try { sessionStorage.setItem('faixa-aviso-' + id, '1'); } catch (e) {} }
+    avisoLido(id, false);
+}
+function abrirAvisoFaixa(id) {
+    avisoLido(id, false);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-aviso-' + id)).show();
+}
+document.querySelectorAll('.portal-faixa-aviso').forEach((f) => { try { if (sessionStorage.getItem(f.id)) f.remove(); } catch (e) {} });
+<?php if (!empty($avisoJanela)): ?>bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-aviso-janela')).show();<?php endif; ?>
+</script>
+<?php endif; ?>
 </body>
 </html>

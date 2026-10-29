@@ -189,3 +189,107 @@ function enviarEmail(array $configSmtp, string $paraEmail, string $paraNome, str
         return ['sucesso' => false, 'mensagem' => $e->getMessage()];
     }
 }
+
+/**
+ * Envia uma mensagem já montada (EmailMime::montar) pelo SMTP: vários
+ * destinatários (Para, Cc e Cco), anexos, qualquer tamanho.
+ * $servidor: host, porta, seguranca (tls|ssl|none), usuario, senha,
+ * verificar (certificado). Retorna ['sucesso' => bool, 'mensagem' => string].
+ */
+function enviarMensagemSmtp(array $servidor, string $remetente, array $destinatarios, string $mensagem): array
+{
+    $host = trim((string) ($servidor['host'] ?? ''));
+    $porta = (int) ($servidor['porta'] ?? 587);
+    $seguranca = $servidor['seguranca'] ?? 'tls';
+    $verificar = (bool) ($servidor['verificar'] ?? true);
+    if ($host === '' || !$destinatarios) {
+        return ['sucesso' => false, 'mensagem' => $host === '' ? 'O servidor de envio (SMTP) não está configurado (Configurações › E-mail).' : 'Informe pelo menos um destinatário.'];
+    }
+    $contexto = stream_context_create(['ssl' => ['verify_peer' => $verificar, 'verify_peer_name' => $verificar, 'allow_self_signed' => !$verificar, 'peer_name' => $host]]);
+    $socket = @stream_socket_client(($seguranca === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $porta, $codigoErro, $mensagemErro, 15, STREAM_CLIENT_CONNECT, $contexto);
+    if (!$socket) {
+        return ['sucesso' => false, 'mensagem' => 'Não foi possível conectar ao servidor de envio (' . $host . ':' . $porta . '): ' . ($mensagemErro ?: 'sem resposta') . '.'];
+    }
+    stream_set_timeout($socket, 30);
+    $ler = function () use ($socket): string {
+        $resposta = '';
+        while (($linha = fgets($socket, 1024)) !== false) {
+            $resposta .= $linha;
+            if (!isset($linha[3]) || $linha[3] === ' ') {
+                break;
+            }
+        }
+        return $resposta;
+    };
+    $enviar = fn (string $dados) => fwrite($socket, $dados . "\r\n");
+    $codigo = fn (string $resposta): int => (int) substr(trim($resposta), 0, 3);
+    $ehlo = 'EHLO ' . (preg_replace('/[^A-Za-z0-9.-]/', '', (string) ($_SERVER['SERVER_NAME'] ?? '')) ?: 'localhost');
+
+    try {
+        if ($codigo($ler()) !== 220) {
+            throw new RuntimeException('O servidor de envio não respondeu corretamente.');
+        }
+        $enviar($ehlo);
+        $recursos = $ler();
+        if ($seguranca === 'tls') {
+            $enviar('STARTTLS');
+            if ($codigo($ler()) !== 220 || !@stream_socket_enable_crypto($socket, true, STREAM_CRYPTO_METHOD_TLS_CLIENT)) {
+                throw new RuntimeException('Não foi possível ativar a criptografia (STARTTLS) com o servidor de envio.');
+            }
+            $enviar($ehlo);
+            $recursos = $ler();
+        }
+        if (($servidor['usuario'] ?? '') !== '' && stripos($recursos, 'AUTH') !== false) {
+            if (preg_match('/AUTH[ =][^\r\n]*\bPLAIN\b/i', $recursos)) {
+                $enviar('AUTH PLAIN ' . base64_encode("\0" . $servidor['usuario'] . "\0" . $servidor['senha']));
+            } else {
+                $enviar('AUTH LOGIN');
+                $ler();
+                $enviar(base64_encode($servidor['usuario']));
+                $ler();
+                $enviar(base64_encode((string) $servidor['senha']));
+            }
+            if ($codigo($ler()) !== 235) {
+                throw new RuntimeException('E-mail ou senha recusados pelo servidor de envio.');
+            }
+        }
+        $enviar('MAIL FROM:<' . $remetente . '>');
+        $resposta = $ler();
+        if ($codigo($resposta) !== 250) {
+            throw new RuntimeException('Remetente recusado pelo servidor: ' . trim($resposta));
+        }
+        $aceitos = 0;
+        $recusados = [];
+        foreach (array_unique(array_map('strtolower', $destinatarios)) as $email) {
+            $enviar('RCPT TO:<' . $email . '>');
+            $resposta = $ler();
+            if (in_array($codigo($resposta), [250, 251], true)) {
+                $aceitos++;
+            } else {
+                $recusados[] = $email;
+            }
+        }
+        if (!$aceitos) {
+            throw new RuntimeException('O servidor recusou o(s) destinatário(s): ' . implode(', ', $recusados) . '.');
+        }
+        $enviar('DATA');
+        if ($codigo($ler()) !== 354) {
+            throw new RuntimeException('O servidor não aceitou a mensagem.');
+        }
+        // Linha começando com "." ganha outro "." (o servidor tira).
+        $corpo = preg_replace('/^\./m', '..', str_replace(["\r\n", "\r"], ["\n", "\n"], $mensagem));
+        fwrite($socket, str_replace("\n", "\r\n", $corpo) . "\r\n.\r\n");
+        $resposta = $ler();
+        if ($codigo($resposta) !== 250) {
+            throw new RuntimeException('O servidor recusou a mensagem: ' . trim($resposta));
+        }
+        $enviar('QUIT');
+        fclose($socket);
+        return ['sucesso' => true, 'mensagem' => $recusados ? 'Enviado, mas o servidor recusou: ' . implode(', ', $recusados) . '.' : 'E-mail enviado.'];
+    } catch (RuntimeException $e) {
+        if (is_resource($socket)) {
+            fclose($socket);
+        }
+        return ['sucesso' => false, 'mensagem' => $e->getMessage()];
+    }
+}

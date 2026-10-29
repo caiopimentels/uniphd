@@ -10,7 +10,7 @@ $pdo = getDB();
 $_SESSION['filtro_contas_pagar'] = array_merge(['status' => 'pendente', 'data_inicio' => '', 'data_fim' => ''], $_SESSION['filtro_contas_pagar'] ?? []);
 if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim'])) {
     $_SESSION['filtro_contas_pagar'] = [
-        'status' => $_GET['status'] ?? '',
+        'status' => implode(',', listaStatusPagar($_GET['status'] ?? [])),
         'data_inicio' => $_GET['data_inicio'] ?? '',
         'data_fim' => $_GET['data_fim'] ?? '',
     ];
@@ -21,10 +21,8 @@ $dataFim = $_SESSION['filtro_contas_pagar']['data_fim'];
 
 $where = '1=1';
 $params = [];
-if (in_array($status, ['pendente', 'pago', 'cancelado'], true)) {
-    $where .= ' AND cp.status = ?';
-    $params[] = $status;
-}
+$statusMarcados = listaStatusPagar($status);
+$where .= condicaoStatusPagar($statusMarcados);
 if ($dataInicio !== '') {
     $where .= ' AND cp.data_vencimento >= ?';
     $params[] = $dataInicio;
@@ -56,8 +54,9 @@ $posicaoValor = array_search('valor', array_keys($colunas), true);
 $posicaoValor = $posicaoValor === false || $posicaoValor === 0 ? null : $posicaoValor;
 
 $totalExibido = array_sum(array_column($contas, 'valor'));
-$labelTotal = match ($status) {
+$labelTotal = count($statusMarcados) > 1 ? 'Total da seleção' : match ($status) {
     'pendente' => 'Total pendente',
+    'vencido' => 'Total vencido',
     'pago' => 'Total pago',
     'cancelado' => 'Total cancelado',
     default => 'Total geral',
@@ -79,12 +78,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
 
 <div class="filtros">
     <form method="get">
-        <select name="status" class="form-select filtro-controle" style="width:170px" onchange="this.form.submit()">
-            <option value="pendente" <?= $status === 'pendente' ? 'selected' : '' ?>>Pendentes</option>
-            <option value="pago" <?= $status === 'pago' ? 'selected' : '' ?>>Pagas</option>
-            <option value="cancelado" <?= $status === 'cancelado' ? 'selected' : '' ?>>Canceladas</option>
-            <option value="">Todas</option>
-        </select>
+        <?php $opcoesStatus = opcoesStatusPagar(); require __DIR__ . '/../../../includes/filtro_status.php'; ?>
         <?php require __DIR__ . '/../../../includes/filtro_periodo.php'; ?>
     </form>
     <div class="ms-auto d-flex align-items-center gap-2">

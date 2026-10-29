@@ -7,7 +7,7 @@ if (alunoLogado() && !empty($_SESSION['portal_trocar_senha']) && !in_array(basen
 // Topo do portal do aluno. Espera $tituloPagina e, opcionalmente,
 // $telaPortal (chave da tela do sistema, para os blocos montados pela
 // operadora antes/depois do conteúdo — ver portal_site.php). O menu vem de
-// Acadêmico › Portal do aluno › Menu e rodapé.
+// Portal › Site do portal › Menu e rodapé.
 $pdo = getDB();
 $configPortal = buscarConfiguracoes($pdo);
 $nomePortal = $configPortal['portal_titulo'] ?: nomeSistema();
@@ -21,6 +21,27 @@ $tituloPagina = $tituloPagina ?? $nomePortal;
 $telaPortal = $telaPortal ?? null;
 $paginaTela = $telaPortal ? buscarPaginaPortal($pdo, 'chave', $telaPortal) : null;
 $publicoPortal = publicoAtualPortal();
+
+// Avisos da secretaria: para o aluno logado, os dele (sininho com os
+// pendentes); para o visitante, os de "todo mundo". Só os marcados para
+// esta página. Janela: uma por vez — "uma vez" até ser vista, "por visita"
+// uma vez por sessão, persistente toda vez que a página abre.
+$avisosPortal = emPreviaPortal() ? [] : (alunoLogado() ? avisosDoAluno($pdo, alunoAtualId()) : avisosVisitante($pdo));
+$avisosPendentes = alunoLogado() ? count(array_filter($avisosPortal, 'avisoPendente')) : 0;
+$paginaAviso = chavePaginaPortalAtual();
+$avisosDaPagina = $paginaAviso === 'avisos' ? [] : array_filter($avisosPortal, fn ($a) => avisoAparece($a) && avisoNaPagina($a, $paginaAviso));
+$faixasAviso = array_filter($avisosDaPagina, fn ($a) => $a['formato'] === 'faixa');
+$avisoJanela = null;
+foreach ($avisosDaPagina as $a) {
+    if ($a['formato'] !== 'janela' || ($a['repeticao'] !== 'sempre' && in_array((int) $a['id'], $_SESSION['portal_avisos_janela'] ?? [], true))) {
+        continue;
+    }
+    $avisoJanela = $a;
+    $_SESSION['portal_avisos_janela'][] = (int) $a['id'];
+    alunoLogado() ? marcarAvisoVisto($pdo, (int) $a['id'], alunoAtualId()) : marcarVistoVisitante((int) $a['id']);
+    break;
+}
+$temArteAviso = (bool) array_filter([...$faixasAviso, ...($avisoJanela ? [$avisoJanela] : [])], fn ($a) => $a['montagem'] === 'arte');
 
 // Libera as vagas de quem não pagou no prazo antes de mostrar qualquer coisa.
 expirarInscricoesPortal($pdo);
@@ -41,6 +62,10 @@ $enderecoAtual = $enderecoAtual === '/portal/' ? '/portal/index.php' : $endereco
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link href="<?= e(assetUrl('/assets/css/portal.css')) ?>" rel="stylesheet">
+    <?php if ($temArteAviso || !empty($comArteAviso)): ?>
+        <link href="<?= e(urlFontesArteAviso()) ?>" rel="stylesheet">
+        <link href="<?= e(assetUrl('/assets/css/aviso-arte.css')) ?>" rel="stylesheet">
+    <?php endif; ?>
     <style>:root { --accent: <?= e($corPrimaria) ?>; --accent-dark: <?= e($corSecundaria) ?>; --accent-soft: color-mix(in srgb, <?= e($corPrimaria) ?> 10%, white); }</style>
 </head>
 <body class="portal">
@@ -61,6 +86,9 @@ $enderecoAtual = $enderecoAtual === '/portal/' ? '/portal/index.php' : $endereco
                 <a class="item <?= $item['href'] === $enderecoAtual ? 'ativo' : '' ?>" href="<?= e($item['href']) ?>"<?= $item['nova_aba'] ? ' target="_blank" rel="noopener"' : '' ?>><?= e($item['rotulo']) ?></a>
             <?php endforeach; ?>
             <?php if ($publicoPortal === 'alunos'): ?>
+                <a class="item <?= $enderecoAtual === '/portal/avisos.php' ? 'ativo' : '' ?>" href="/portal/avisos.php" title="Meus avisos">
+                    <i class="bi bi-bell"></i><span class="d-md-none"> Meus avisos</span><?php if ($avisosPendentes): ?> <span class="badge rounded-pill text-bg-danger"><?= $avisosPendentes ?></span><?php endif; ?>
+                </a>
                 <div class="dropdown">
                     <a class="item dropdown-toggle <?= $enderecoAtual === '/portal/conta.php' ? 'ativo' : '' ?>" href="#" data-bs-toggle="dropdown">
                         <i class="bi bi-person-circle"></i> <?= e(explode(' ', trim(alunoLogado() ? alunoAtualNome() : 'Maria'))[0]) ?>
@@ -69,6 +97,7 @@ $enderecoAtual = $enderecoAtual === '/portal/' ? '/portal/index.php' : $endereco
                         <li><a class="dropdown-item" href="/portal/conta.php"><i class="bi bi-person"></i> Meus dados</a></li>
                         <li><a class="dropdown-item" href="/portal/documentos.php"><i class="bi bi-folder2-open"></i> Meus documentos</a></li>
                         <li><a class="dropdown-item" href="/portal/protocolos.php"><i class="bi bi-chat-left-text"></i> Meus protocolos</a></li>
+                        <li><a class="dropdown-item" href="/portal/avisos.php"><i class="bi bi-bell"></i> Meus avisos<?php if ($avisosPendentes): ?> <span class="badge rounded-pill text-bg-danger"><?= $avisosPendentes ?></span><?php endif; ?></a></li>
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="/portal/sair.php"><i class="bi bi-box-arrow-right"></i> Sair</a></li>
                     </ul>
@@ -82,6 +111,18 @@ $enderecoAtual = $enderecoAtual === '/portal/' ? '/portal/index.php' : $endereco
         </nav>
     </div>
 </header>
+<?php foreach ($faixasAviso as $faixa): [, $corFaixa] = coresAviso()[$faixa['cor']]; ?>
+    <div class="portal-faixa-aviso" id="faixa-aviso-<?= (int) $faixa['id'] ?>" style="background: <?= $corFaixa ?>">
+        <div class="portal-faixa-aviso-inner">
+            <i class="bi bi-megaphone"></i>
+            <strong><?= e($faixa['titulo']) ?></strong>
+            <?php if (avisoTemConteudo($faixa) || ($faixa['exige_confirmacao'] && alunoLogado())): ?>
+                <a href="#" onclick="abrirAvisoFaixa(<?= (int) $faixa['id'] ?>); return false;">ver aviso</a>
+            <?php endif; ?>
+            <button type="button" title="Fechar" onclick="fecharFaixaAviso(<?= (int) $faixa['id'] ?>, <?= $faixa['repeticao'] === 'sempre' ? 'false' : 'true' ?>)"><i class="bi bi-x-lg"></i></button>
+        </div>
+    </div>
+<?php endforeach; ?>
 
 <main class="portal-main">
 <?php foreach (getFlashes() as $flash): ?>

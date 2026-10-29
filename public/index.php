@@ -5,6 +5,10 @@ if (($urlPortal = urlPortalConfigurada()) && strcasecmp((string) parse_url($urlP
     redirect('/portal/');
 }
 exigirLogin();
+// Professor (perfil só com materiais): a entrada dele é a tela de materiais.
+if (!usuarioTemPermissao('ver_dashboard') && usuarioPodeGerenciarMateriais()) {
+    redirect('/materiais/index.php');
+}
 exigirDashboard();
 
 $pdo = getDB();

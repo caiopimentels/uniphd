@@ -56,6 +56,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'itau_url_instrucoes' => isset(urlsInstrucoesItau()[input('itau_url_instrucoes')]) ? input('itau_url_instrucoes') : null,
         'padrao' => isset($_POST['padrao']) ? 1 : 0,
         'ativo' => isset($_POST['ativo']) ? 1 : 0,
+        'instrucao_boleto_1' => mb_substr(input('instrucao_boleto_1'), 0, 150),
+        'instrucao_boleto_2' => mb_substr(input('instrucao_boleto_2'), 0, 150),
+        'instrucao_boleto_3' => mb_substr(input('instrucao_boleto_3'), 0, 150),
     ];
     // Segredo em branco = mantém o que já está salvo (ele nunca volta para
     // a tela, então não dá para "reenviar" o valor atual).
@@ -335,6 +338,22 @@ if ($id) {
             </div>
         <?php endforeach; ?>
         <div class="col-12"><div class="form-text">Alteração: cada mudança enviada ao banco (valor e vencimento contam separado) é uma instrução.</div></div>
+    </div>
+</div>
+<div class="secao bloco-itau" style="max-width: 900px;">
+    <div class="secao-titulo"><i class="bi bi-receipt"></i> Instruções do boleto</div>
+    <p class="small text-muted mb-3">
+        Texto livre impresso no campo <strong>Instruções</strong> do boleto de todas as parcelas cobradas por esta conta
+        (ex.: "Não receber após 30 dias do vencimento", "Dúvidas: (77) 98111-8760"). Linha em branco não aparece.
+        Desconto, multa, juros, "Referente a" e Pix continuam saindo sozinhos.
+    </p>
+    <div class="row g-3">
+        <?php foreach ([1, 2, 3] as $n): ?>
+            <div class="col-12">
+                <label class="form-label">Instrução <?= $n ?></label>
+                <input type="text" name="instrucao_boleto_<?= $n ?>" class="form-control" maxlength="150" value="<?= e((string) $valor('instrucao_boleto_' . $n, '')) ?>">
+            </div>
+        <?php endforeach; ?>
     </div>
 </div>
 

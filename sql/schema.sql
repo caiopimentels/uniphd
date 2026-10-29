@@ -73,6 +73,12 @@ CREATE TABLE usuarios (
     -- sessão anterior na próxima ação dela.
     token_sessao VARCHAR(64) DEFAULT NULL,
     tema ENUM('claro', 'escuro') NOT NULL DEFAULT 'claro',
+    -- Caixa de e-mail do usuário (menu E-mail). Sem email_caixa, usa o
+    -- e-mail do login. Senha criptografada (cripto.php).
+    email_caixa VARCHAR(150) DEFAULT NULL,
+    email_caixa_senha_cripto TEXT DEFAULT NULL,
+    email_remetente_nome VARCHAR(150) DEFAULT NULL,
+    email_assinatura MEDIUMTEXT DEFAULT NULL,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_usuario_perfil FOREIGN KEY (perfil_id) REFERENCES perfis(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -185,6 +191,37 @@ CREATE TABLE configuracoes (
     smtp_senha VARCHAR(255) DEFAULT NULL,
     smtp_remetente_nome VARCHAR(150) DEFAULT NULL,
     smtp_remetente_email VARCHAR(150) DEFAULT NULL,
+    -- Caixas de e-mail dos usuários (Configurações › E-mail): servidor de
+    -- entrada (IMAP) e saída (SMTP), iguais para todos.
+    email_imap_host VARCHAR(150) DEFAULT NULL,
+    email_imap_porta INT NOT NULL DEFAULT 993,
+    email_imap_seguranca VARCHAR(10) NOT NULL DEFAULT 'ssl',
+    email_smtp_host VARCHAR(150) DEFAULT NULL,
+    email_smtp_porta INT NOT NULL DEFAULT 465,
+    email_smtp_seguranca VARCHAR(10) NOT NULL DEFAULT 'ssl',
+    email_verificar_certificado TINYINT(1) NOT NULL DEFAULT 1,
+    email_anexo_max_mb INT NOT NULL DEFAULT 20,
+    email_disparo_por_hora INT NOT NULL DEFAULT 150,
+    email_disparo_remetente ENUM('sistema', 'usuario') NOT NULL DEFAULT 'usuario',
+    -- Arquivos dos materiais (Configurações › Arquivos): no servidor ou num FTP.
+    arquivos_destino ENUM('local', 'ftp') NOT NULL DEFAULT 'local',
+    ftp_host VARCHAR(150) DEFAULT NULL,
+    ftp_porta INT NOT NULL DEFAULT 21,
+    ftp_seguranca ENUM('ftps', 'ftp') NOT NULL DEFAULT 'ftps',
+    ftp_verificar_certificado TINYINT(1) NOT NULL DEFAULT 0,
+    ftp_usuario VARCHAR(150) DEFAULT NULL,
+    ftp_senha_cripto TEXT DEFAULT NULL,
+    ftp_pasta VARCHAR(255) NOT NULL DEFAULT '/materiais',
+    material_max_mb INT NOT NULL DEFAULT 10,
+    material_limite_gb INT NOT NULL DEFAULT 15,
+    -- Trancamento de matrícula (Configurações › Matrículas): mensalidades
+    -- futuras continuam / ficam suspensas / são canceladas; o trancado
+    -- segura a vaga ou não; ao destrancar volta para a mesma turma ou
+    -- escolhe outra do curso; trancamento_portal = vê materiais e vídeos.
+    trancamento_parcelas ENUM('continuar', 'suspender', 'cancelar') NOT NULL DEFAULT 'continuar',
+    trancamento_vaga ENUM('liberar', 'manter') NOT NULL DEFAULT 'liberar',
+    trancamento_retorno ENUM('escolher', 'mesma') NOT NULL DEFAULT 'escolher',
+    trancamento_portal TINYINT(1) NOT NULL DEFAULT 0,
     email_notificacao_erros VARCHAR(150) DEFAULT NULL,
 
     -- Portal do aluno e verificação de certificado (os modelos ficam em
@@ -359,6 +396,10 @@ CREATE TABLE contas_bancarias (
     api_url_base VARCHAR(255) DEFAULT NULL,
     -- Endereço das instruções de boleto (baixa, valor, vencimento); vazio = a URL base.
     itau_url_instrucoes VARCHAR(255) DEFAULT NULL,
+    -- Até 3 linhas livres impressas em "Instruções" no boleto desta conta.
+    instrucao_boleto_1 VARCHAR(150) DEFAULT NULL,
+    instrucao_boleto_2 VARCHAR(150) DEFAULT NULL,
+    instrucao_boleto_3 VARCHAR(150) DEFAULT NULL,
     api_certificado_arquivo VARCHAR(255) DEFAULT NULL,
     api_chave_arquivo VARCHAR(255) DEFAULT NULL,
     api_chave_senha_cripto TEXT DEFAULT NULL,
@@ -586,7 +627,7 @@ CREATE TABLE matriculas (
     -- confirma (conta_receber_confirmacao_id) até pagamento_ate. Só ocupa
     -- vaga enquanto segura_vaga = 1 e o prazo não passou. lista_espera =
     -- pagou, mas a turma lotou antes (modo "só depois de pagar").
-    status ENUM('pendente', 'ativa', 'cancelada', 'concluida') NOT NULL DEFAULT 'ativa',
+    status ENUM('pendente', 'ativa', 'cancelada', 'concluida', 'trancada') NOT NULL DEFAULT 'ativa',
     origem ENUM('secretaria', 'portal') NOT NULL DEFAULT 'secretaria',
     pagamento_ate DATETIME DEFAULT NULL,
     segura_vaga TINYINT(1) NOT NULL DEFAULT 0,
@@ -617,6 +658,13 @@ CREATE TABLE matriculas (
     forma_pagamento_id INT DEFAULT NULL,
     forma_mensalidade_id INT DEFAULT NULL,
     data_cancelamento DATE DEFAULT NULL,
+    -- Trancamento: trancamento_vaga / trancamento_parcelas = a regra usada
+    -- no dia (mudar a configuração depois não muda quem já trancou).
+    data_trancamento DATE DEFAULT NULL,
+    trancamento_motivo VARCHAR(255) DEFAULT NULL,
+    trancamento_previsao DATE DEFAULT NULL,
+    trancamento_vaga TINYINT(1) NOT NULL DEFAULT 0,
+    trancamento_parcelas VARCHAR(10) DEFAULT NULL,
     observacao VARCHAR(255) DEFAULT NULL,
     usuario_id INT DEFAULT NULL,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -689,6 +737,9 @@ CREATE TABLE contas_receber (
     baixa_origem ENUM('manual', 'banco') DEFAULT NULL,
     status ENUM('pendente', 'pago', 'cancelado') NOT NULL DEFAULT 'pendente',
     excluido_em DATETIME DEFAULT NULL,
+    -- Suspensa pelo trancamento da matrícula: fica 'cancelado' e volta com
+    -- vencimentos novos ao destrancar.
+    suspensa_trancamento TINYINT(1) NOT NULL DEFAULT 0,
     observacao VARCHAR(255) DEFAULT NULL,
     usuario_id INT DEFAULT NULL,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1191,6 +1242,7 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('configurar_protocolos', 'Configurar os protocolos (temas, assuntos e status)', 'Alunos', 18),
 ('atender_whatsapp', 'Atender as conversas do WhatsApp', 'Alunos', 19),
 ('configurar_whatsapp', 'Configurar o WhatsApp e a IA de atendimento', 'Alunos', 20),
+('gerenciar_avisos', 'Enviar avisos aos alunos (portal) e ver quem leu', 'Alunos', 21),
 ('ver_cursos', 'Ver cursos, turmas, professores e calendário de aulas', 'Cursos, turmas e professores', 20),
 ('criar_curso', 'Cadastrar cursos', 'Cursos, turmas e professores', 21),
 ('editar_curso', 'Editar cursos (e ativar/desativar)', 'Cursos, turmas e professores', 22),
@@ -1206,6 +1258,7 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('ver_despesas_turma', 'Ver as despesas da turma na tela da turma', 'Cursos, turmas e professores', 32),
 ('gerenciar_matriculas', 'Matricular, reservar vaga, confirmar inscrição e concluir/reativar matrícula', 'Matrículas', 40),
 ('cancelar_matricula', 'Cancelar matrícula, excluir matrícula e tirar aluno da turma', 'Matrículas', 41),
+('trancar_matricula', 'Trancar e destrancar matrícula', 'Matrículas', 42),
 ('liberar_certificado', 'Liberar e bloquear documentos dos alunos (certificados e declarações)', 'Matrículas', 42),
 ('ver_inadimplencia', 'Ver a situação financeira dos alunos (aba Financeiro, Inadimplência, boleto e Pix)', 'Financeiro dos alunos', 50),
 ('lancar_receber', 'Lançar cobranças (contas a receber)', 'Financeiro dos alunos', 51),
@@ -1225,7 +1278,10 @@ INSERT INTO permissoes (chave, descricao, grupo, ordem) VALUES
 ('editar_documentos', 'Editar os modelos de documentos (certificados, declarações e contratos)', 'Portal do aluno', 71),
 ('cadastrar_usuario', 'Cadastrar usuários (só com os perfis liberados abaixo)', 'Usuários do sistema', 80),
 ('editar_usuario', 'Editar usuários e trocar a senha deles (só dos perfis liberados abaixo)', 'Usuários do sistema', 81),
-('desativar_usuario', 'Ativar e desativar usuários (só dos perfis liberados abaixo)', 'Usuários do sistema', 82);
+('desativar_usuario', 'Ativar e desativar usuários (só dos perfis liberados abaixo)', 'Usuários do sistema', 82),
+('usar_email', 'Usar a própria caixa de e-mail no sistema (menu E-mail)', 'E-mail', 90),
+('disparar_email', 'Disparar e-mails em massa para alunos (turma, curso, todos)', 'E-mail', 91),
+('gerenciar_materiais', 'Enviar materiais e videoaulas para cursos e turmas — usuário professor: só as turmas dele', 'Cursos, turmas e professores', 33);
 
 -- Administrador tem bypass no código, mas recebe tudo para a tela de
 -- Perfis refletir isso. Secretaria começa com o atendimento ao aluno.
@@ -1235,7 +1291,13 @@ SELECT 1, id FROM permissoes;
 INSERT INTO perfil_permissoes (perfil_id, permissao_id)
 SELECT 2, id FROM permissoes
 WHERE chave IN ('ver_dashboard', 'ver_alunos', 'cadastrar_aluno', 'editar_aluno', 'ativar_aluno', 'ver_cursos', 'gerenciar_matriculas',
-                'liberar_certificado', 'avaliar_documentos', 'ver_inadimplencia', 'baixar_receber', 'ver_receita_turma', 'ver_protocolos', 'abrir_protocolo', 'atender_whatsapp');
+                'liberar_certificado', 'avaliar_documentos', 'ver_inadimplencia', 'baixar_receber', 'ver_receita_turma', 'ver_protocolos', 'abrir_protocolo', 'atender_whatsapp', 'gerenciar_avisos',
+                'usar_email', 'disparar_email', 'gerenciar_materiais');
+
+-- Perfil pronto para professores: só os materiais (das turmas dele).
+INSERT INTO perfis (nome, administrador) VALUES ('Professor', 0);
+INSERT INTO perfil_permissoes (perfil_id, permissao_id)
+SELECT pf.id, p.id FROM perfis pf JOIN permissoes p ON p.chave = 'gerenciar_materiais' WHERE pf.nome = 'Professor';
 
 -- Usuário padrão: email admin@sistema.com / senha admin123
 -- (troque a senha após o primeiro acesso)
@@ -1474,4 +1536,258 @@ CREATE TABLE whatsapp_ia_pausa (
     ate DATETIME NOT NULL,
     motivo VARCHAR(255) DEFAULT NULL,
     PRIMARY KEY (provedor, modelo)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Disparo em massa. publico: turma | curso | andamento (alunos com turma em
+-- andamento) | todos (todos os alunos ativos com e-mail) | alunos
+-- (escolhidos). Os ids escolhidos ficam em filtro (JSON). anexos: JSON com
+-- os arquivos guardados em storage/email_disparos/{id}/.
+CREATE TABLE email_disparos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    assunto VARCHAR(250) NOT NULL,
+    corpo_html MEDIUMTEXT NOT NULL,
+    publico ENUM('turma', 'curso', 'andamento', 'todos', 'alunos') NOT NULL,
+    filtro TEXT DEFAULT NULL,
+    anexos TEXT DEFAULT NULL,
+    remetente ENUM('sistema', 'usuario') NOT NULL DEFAULT 'usuario',
+    usuario_id INT DEFAULT NULL,
+    usuario_nome VARCHAR(150) DEFAULT NULL,
+    status ENUM('enviando', 'pausado', 'concluido', 'cancelado') NOT NULL DEFAULT 'enviando',
+    total INT NOT NULL DEFAULT 0,
+    enviados INT NOT NULL DEFAULT 0,
+    falhas INT NOT NULL DEFAULT 0,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    concluido_em DATETIME DEFAULT NULL,
+    KEY idx_email_disparos_status (status),
+    CONSTRAINT fk_email_disparo_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Um por aluno: as tags já ficam resolvidas na hora do envio. turma_id =
+-- a turma que deu origem (para {turma}, {curso}...).
+CREATE TABLE email_disparo_destinos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    disparo_id INT NOT NULL,
+    aluno_id INT DEFAULT NULL,
+    turma_id INT DEFAULT NULL,
+    nome VARCHAR(150) NOT NULL,
+    email VARCHAR(150) NOT NULL,
+    status ENUM('pendente', 'enviado', 'erro') NOT NULL DEFAULT 'pendente',
+    erro VARCHAR(255) DEFAULT NULL,
+    enviado_em DATETIME DEFAULT NULL,
+    KEY idx_email_destinos_fila (disparo_id, status),
+    KEY idx_email_destinos_enviado (status, enviado_em),
+    CONSTRAINT fk_email_destino_disparo FOREIGN KEY (disparo_id) REFERENCES email_disparos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_email_destino_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Usuário que é professor: só vê/mexe nos materiais das turmas dele.
+ALTER TABLE usuarios
+    ADD COLUMN professor_id INT DEFAULT NULL,
+    ADD CONSTRAINT fk_usuario_professor FOREIGN KEY (professor_id) REFERENCES professores(id) ON DELETE SET NULL;
+
+-- Outros professores da turma (além do principal, turmas.professor_id):
+-- ex.: um por módulo da pós. Dá acesso aos materiais da turma.
+CREATE TABLE turma_professores (
+    turma_id INT NOT NULL,
+    professor_id INT NOT NULL,
+    PRIMARY KEY (turma_id, professor_id),
+    CONSTRAINT fk_turma_prof_turma FOREIGN KEY (turma_id) REFERENCES turmas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_turma_prof_professor FOREIGN KEY (professor_id) REFERENCES professores(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- "Locais" (pastas) dos materiais.
+CREATE TABLE material_locais (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(80) NOT NULL,
+    icone VARCHAR(40) NOT NULL DEFAULT 'bi-folder',
+    ordem INT NOT NULL DEFAULT 0,
+    ativo TINYINT(1) NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+INSERT INTO material_locais (nome, icone, ordem) VALUES
+('Apostilas', 'bi-book', 1),
+('Slides das aulas', 'bi-easel', 2),
+('Artigos e leituras', 'bi-journal-text', 3),
+('Exercícios e atividades', 'bi-pencil-square', 4),
+('Vídeos e links', 'bi-play-btn', 5),
+('Outros', 'bi-folder', 6);
+
+-- Um material: do curso (curso_id) ou extra da turma (turma_id). Arquivo
+-- (no servidor ou no FTP, em "caminho") ou link. codigo = id público
+-- (links do portal). visivel = 0: escondido; liberar_em: aparece a partir de.
+CREATE TABLE materiais (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    curso_id INT DEFAULT NULL,
+    turma_id INT DEFAULT NULL,
+    local_id INT NOT NULL,
+    curso_modulo_id INT DEFAULT NULL,
+    titulo VARCHAR(200) NOT NULL,
+    descricao TEXT DEFAULT NULL,
+    tipo ENUM('arquivo', 'link') NOT NULL DEFAULT 'arquivo',
+    link VARCHAR(500) DEFAULT NULL,
+    arquivo_nome VARCHAR(255) DEFAULT NULL,
+    arquivo_tipo VARCHAR(120) DEFAULT NULL,
+    tamanho BIGINT NOT NULL DEFAULT 0,
+    armazenamento ENUM('local', 'ftp') DEFAULT NULL,
+    caminho VARCHAR(500) DEFAULT NULL,
+    codigo CHAR(32) NOT NULL UNIQUE,
+    visivel TINYINT(1) NOT NULL DEFAULT 1,
+    liberar_em DATETIME DEFAULT NULL,
+    usuario_id INT DEFAULT NULL,
+    usuario_nome VARCHAR(150) DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_materiais_curso (curso_id),
+    KEY idx_materiais_turma (turma_id),
+    CONSTRAINT fk_material_curso FOREIGN KEY (curso_id) REFERENCES cursos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_material_turma FOREIGN KEY (turma_id) REFERENCES turmas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_material_local FOREIGN KEY (local_id) REFERENCES material_locais(id),
+    CONSTRAINT fk_material_modulo FOREIGN KEY (curso_modulo_id) REFERENCES curso_modulos(id) ON DELETE SET NULL,
+    CONSTRAINT fk_material_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Quem abriu/baixou cada material (e quantas vezes).
+CREATE TABLE material_acessos (
+    material_id INT NOT NULL,
+    aluno_id INT NOT NULL,
+    primeiro_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ultimo_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    vezes INT NOT NULL DEFAULT 1,
+    PRIMARY KEY (material_id, aluno_id),
+    KEY idx_material_acessos_aluno (aluno_id),
+    CONSTRAINT fk_material_acesso_material FOREIGN KEY (material_id) REFERENCES materiais(id) ON DELETE CASCADE,
+    CONSTRAINT fk_material_acesso_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Um vídeo: do curso (todas as turmas) ou só da turma. youtube_id = o código
+-- de 11 letras do vídeo. secao = agrupamento livre (ex.: "Módulo 1",
+-- "Vídeos complementares"). duracao_seg vem do player na 1ª vez que tocar.
+CREATE TABLE videoaulas (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    curso_id INT DEFAULT NULL,
+    turma_id INT DEFAULT NULL,
+    secao VARCHAR(120) NOT NULL DEFAULT 'Aulas',
+    titulo VARCHAR(200) NOT NULL,
+    descricao TEXT DEFAULT NULL,
+    youtube_id VARCHAR(20) NOT NULL,
+    duracao_seg INT DEFAULT NULL,
+    ordem INT NOT NULL DEFAULT 0,
+    codigo CHAR(32) NOT NULL UNIQUE,
+    visivel TINYINT(1) NOT NULL DEFAULT 1,
+    liberar_em DATETIME DEFAULT NULL,
+    usuario_id INT DEFAULT NULL,
+    usuario_nome VARCHAR(150) DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_videoaulas_curso (curso_id, ordem),
+    KEY idx_videoaulas_turma (turma_id, ordem),
+    CONSTRAINT fk_videoaula_curso FOREIGN KEY (curso_id) REFERENCES cursos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_videoaula_turma FOREIGN KEY (turma_id) REFERENCES turmas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_videoaula_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Quanto cada aluno assistiu: posição onde parou (para continuar), o maior
+-- ponto alcançado e quando concluiu (90% do vídeo).
+CREATE TABLE videoaula_progresso (
+    videoaula_id INT NOT NULL,
+    aluno_id INT NOT NULL,
+    posicao_seg INT NOT NULL DEFAULT 0,
+    maximo_seg INT NOT NULL DEFAULT 0,
+    concluido_em DATETIME DEFAULT NULL,
+    primeiro_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (videoaula_id, aluno_id),
+    KEY idx_videoaula_progresso_aluno (aluno_id),
+    CONSTRAINT fk_video_prog_video FOREIGN KEY (videoaula_id) REFERENCES videoaulas(id) ON DELETE CASCADE,
+    CONSTRAINT fk_video_prog_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Avisos (Secretaria › Avisos aos alunos). O conteúdo é uma arte livre,
+-- tipo Canva (imagens, textos, botões e formas soltos sobre um fundo, em
+-- avisos.arte, JSON), ou um texto com imagens e links (avisos.conteudo).
+-- formato: mural (só em Meus avisos), janela (abre ao entrar no portal) ou
+-- faixa (barra no topo das páginas). publico: site (todo mundo que entrar
+-- no portal, com ou sem login) | todos (alunos com turma em andamento) |
+-- curso | turma | aluno (os escolhidos ficam em aviso_destinos).
+-- quem_site (público "site"): todos | visitantes (sem login) | logados
+-- (qualquer aluno com cadastro). repeticao: uma_vez (some depois de visto)
+-- | visita (uma vez por visita) | sempre (toda vez que a página abre).
+-- paginas: chaves das páginas do portal onde aparece (vazio = todas).
+-- largura: tamanho na tela em px (vazio = automático). exige_confirmacao:
+-- o aluno precisa clicar em "Li e entendi" (só alunos logados).
+CREATE TABLE avisos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titulo VARCHAR(150) NOT NULL,
+    montagem ENUM('arte', 'texto') NOT NULL DEFAULT 'arte',
+    arte MEDIUMTEXT DEFAULT NULL,
+    conteudo MEDIUMTEXT DEFAULT NULL,
+    formato ENUM('mural', 'janela', 'faixa') NOT NULL DEFAULT 'mural',
+    cor ENUM('azul', 'verde', 'amarelo', 'vermelho') NOT NULL DEFAULT 'azul',
+    publico ENUM('site', 'todos', 'curso', 'turma', 'aluno') NOT NULL DEFAULT 'todos',
+    quem_site ENUM('todos', 'visitantes', 'logados') NOT NULL DEFAULT 'todos',
+    repeticao ENUM('uma_vez', 'visita', 'sempre') NOT NULL DEFAULT 'uma_vez',
+    paginas VARCHAR(1000) DEFAULT NULL,
+    largura SMALLINT DEFAULT NULL,
+    inicio DATETIME NOT NULL,
+    fim DATETIME DEFAULT NULL,
+    exige_confirmacao TINYINT(1) NOT NULL DEFAULT 0,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    criado_por VARCHAR(150) DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_avisos_periodo (ativo, inicio, fim)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cursos, turmas ou alunos escolhidos (conforme avisos.publico).
+CREATE TABLE aviso_destinos (
+    aviso_id INT NOT NULL,
+    ref_id INT NOT NULL,
+    PRIMARY KEY (aviso_id, ref_id),
+    CONSTRAINT fk_aviso_destino FOREIGN KEY (aviso_id) REFERENCES avisos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Quem viu (abriu o aviso) e quem confirmou ("Li e entendi").
+CREATE TABLE aviso_leituras (
+    aviso_id INT NOT NULL,
+    aluno_id INT NOT NULL,
+    visto_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    confirmado_em DATETIME DEFAULT NULL,
+    PRIMARY KEY (aviso_id, aluno_id),
+    KEY idx_aviso_leituras_aluno (aluno_id),
+    CONSTRAINT fk_aviso_leitura FOREIGN KEY (aviso_id) REFERENCES avisos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_aviso_leitura_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Agenda de cobrança (Financeiro › Inadimplência): contatos de cobrança
+-- com o aluno (o que foi dito, a resposta, a situação) e a próxima cobrança
+-- marcada. As enviadas pelo sistema entram sozinhas (automatico = 1).
+CREATE TABLE cobranca_registros (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    aluno_id INT NOT NULL,
+    canal ENUM('whatsapp', 'email', 'telefone', 'presencial', 'outro') NOT NULL,
+    automatico TINYINT(1) NOT NULL DEFAULT 0,
+    contato_em DATETIME NOT NULL,
+    descricao TEXT NOT NULL,
+    resposta TEXT DEFAULT NULL,
+    -- sem_resposta | respondeu | prometeu (pagar até promessa_data) | recusou
+    situacao ENUM('sem_resposta', 'respondeu', 'prometeu', 'recusou') NOT NULL DEFAULT 'sem_resposta',
+    promessa_data DATE DEFAULT NULL,
+    usuario_id INT DEFAULT NULL,
+    usuario_nome VARCHAR(150) DEFAULT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_cobranca_registros_aluno (aluno_id, contato_em),
+    CONSTRAINT fk_cobranca_registro_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cobranca_registro_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Próxima cobrança marcada (uma por aluno).
+CREATE TABLE cobranca_agenda (
+    aluno_id INT PRIMARY KEY,
+    data DATE NOT NULL,
+    nota VARCHAR(255) DEFAULT NULL,
+    usuario_id INT DEFAULT NULL,
+    usuario_nome VARCHAR(150) DEFAULT NULL,
+    atualizado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_cobranca_agenda_data (data),
+    CONSTRAINT fk_cobranca_agenda_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cobranca_agenda_usuario FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

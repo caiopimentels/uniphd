@@ -44,7 +44,7 @@ $stmt = $pdo->prepare(
      FROM matriculas m
      JOIN alunos a ON a.id = m.aluno_id
      WHERE m.turma_id = ?
-     ORDER BY FIELD(m.status, 'ativa', 'pendente', 'concluida', 'cancelada'), a.nome"
+     ORDER BY FIELD(m.status, 'ativa', 'pendente', 'trancada', 'concluida', 'cancelada'), a.nome"
 );
 $stmt->execute([$id]);
 $matriculas = $stmt->fetchAll();
@@ -214,6 +214,9 @@ $situacoesPermitidas = array_values(array_filter($situacoes, function ($sit) use
 <?php endif; ?>
 <a href="/turmas/lista_alunos.php?id=<?= (int) $id ?>" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Lista de alunos</a>
 <a href="/turmas/aulas.php?id=<?= (int) $id ?>" class="btn btn-outline-secondary"><i class="bi bi-calendar-week"></i> Calendário</a>
+<?php if (usuarioPodeGerenciarMateriais()): ?><a href="/materiais/gerenciar.php?turma=<?= (int) $id ?>" class="btn btn-outline-secondary" title="Apostilas, slides e links para os alunos"><i class="bi bi-folder2-open"></i> Materiais</a><?php endif; ?>
+<?php if (usuarioPodeGerenciarMateriais()): ?><a href="/videoaulas/gerenciar.php?turma=<?= (int) $id ?>" class="btn btn-outline-secondary" title="Curso online: vídeos do YouTube para os alunos"><i class="bi bi-play-btn"></i> Videoaulas</a><?php endif; ?>
+<?php if (usuarioTemPermissao('gerenciar_avisos')): ?><a href="/avisos/form.php?turma=<?= (int) $id ?>" class="btn btn-outline-secondary" title="Aviso no portal para os alunos desta turma"><i class="bi bi-megaphone"></i> Enviar aviso</a><?php endif; ?>
 <?php if ($turma['portal_publicar'] && $turmaAceitaMatricula): ?>
     <a href="/portal/turma.php?id=<?= (int) $id ?>" target="_blank" class="btn btn-outline-secondary" title="Ver como o aluno vê"><i class="bi bi-globe2"></i> No portal</a>
 <?php endif; ?>
@@ -247,6 +250,7 @@ $situacoesPermitidas = array_values(array_filter($situacoes, function ($sit) use
 <?php endif; ?>
 <?php
 $pageAction = ob_get_clean();
+$acoesLaterais = true; // botões numa coluna fixa à direita, à mão em qualquer ponto da página
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
 
@@ -705,7 +709,7 @@ if (document.getElementById('documento-busca')) {
         combina: (o, termo) => normalizar(o.nome).includes(termo),
         titulo: (o) => o.nome,
         detalhe: (o) => o.detalhe,
-        vazio: 'Nenhum documento com esse nome. Os modelos ficam em Acadêmico › Documentos.',
+        vazio: 'Nenhum documento com esse nome. Os modelos ficam em Portal › Documentos (modelos).',
         // Data do evento: só para documento cujo modelo usa {data_evento}.
         aoEscolher: () => {
             const campo = document.getElementById('campo-data-evento');

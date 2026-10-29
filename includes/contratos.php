@@ -1,6 +1,6 @@
 <?php
 
-// Contratos: modelos em texto (editor tipo Word, em Acadêmico › Documentos)
+// Contratos: modelos em texto (editor tipo Word, em Portal › Documentos (modelos))
 // com variáveis como {aluno_nome}, preenchidas com os dados da matrícula.
 // O contrato sai impresso na matrícula e, se a turma permitir
 // (turmas.contrato_portal), aparece para o aluno no portal, em Documentos.
@@ -94,13 +94,17 @@ function modeloContratoDoCurso(PDO $pdo, ?int $modeloCursoId): ?array
  * (onclick...), estilos e links que não sejam http(s) — o contrato aparece
  * no portal para o aluno.
  */
-function limparHtmlContrato(string $html): string
+function limparHtmlContrato(string $html, bool $comImagens = false): string
 {
     if (trim($html) === '') {
         return '';
     }
     $permitidas = ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'h1', 'h2', 'h3', 'h4', 'ol', 'ul', 'li', 'span', 'a',
         'blockquote', 'sub', 'sup', 'div', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'hr'];
+    // Avisos aceitam imagens: só as enviadas ao sistema ou de endereço https.
+    if ($comImagens) {
+        $permitidas[] = 'img';
+    }
     $doc = new DOMDocument();
     libxml_use_internal_errors(true);
     $doc->loadHTML('<?xml encoding="utf-8"?><div id="raiz">' . $html . '</div>', LIBXML_HTML_NOIMPLIED | LIBXML_HTML_NODEFDTD);
@@ -109,7 +113,7 @@ function limparHtmlContrato(string $html): string
     if (!$raiz) {
         return '';
     }
-    $limpar = function (DOMNode $no) use (&$limpar, $permitidas): void {
+    $limpar = function (DOMNode $no) use (&$limpar, $permitidas, $comImagens): void {
         foreach (iterator_to_array($no->childNodes) as $filho) {
             if ($filho instanceof DOMElement) {
                 $tag = strtolower($filho->tagName);
@@ -139,10 +143,16 @@ function limparHtmlContrato(string $html): string
                     }
                     $manter = ($nome === 'class' && preg_match('/^(ql-[a-z0-9-]+\s*)+$/', $valor))
                         || ($nome === 'href' && $tag === 'a' && preg_match('#^https?://#i', $valor))
-                        || (in_array($nome, ['colspan', 'rowspan'], true) && ctype_digit($valor));
+                        || (in_array($nome, ['colspan', 'rowspan'], true) && ctype_digit($valor))
+                        || ($comImagens && $tag === 'img' && $nome === 'src' && preg_match('#^(/uploads/portal/[\w.-]+|https://[^\s"<>]+)$#i', $valor))
+                        || ($comImagens && $tag === 'img' && $nome === 'alt');
                     if (!$manter) {
                         $filho->removeAttribute($atributo->name);
                     }
+                }
+                if ($tag === 'img' && !$filho->hasAttribute('src')) {
+                    $no->removeChild($filho);
+                    continue;
                 }
                 if ($tag === 'a') {
                     $filho->setAttribute('target', '_blank');
@@ -161,13 +171,22 @@ function limparHtmlContrato(string $html): string
     return $saida;
 }
 
-// "color: rgb(230, 0, 0); font-size: 99px" → "color: rgb(230, 0, 0)". Só cores
-// em #hex ou rgb(); o resto do style sai.
+// Do style ficam só: cores (#hex ou rgb()) e formatação simples de texto
+// (fonte, tamanho, alinhamento, negrito, itálico, sublinhado). O resto sai.
 function estiloCorContrato(string $style): string
 {
     $mantidas = [];
     foreach (explode(';', $style) as $declaracao) {
         if (preg_match('/^\s*(color|background-color)\s*:\s*(#[0-9a-fA-F]{3,6}|rgba?\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*(,\s*[0-9.]+\s*)?\))\s*$/', $declaracao, $m)) {
+            $mantidas[] = strtolower($m[1]) . ': ' . $m[2];
+        }
+        // Formatação de texto em estilo embutido (editor do e-mail e assinatura).
+        elseif (preg_match('/^\s*(font-family)\s*:\s*([A-Za-z0-9 ,\'"-]{1,80})\s*$/', $declaracao, $m)
+            || preg_match('/^\s*(font-size)\s*:\s*(\d{1,3}(?:\.\d+)?(?:px|pt|em|%))\s*$/', $declaracao, $m)
+            || preg_match('/^\s*(text-align)\s*:\s*(left|center|right|justify)\s*$/i', $declaracao, $m)
+            || preg_match('/^\s*(font-weight)\s*:\s*(bold|normal|[1-9]00)\s*$/i', $declaracao, $m)
+            || preg_match('/^\s*(font-style)\s*:\s*(italic|normal)\s*$/i', $declaracao, $m)
+            || preg_match('/^\s*(text-decoration)\s*:\s*(underline|line-through|none)\s*$/i', $declaracao, $m)) {
             $mantidas[] = strtolower($m[1]) . ': ' . $m[2];
         }
     }

@@ -2,15 +2,34 @@
 // Partial reutilizável de filtro por período (calendário duplo, estilo Bling).
 // Espera $dataInicio e $dataFim (strings 'Y-m-d' ou '') já definidas no escopo,
 // e deve ser usado DENTRO de um <form method="get"> existente.
+// Opcional: $periodoTipos (valor => rótulo, ex.: vencimento/pagamento) e
+// $periodoTipo (o escolhido) — qual data o período usa; vai no campo
+// "data_tipo", escolhido no topo do painel e mostrado no botão.
+$periodoTipos = $periodoTipos ?? [];
+$periodoTipo = $periodoTipo ?? (array_key_first($periodoTipos) ?? '');
 $labelPeriodo = ($dataInicio || $dataFim)
     ? ($dataInicio ? formatDate($dataInicio) : '...') . ' até ' . ($dataFim ? formatDate($dataFim) : '...')
     : 'Todo o período';
+if ($periodoTipos) {
+    $labelPeriodo = ($periodoTipos[$periodoTipo] ?? '') . ': ' . $labelPeriodo;
+}
 ?>
 <div class="dropdown filtro-periodo">
     <button type="button" class="btn btn-outline-secondary dropdown-toggle filtro-controle" data-bs-toggle="dropdown" data-bs-auto-close="outside">
         <i class="bi bi-calendar3"></i> <?= e($labelPeriodo) ?>
     </button>
     <div class="dropdown-menu p-3 periodo-painel">
+        <?php if ($periodoTipos): ?>
+            <div class="d-flex align-items-center gap-2 mb-3 pb-2 border-bottom">
+                <span class="small text-muted">Filtrar pela data de</span>
+                <div class="btn-group btn-group-sm" role="group">
+                    <?php foreach ($periodoTipos as $valorTipo => $rotuloTipo): ?>
+                        <input type="radio" class="btn-check" name="data_tipo" id="periodo-tipo-<?= e($valorTipo) ?>" value="<?= e($valorTipo) ?>" <?= $periodoTipo === $valorTipo ? 'checked' : '' ?>>
+                        <label class="btn btn-outline-secondary" for="periodo-tipo-<?= e($valorTipo) ?>"><?= e($rotuloTipo) ?></label>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php endif; ?>
         <div class="periodo-body">
             <div class="periodo-calendarios">
                 <div class="periodo-calendario" data-lado="inicio">

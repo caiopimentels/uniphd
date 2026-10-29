@@ -198,6 +198,7 @@ function contaStatusBadgeClass(string $status): string
         'vencido' => 'text-bg-danger', // pendente com vencimento passado (só na tela)
         'pago' => 'text-bg-success',
         'cancelado' => 'text-bg-secondary',
+        'suspenso' => 'text-bg-info', // cancelada pelo trancamento; volta ao destrancar (só na tela)
         default => 'text-bg-light',
     };
 }
@@ -209,8 +210,22 @@ function contaStatusLabel(string $status): string
         'vencido' => 'Vencido',
         'pago' => 'Pago',
         'cancelado' => 'Cancelado',
+        'suspenso' => 'Suspensa',
         default => ucfirst($status),
     };
+}
+
+/**
+ * Situação da parcela a receber para mostrar: 'suspenso' quando parada pelo
+ * trancamento da matrícula e, com $marcarVencida, 'vencido' quando passou
+ * do vencimento sem pagar.
+ */
+function statusTelaParcela(array $c, bool $marcarVencida = true): string
+{
+    if ($c['status'] === 'cancelado' && !empty($c['suspensa_trancamento'])) {
+        return 'suspenso';
+    }
+    return $marcarVencida && $c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d') ? 'vencido' : $c['status'];
 }
 
 // Monta um link "wa.me" — abre o WhatsApp (app ou web) com a mensagem já
@@ -322,6 +337,7 @@ function matriculaStatusLabel(string $status): string
         'ativa' => 'Ativa',
         'cancelada' => 'Cancelada',
         'concluida' => 'Concluída',
+        'trancada' => 'Trancada',
         default => ucfirst($status),
     };
 }
@@ -333,6 +349,7 @@ function matriculaStatusBadgeClass(string $status): string
         'ativa' => 'text-bg-success',
         'cancelada' => 'text-bg-danger',
         'concluida' => 'text-bg-secondary',
+        'trancada' => 'text-bg-info',
         default => 'text-bg-light',
     };
 }

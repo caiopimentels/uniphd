@@ -1,7 +1,7 @@
 <?php
 
 // Documentos emitidos (certificado, declaração de módulo): modelos montados
-// em Acadêmico › Documentos, deitados ou em pé. Cada curso diz quais emite e
+// em Portal › Documentos (modelos), deitados ou em pé. Cada curso diz quais emite e
 // com que modelo (ver documentos_emitidos.php); sem modelo, vale o padrão.
 // Um modelo tem uma ou mais folhas (frente, verso...), cada uma com a sua
 // arte de fundo e os seus elementos:

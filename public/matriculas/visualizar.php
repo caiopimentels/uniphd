@@ -99,6 +99,16 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <?php endif; ?>
             </div>
         <?php endif; ?>
+        <?php if ($matricula['status'] === 'trancada'): ?>
+            <div class="alert alert-info">
+                <strong><i class="bi bi-pause-circle"></i> Matrícula trancada</strong> desde <?= formatDate($matricula['data_trancamento']) ?><?= $matricula['trancamento_previsao'] ? ' · volta prevista em <strong>' . formatDate($matricula['trancamento_previsao']) . '</strong>' : '' ?>.
+                <?= $matricula['trancamento_motivo'] ? '<div class="small mt-1">Motivo: ' . e($matricula['trancamento_motivo']) . '</div>' : '' ?>
+                <div class="small mt-1 text-muted">
+                    <?= $matricula['trancamento_vaga'] ? 'A vaga na turma está guardada.' : 'A vaga na turma foi liberada.' ?>
+                    <?= ['suspender' => 'Mensalidades futuras suspensas — voltam ao destrancar.', 'cancelar' => 'Mensalidades futuras canceladas no trancamento.', 'continuar' => 'Mensalidades continuam sendo cobradas.'][$matricula['trancamento_parcelas']] ?? '' ?>
+                </div>
+            </div>
+        <?php endif; ?>
         <div class="card"><div class="card-body">
             <div class="row g-3">
                 <div class="col-md-6"><div class="kpi-rotulo">Aluno</div><div><a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>"><?= e($matricula['aluno_nome']) ?></a><?= $matricula['aluno_ra'] ? ' · ' . e($matricula['aluno_ra']) : '' ?><?= $matricula['aluno_cpf'] ? ' · ' . e(cpfFormatado($matricula['aluno_cpf'])) : '' ?></div></div>
@@ -159,7 +169,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <?php if ($vencida): ?>
                                     <span class="badge text-bg-danger">Em atraso</span>
                                 <?php else: ?>
-                                    <span class="badge <?= contaStatusBadgeClass($p['status']) ?>"><?= contaStatusLabel($p['status']) ?></span>
+                                    <span class="badge <?= contaStatusBadgeClass(statusTelaParcela($p, false)) ?>"><?= contaStatusLabel(statusTelaParcela($p, false)) ?></span>
                                 <?php endif; ?>
                             </td>
                             <td class="text-end text-nowrap" onclick="event.stopPropagation();">
@@ -274,6 +284,55 @@ require __DIR__ . '/../../includes/layout_header.php';
     </div>
     <?php endif; ?>
 
+    <?php if (usuarioPodeTrancarMatricula() && $matricula['status'] === 'ativa'): $regras = buscarConfiguracoes($pdo); $op = opcoesTrancamento(); ?>
+    <div class="secao">
+        <div class="secao-titulo"><i class="bi bi-pause-circle"></i> Trancar matrícula</div>
+        <div class="card"><div class="card-body">
+            <p class="small text-muted mb-2">
+                Mensalidades futuras: <strong><?= e(mb_strtolower($op['parcelas'][$regras['trancamento_parcelas']][0])) ?></strong> ·
+                vaga: <strong><?= e(mb_strtolower($op['vaga'][$regras['trancamento_vaga']][0])) ?></strong>.
+                <?php if (usuarioEhAdmin()): ?><a href="/configuracoes/matriculas.php">Mudar regras</a><?php endif; ?>
+            </p>
+            <form action="/matriculas/trancar.php" method="post" data-confirmar="Trancar a matrícula de <?= e($matricula['aluno_nome']) ?>?">
+                <input type="hidden" name="id" value="<?= (int) $id ?>">
+                <input type="hidden" name="acao" value="trancar">
+                <div class="row g-2 mb-2">
+                    <div class="col-6"><label class="form-label small mb-1">Trancar a partir de</label><input type="date" name="data" class="form-control form-control-sm" value="<?= $hoje ?>" required></div>
+                    <div class="col-6"><label class="form-label small mb-1">Volta prevista</label><input type="date" name="previsao" class="form-control form-control-sm"></div>
+                </div>
+                <input type="text" name="motivo" class="form-control form-control-sm mb-2" maxlength="255" placeholder="Motivo (opcional)">
+                <button type="submit" class="btn btn-outline-info w-100"><i class="bi bi-pause-fill"></i> Trancar matrícula</button>
+            </form>
+        </div></div>
+    </div>
+    <?php endif; ?>
+
+    <?php if (usuarioPodeTrancarMatricula() && $matricula['status'] === 'trancada'): $turmasRetorno = turmasRetornoTrancamento($pdo, $matricula); ?>
+    <div class="secao">
+        <div class="secao-titulo"><i class="bi bi-play-circle"></i> Destrancar</div>
+        <div class="card"><div class="card-body">
+            <form action="/matriculas/trancar.php" method="post" data-confirmar="Destrancar a matrícula de <?= e($matricula['aluno_nome']) ?>?">
+                <input type="hidden" name="id" value="<?= (int) $id ?>">
+                <input type="hidden" name="acao" value="destrancar">
+                <label class="form-label small mb-1">Volta para a turma</label>
+                <select name="turma_id" class="form-select form-select-sm mb-2" required>
+                    <?php foreach ($turmasRetorno as $t): $propria = (int) $t['id'] === (int) $matricula['turma_id']; ?>
+                        <option value="<?= (int) $t['id'] ?>" <?= !$t['aberta'] || (!$t['livres'] && !($propria && $matricula['trancamento_vaga'])) ? 'disabled' : '' ?>>
+                            <?= e($t['nome']) ?><?= $propria ? ' (a mesma)' : '' ?> — <?= !$t['aberta'] ? 'encerrada' : ($propria && $matricula['trancamento_vaga'] ? 'vaga guardada' : $t['livres'] . ' vaga(s)') ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+                <label class="form-label small mb-1">Data da volta</label>
+                <input type="date" name="data" class="form-control form-control-sm mb-2" value="<?= $hoje ?>" required>
+                <?php if ($matricula['trancamento_parcelas'] === 'suspender'): ?>
+                    <p class="small text-muted mb-2">As mensalidades suspensas voltam: a primeira vence a partir da data da volta (mesmo dia do mês) e as outras acompanham.</p>
+                <?php endif; ?>
+                <button type="submit" class="btn btn-outline-success w-100"><i class="bi bi-play-fill"></i> Destrancar matrícula</button>
+            </form>
+        </div></div>
+    </div>
+    <?php endif; ?>
+
     <?php if (usuarioPodeCancelarMatricula() && in_array($matricula['status'], ['ativa', 'pendente'], true)): ?>
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-x-circle"></i> Cancelar matrícula</div>
@@ -322,6 +381,16 @@ require __DIR__ . '/../../includes/layout_header.php';
 
 <?php require __DIR__ . '/../../includes/modal_pix.php'; ?>
 <?php require __DIR__ . '/../../includes/modal_confirmar.php'; ?>
+<script>
+document.querySelectorAll('form[data-confirmar]').forEach((f) => f.addEventListener('submit', async (ev) => {
+    if (f.dataset.ok) return;
+    ev.preventDefault();
+    if (await confirmarNoModal({ titulo: 'Confirmar', html: escapeHtml(f.dataset.confirmar) })) {
+        f.dataset.ok = '1';
+        f.submit();
+    }
+}));
+</script>
 <?php $voltarParcela = 'matricula'; require __DIR__ . '/../../includes/modal_parcela.php'; ?>
 <script>
 // Mudou o desconto e há boletos no Itaú: confirma antes, porque eles serão

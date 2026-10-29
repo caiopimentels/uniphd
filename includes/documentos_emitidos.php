@@ -1,7 +1,7 @@
 <?php
 
 // Documentos que a instituição emite para o aluno: certificado de conclusão,
-// declaração de módulo... (modelos em Acadêmico › Documentos).
+// declaração de módulo... (modelos em Portal › Documentos (modelos)).
 //
 // O curso diz quais emite (curso_emissoes): nome, modelo e quando fica
 // disponível — ao concluir o curso (modulo_id NULL) ou ao concluir um

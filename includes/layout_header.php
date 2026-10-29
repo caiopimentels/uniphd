@@ -41,6 +41,7 @@ $logoDeslocamentoY = ($logoPosY - 50) * 0.9;
 
 // Espera que as páginas definam $pageTitle e $activeMenu antes de incluir este arquivo.
 // Opcionalmente $pageAction (HTML do botão principal) e $pageBreadcrumb (texto).
+// $acoesLaterais = true: os botões de $pageAction ficam numa coluna fixa à direita.
 
 // Menus do topo: chave => [rótulo, itens[]]. Item: [texto, link, pode ver,
 // chave do $activeMenu, nova aba?, divisória antes?, número em destaque].
@@ -53,6 +54,8 @@ $menus = [
             ['Turmas', '/turmas/listar.php', usuarioPodeVerCursos(), 'turmas'],
             ['Cursos', '/cursos/listar.php', usuarioPodeVerCursos(), 'cursos'],
             ['Professores', '/professores/listar.php', usuarioPodeVerCursos(), 'professores'],
+            ['Materiais', '/materiais/index.php', usuarioPodeGerenciarMateriais(), 'materiais'],
+            ['Videoaulas', '/videoaulas/index.php', usuarioPodeGerenciarMateriais(), 'videoaulas'],
         ],
     ],
     // Atendimento ao aluno e o que ele vê no portal.
@@ -62,8 +65,15 @@ $menus = [
             ['Protocolos', '/protocolos/listar.php', usuarioPodeVerProtocolos(), 'protocolos', false, false, $protocolosParaResponder],
             ['WhatsApp', '/whatsapp/conversas.php', usuarioTemPermissao('atender_whatsapp'), 'whatsapp', false, false, usuarioTemPermissao('atender_whatsapp') ? conversasAguardandoWhatsapp(getDB()) : 0],
             ['Certificados emitidos', '/documentos/emitidos.php', usuarioPodeLiberarCertificado() || usuarioPodeVerAlunos(), 'certificados-emitidos'],
-            ['Documentos (modelos)', '/configuracoes/certificado.php', usuarioPodeEditarDocumentos(), 'certificado', false, true],
-            ['Portal do aluno', '/configuracoes/portal.php', usuarioPodeGerenciarPortal(), 'portal'],
+        ],
+    ],
+    // O que o aluno vê no portal: o site, os avisos e os modelos de documentos.
+    'portal' => [
+        'rotulo' => 'Portal',
+        'itens' => [
+            ['Site do portal', '/configuracoes/portal.php', usuarioPodeGerenciarPortal(), 'portal'],
+            ['Avisos aos alunos', '/avisos/listar.php', usuarioTemPermissao('gerenciar_avisos'), 'avisos'],
+            ['Documentos (modelos)', '/configuracoes/certificado.php', usuarioPodeEditarDocumentos(), 'certificado'],
         ],
     ],
     'financeiro' => [
@@ -176,6 +186,23 @@ $menus = [
                 <i class="bi bi-clock-history"></i> <span id="sessao-timer-valor">--:--</span>
             </span>
 
+            <?php if (usuarioPodeUsarEmail()): ?>
+                <?php $emailNaoLidasCache = $_SESSION['email_nao_lidas_' . usuarioAtualId()]['n'] ?? null; ?>
+                <a class="topnav-icone topnav-sino" href="/email/index.php" title="E-mail">
+                    <i class="bi bi-envelope"></i>
+                    <span class="sino-badge" id="email-badge" <?= $emailNaoLidasCache ? '' : 'style="display:none"' ?>><?= $emailNaoLidasCache > 99 ? '99+' : (int) $emailNaoLidasCache ?></span>
+                </a>
+                <script>
+                // Não lidas do e-mail sem atrasar a página (o servidor de e-mail responde depois).
+                window.addEventListener('load', () => fetch('/email/nao_lidas.php').then((r) => r.json()).then((r) => {
+                    const b = document.getElementById('email-badge');
+                    if (!b || r.nao_lidas === null || r.nao_lidas === undefined) return;
+                    b.textContent = r.nao_lidas > 99 ? '99+' : r.nao_lidas;
+                    b.style.display = r.nao_lidas > 0 ? '' : 'none';
+                }).catch(() => {}));
+                </script>
+            <?php endif; ?>
+
             <?php
                 $notificacoes = buscarNotificacoes($pdo, (int) usuarioAtualId());
                 $naoLidas = contarNotificacoesNaoLidas($pdo, (int) usuarioAtualId());
@@ -261,9 +288,13 @@ $menus = [
             <h1 class="pagina-titulo"><?= e($pageTitle) ?></h1>
         </div>
         <?php if ($pageAction): ?>
-            <div class="pagina-acoes"><?= $pageAction ?></div>
+            <div class="pagina-acoes <?= !empty($acoesLaterais) ? 'acoes-no-topo' : '' ?>"><?= $pageAction ?></div>
         <?php endif; ?>
     </div>
+    <?php if (!empty($acoesLaterais) && $pageAction): ?>
+    <?php // Ações numa coluna fixa à direita (fecha em layout_footer.php); em tela estreita voltam ao topo. ?>
+    <div class="pagina-grade-lateral"><div class="pagina-conteudo-principal">
+    <?php endif; ?>
 
     <?php if (!empty($_SESSION['recibo_disponivel'])): $reciboId = (int) $_SESSION['recibo_disponivel']; unset($_SESSION['recibo_disponivel']); ?>
         <div class="alert alert-light border d-flex align-items-center gap-2 py-2">

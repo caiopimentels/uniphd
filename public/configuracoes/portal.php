@@ -113,7 +113,7 @@ $conteudoTela = [
 ][$pagina['chave']] ?? '';
 
 $pageTitle = 'Portal do aluno';
-$pageBreadcrumb = 'Secretaria · Montar o site';
+$pageBreadcrumb = 'Portal · Site do portal';
 $activeMenu = 'portal';
 $pageAction = '<a href="/portal/index.php" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-box-arrow-up-right"></i> Abrir o portal</a>';
 require __DIR__ . '/../../includes/layout_header.php';

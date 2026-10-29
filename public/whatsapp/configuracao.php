@@ -47,6 +47,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->prepare("UPDATE whatsapp_config SET $sets WHERE id = 1")->execute(array_values($campos));
         registrarAtividade('configuracoes', 'edicao', 'Configuração do WhatsApp/IA alterada' . ($campos['ia_ativa'] ? ' (IA ligada)' : ' (IA desligada)'));
         flash('success', 'Configuração salva.');
+        // Número de teste que também é de aviso: a IA não responde a ele.
+        $novo = whatsappConfig($pdo);
+        $repetidos = array_filter(preg_split('/[\r\n,;]+/', (string) $novo['numeros_teste']), fn ($n) => strlen(preg_replace('/\D/', '', $n)) >= 8 && ehNumeroAvisoWhatsapp($novo, preg_replace('/\D/', '', $n)));
+        if ($novo['modo_teste'] && $repetidos) {
+            flash('warning', 'Atenção: ' . implode(', ', array_map('trim', $repetidos)) . ' está no modo teste e também nos números de aviso. A IA nunca responde aos números de aviso — use outro número para testar.');
+        }
         redirect('/whatsapp/configuracao.php');
     }
     if ($acao === 'conectar') {

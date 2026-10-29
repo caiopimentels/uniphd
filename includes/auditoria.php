@@ -24,6 +24,9 @@ function modulosAuditoria(): array
         'configuracoes'          => 'Configurações',
         'portal'                 => 'Portal do aluno',
         'rotinas'                => 'Rotinas automáticas',
+        'avisos'                 => 'Avisos aos alunos',
+        'email'                  => 'E-mail',
+        'materiais'              => 'Materiais dos cursos',
     ];
 }
 
@@ -41,6 +44,7 @@ function operacoesAuditoria(): array
         'logout' => 'Logout',
         'login_falha' => 'Falha no login',
         'verificacao' => 'Verificação',
+        'bloqueio' => 'Bloqueio (segurança)',
     ];
 }
 

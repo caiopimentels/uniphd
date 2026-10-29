@@ -103,7 +103,7 @@ if (!$ehNovo) {
 }
 
 $pageTitle = $ehNovo ? 'Novo contrato' : 'Contrato · ' . e($modelo['nome']);
-$pageBreadcrumb = 'Secretaria · Documentos';
+$pageBreadcrumb = 'Portal · Documentos';
 $activeMenu = 'certificado';
 $pageAction = '<a href="/configuracoes/certificado.php" class="btn btn-outline-secondary" onclick="return confirmarSaidaContrato()"><i class="bi bi-arrow-left"></i> Modelos</a>'
     . '<button type="button" class="btn btn-outline-secondary" onclick="enviarContrato(\'previa\')"><i class="bi bi-eye"></i> Pré-visualizar</button>'

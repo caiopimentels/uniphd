@@ -1,4 +1,4 @@
-// Editor do contrato (Acadêmico › Documentos › contrato), parecido com o Word:
+// Editor do contrato (Portal › Documentos (modelos) › contrato), parecido com o Word:
 // uma folha A4 por página, cada uma com o cabeçalho e o rodapé; réguas de
 // cima (margens dos lados e tabulações) e do lado (margens de cima e de
 // baixo); cabeçalho e rodapé abrem com dois cliques; imagens soltas por cima

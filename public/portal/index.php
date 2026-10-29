@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/../../includes/bootstrap.php';
 
-// Página inicial: só os blocos montados em Acadêmico › Portal do aluno.
+// Página inicial: só os blocos montados em Portal › Site do portal.
 $pdo = getDB();
 $inicio = buscarPaginaPortal($pdo, 'chave', 'inicio');
 $tituloPagina = 'Início';

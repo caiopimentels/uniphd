@@ -632,7 +632,8 @@ require __DIR__ . '/../../includes/layout_header.php';
     ?>
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-chat-left-text"></i> Protocolos do aluno
-            <?php if (usuarioPodeAbrirProtocolo()): ?><span class="ms-auto"><a href="/protocolos/novo.php?aluno=<?= (int) $id ?>&de=aluno" class="btn btn-sm btn-brand"><i class="bi bi-plus-lg"></i> Abrir protocolo</a></span><?php endif; ?></div>
+            <span class="ms-auto d-flex gap-2"><?php if (usuarioTemPermissao('gerenciar_avisos')): ?><a href="/avisos/form.php?aluno=<?= (int) $id ?>" class="btn btn-sm btn-outline-secondary" title="Aviso no portal só para este aluno"><i class="bi bi-megaphone"></i> Enviar aviso</a><?php endif; ?>
+            <?php if (usuarioPodeAbrirProtocolo()): ?><a href="/protocolos/novo.php?aluno=<?= (int) $id ?>&de=aluno" class="btn btn-sm btn-brand"><i class="bi bi-plus-lg"></i> Abrir protocolo</a><?php endif; ?></span></div>
         <?php if (!$protocolosAluno): ?>
             <p class="text-muted mb-0">Nenhum protocolo. O aluno abre pelo portal (Meus protocolos), por exemplo para justificar uma falta ou pedir reposição — ou a secretaria abre por ele aqui.</p>
         <?php else: ?>
@@ -747,7 +748,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <?php if ($vencida): ?>
                                 <span class="badge text-bg-danger">Em atraso</span>
                             <?php else: ?>
-                                <span class="badge <?= contaStatusBadgeClass($p['status']) ?>"><?= contaStatusLabel($p['status']) ?></span>
+                                <span class="badge <?= contaStatusBadgeClass(statusTelaParcela($p, false)) ?>"><?= contaStatusLabel(statusTelaParcela($p, false)) ?></span>
                             <?php endif; ?>
                         </td>
                         <td class="text-end text-nowrap" onclick="event.stopPropagation();">

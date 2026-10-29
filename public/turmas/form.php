@@ -517,7 +517,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="col-12">
             <label class="form-label">Parceria</label>
             <input type="text" name="parceria" class="form-control" maxlength="255" placeholder="Ex.: em parceria com a Faculdade X (em branco = sem parceria)" value="<?= e($turma['parceria'] ?? '') ?>">
-            <div class="form-text">Sai no certificado onde o modelo tiver o marcador <code>{parceria}</code> (Acadêmico › Documentos). Sem parceria, o marcador fica em branco.</div>
+            <div class="form-text">Sai no certificado onde o modelo tiver o marcador <code>{parceria}</code> (Portal › Documentos (modelos)). Sem parceria, o marcador fica em branco.</div>
         </div>
     </div>
 </div>

@@ -179,7 +179,20 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <div class="small text-muted"><?= e(numeroWhatsappFormatado($conversa['numero'])) ?>
                         <?php if ($conversa['aluno_id']): ?> · <a href="/alunos/form.php?id=<?= (int) $conversa['aluno_id'] ?>">ver aluno</a><?php else: ?> · não é aluno cadastrado<?php endif; ?></div>
                 </div>
-                <?php if ($conversa['modo'] === 'ia'): ?>
+                <?php
+                // Por que a IA não responde a esta pessoa (quando não responde).
+                $semIa = match (true) {
+                    !$cfg['ia_ativa'] => 'IA desligada na configuração',
+                    ehNumeroAvisoWhatsapp($cfg, $conversa['numero']) => 'é um número de aviso da equipe',
+                    !numeroLiberadoWhatsapp($cfg, $conversa['numero']) => 'modo teste: este número não está na lista',
+                    default => null,
+                };
+                ?>
+                <?php if ($conversa['modo'] === 'ia' && $semIa): ?>
+                    <span class="badge text-bg-warning" title="A IA não responde a esta conversa"><i class="bi bi-robot"></i> IA não responde: <?= e($semIa) ?></span>
+                    <form method="post"><input type="hidden" name="conversa_id" value="<?= (int) $conversa['id'] ?>"><input type="hidden" name="acao" value="assumir">
+                        <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-person-raised-hand"></i> Assumir</button></form>
+                <?php elseif ($conversa['modo'] === 'ia'): ?>
                     <span class="badge text-bg-light border"><i class="bi bi-robot"></i> A IA está respondendo</span>
                     <form method="post"><input type="hidden" name="conversa_id" value="<?= (int) $conversa['id'] ?>"><input type="hidden" name="acao" value="assumir">
                         <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-person-raised-hand"></i> Assumir</button></form>

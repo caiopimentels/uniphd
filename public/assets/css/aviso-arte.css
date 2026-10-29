@@ -1,0 +1,22 @@
+/* Arte dos avisos (tipo Canva): mesma folha no editor (Portal › Avisos aos alunos)
+   e no portal. Tudo em % da folha e letras em cqw (1/100 da largura da
+   folha), então a arte encolhe inteira no celular sem desmontar. Os
+   tamanhos salvos (letra, cantos) são "px numa folha de 1000 px". */
+.arte-aviso {
+    position: relative;
+    width: 100%;
+    container-type: inline-size;
+    overflow: hidden;
+    background-color: #ffffff;
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+.arte-el { position: absolute; box-sizing: border-box; display: block; color: inherit; text-decoration: none; }
+a.arte-el { cursor: pointer; }
+.arte-el .arte-in { width: 100%; height: 100%; box-sizing: border-box; }
+.arte-texto .arte-in { display: flex; flex-direction: column; justify-content: center; white-space: pre-wrap; overflow-wrap: anywhere; }
+.arte-botao .arte-in { display: flex; align-items: center; justify-content: center; text-align: center; white-space: nowrap; overflow: hidden; }
+.arte-imagem .arte-in { overflow: hidden; }
+.arte-imagem img { width: 100%; height: 100%; display: block; -webkit-user-drag: none; user-select: none; }
+a.arte-el.arte-botao:hover .arte-in { filter: brightness(1.08); }

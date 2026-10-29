@@ -20,7 +20,7 @@ if (!$dados) {
 $m = $dados['matricula'];
 $modelo = modeloContratoDoCurso($pdo, $m['contrato_modelo_id'] ? (int) $m['contrato_modelo_id'] : null);
 if (!$modelo) {
-    flash('warning', 'Nenhum modelo de contrato cadastrado (Acadêmico › Documentos).');
+    flash('warning', 'Nenhum modelo de contrato cadastrado (Portal › Documentos (modelos)).');
     redirect('/matriculas/visualizar.php?id=' . $id);
 }
 

@@ -6,6 +6,9 @@
 //                                            renovação do certificado do Itaú
 //   php scripts/rotinas.php documentos     → de hora em hora: libera os
 //                                            documentos de quem ficou em dia
+//   php scripts/rotinas.php emails         → a cada 5 minutos: manda a
+//                                            próxima leva dos disparos de
+//                                            e-mail (dentro do limite por hora)
 //
 // Rodam como o usuário do Apache (www-data), para gravar em storage/ com
 // as mesmas permissões do site.
@@ -30,7 +33,16 @@ switch ($rotina) {
         echo date('Y-m-d H:i:s') . " documentos: $liberados liberado(s)\n";
         break;
 
+    case 'emails':
+        // Leva de 5 min = 1/12 do limite por hora (pelo menos 1).
+        $leva = max(1, (int) ceil(emailConfig($pdo)['disparo_por_hora'] / 12));
+        $enviados = processarDisparosEmail($pdo, $leva);
+        if ($enviados > 0) {
+            echo date('Y-m-d H:i:s') . " e-mails: $enviados enviado(s)\n";
+        }
+        break;
+
     default:
-        fwrite(STDERR, "Uso: php scripts/rotinas.php certificados|documentos\n");
+        fwrite(STDERR, "Uso: php scripts/rotinas.php certificados|documentos|emails\n");
         exit(1);
 }

@@ -207,6 +207,11 @@ function usuarioPodeCancelarMatricula(): bool
     return usuarioTemPermissao('cancelar_matricula');
 }
 
+function usuarioPodeTrancarMatricula(): bool
+{
+    return usuarioTemPermissao('trancar_matricula');
+}
+
 /**
  * Perfis que o usuário logado pode dar a outros usuários (cadastrar/editar).
  * Administrador: todos. Os demais: os liberados no perfil dele (Perfis ›

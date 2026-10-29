@@ -291,7 +291,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <option value="">Modelo padrão</option>
                     <?php foreach ($modelosDocumento as $modeloOpcao): ?><option value="<?= (int) $modeloOpcao['id'] ?>" <?= (int) $modeloAtual === (int) $modeloOpcao['id'] ? 'selected' : '' ?>><?= e($modeloOpcao['nome']) ?> (<?= ($modeloOpcao['orientacao'] ?? 'horizontal') === 'vertical' ? 'vertical' : 'horizontal' ?>)</option><?php endforeach; ?>
                 </select>
-                <div class="form-text">Modelos em Acadêmico › Documentos<?php if (usuarioPodeEditarDocumentos()): ?> — <a href="/configuracoes/certificado.php" target="_blank">ver modelos</a><?php endif; ?>.</div>
+                <div class="form-text">Modelos em Portal › Documentos (modelos)<?php if (usuarioPodeEditarDocumentos()): ?> — <a href="/configuracoes/certificado.php" target="_blank">ver modelos</a><?php endif; ?>.</div>
             </div>
             <div class="col-md-6">
                 <label class="form-label">Contrato do curso</label>

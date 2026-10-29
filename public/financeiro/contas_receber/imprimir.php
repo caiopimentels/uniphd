@@ -5,7 +5,8 @@ exigirVerFinanceiro();
 $pdo = getDB();
 
 $filtros = [
-    'status' => $_GET['status'] ?? 'pendente',
+    'status' => implode(',', listaStatusReceber($_GET['status'] ?? 'pendente')),
+    'data_tipo' => ($_GET['data_tipo'] ?? '') === 'pagamento' ? 'pagamento' : 'vencimento',
     'data_inicio' => $_GET['data_inicio'] ?? '',
     'data_fim' => $_GET['data_fim'] ?? '',
     'busca' => trim((string) ($_GET['busca'] ?? '')),
@@ -34,18 +35,13 @@ $colunas = colunasVisiveis($pdo, 'contas_receber', definicaoColunasTela($pdo, 'c
 $posicaoValor = array_search('valor', array_keys($colunas), true);
 $posicaoValor = $posicaoValor === false || $posicaoValor === 0 ? null : $posicaoValor;
 $totalExibido = array_sum(array_map('valorExibidoReceber', $contas));
-$labelStatus = match ($status) {
-    'pendente' => 'Pendentes',
-    'vencido' => 'Vencidas',
-    'pago' => 'Recebidas',
-    'cancelado' => 'Canceladas',
-    default => 'Todas',
-};
-$labelTotal = match ($status) {
+$labelStatus = rotuloStatusReceber(listaStatusReceber($status));
+$labelTotal = count(listaStatusReceber($status)) > 1 ? 'Total da seleção' : match ($status) {
     'pendente' => 'Total pendente',
     'vencido' => 'Total vencido',
     'pago' => 'Total recebido',
     'cancelado' => 'Total cancelado',
+    'suspenso' => 'Total suspenso',
     default => 'Total geral',
 };
 ?>
@@ -84,7 +80,7 @@ $labelTotal = match ($status) {
         <?php if ($filtros['busca'] !== ''): ?>&middot; Aluno: <?= e($filtros['busca']) ?><?php endif; ?>
         <?php if ($agrupar): ?>&middot; Agrupado <?= e(mb_strtolower(opcoesAgruparReceber()[$agrupar])) ?><?php endif; ?>
         <?php if ($dataInicio || $dataFim): ?>
-            &middot; Vencimento: <?= $dataInicio ? formatDate($dataInicio) : '...' ?> a <?= $dataFim ? formatDate($dataFim) : '...' ?>
+            &middot; <?= $filtros['data_tipo'] === 'pagamento' ? 'Pagamento' : 'Vencimento' ?>: <?= $dataInicio ? formatDate($dataInicio) : '...' ?> a <?= $dataFim ? formatDate($dataFim) : '...' ?>
         <?php endif; ?>
         &middot; Emitido em <?= formatDateTime(date('Y-m-d H:i:s')) ?>
     </p>

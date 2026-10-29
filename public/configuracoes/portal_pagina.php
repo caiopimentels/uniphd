@@ -73,7 +73,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $pageTitle = $id ? 'Página: ' . $pagina['titulo'] : 'Nova página';
-$pageBreadcrumb = 'Secretaria · Portal do aluno';
+$pageBreadcrumb = 'Portal · Site do portal';
 $activeMenu = 'portal';
 $pageAction = '<a href="/configuracoes/portal.php' . ($id ? '?pagina=' . $id : '') . '" class="btn btn-outline-secondary">Cancelar</a>'
     . '<button type="submit" form="form-pagina" class="btn btn-brand"><i class="bi bi-check-lg"></i> Salvar</button>';

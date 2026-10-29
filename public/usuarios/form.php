@@ -37,6 +37,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $senha = input('senha');
     $perfilId = (int) ($_POST['perfil_id'] ?? 0);
     $ativo = isset($_POST['ativo']) ? 1 : 0;
+    $professorId = (int) ($_POST['professor_id'] ?? 0) ?: null;
 
     if ($nome === '') {
         $erros[] = 'O nome é obrigatório.';
@@ -75,13 +76,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             $stmt = $pdo->prepare('INSERT INTO usuarios (nome, email, senha, perfil_id, ativo) VALUES (?,?,?,?,?)');
             $stmt->execute([$nome, $email, password_hash($senha, PASSWORD_DEFAULT), $perfilId, $ativo]);
+            $id = (int) $pdo->lastInsertId();
             registrarAtividade('usuarios', 'criacao', 'Usuário criado: ' . $nome . ' (' . $email . ')');
+        }
+        // Professor ligado: só vê/mexe nos materiais das turmas dele.
+        $pdo->prepare('UPDATE usuarios SET professor_id = ? WHERE id = ?')->execute([$professorId, $id]);
+        // Caixa de e-mail (menu E-mail): e-mail, senha, nome e assinatura.
+        $errosCaixa = salvarCaixaEmailUsuario($pdo, (int) $id, $_POST);
+        if ($errosCaixa) {
+            flash('warning', 'Usuário salvo, mas a caixa de e-mail não: ' . implode(' ', $errosCaixa));
+            redirect('/usuarios/form.php?id=' . (int) $id);
         }
         flash('success', 'Usuário salvo com sucesso.');
         redirect('/usuarios/listar.php');
     }
 
-    $usuario = ['nome' => $nome, 'email' => $email, 'perfil_id' => $perfilId, 'ativo' => $ativo];
+    $usuario = ['nome' => $nome, 'email' => $email, 'perfil_id' => $perfilId, 'ativo' => $ativo, 'professor_id' => $professorId,
+        'email_caixa' => input('email_caixa'), 'email_remetente_nome' => input('email_remetente_nome'), 'email_assinatura' => (string) ($_POST['email_assinatura'] ?? ''),
+        'email_caixa_senha_cripto' => $usuario['email_caixa_senha_cripto'] ?? null];
 }
 
 $pageTitle = $id ? 'Editar usuário' : 'Novo usuário';
@@ -96,9 +108,9 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="alert alert-danger"><ul class="mb-0"><?php foreach ($erros as $erro): ?><li><?= e($erro) ?></li><?php endforeach; ?></ul></div>
 <?php endif; ?>
 
-<div class="secao" style="max-width: 560px;">
+<form method="post" id="form-principal">
+<div class="secao" style="max-width: 760px;">
     <div class="secao-titulo"><i class="bi bi-person-badge"></i> Dados do usuário</div>
-        <form method="post" id="form-principal">
             <div class="row g-3">
                 <div class="col-12">
                     <label class="form-label">Nome *</label>
@@ -121,12 +133,23 @@ require __DIR__ . '/../../includes/layout_header.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
+                <div class="col-12">
+                    <label class="form-label">É professor? <span class="small text-muted">(cadastro em Acadêmico › Professores)</span></label>
+                    <select name="professor_id" class="form-select">
+                        <option value="">Não — vê os materiais de todas as turmas (se o perfil permitir)</option>
+                        <?php foreach ($pdo->query('SELECT id, nome FROM professores WHERE ativo = 1 OR id = ' . (int) ($usuario['professor_id'] ?? 0) . ' ORDER BY nome') as $p): ?>
+                            <option value="<?= (int) $p['id'] ?>" <?= (int) ($usuario['professor_id'] ?? 0) === (int) $p['id'] ? 'selected' : '' ?>><?= e($p['nome']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <div class="form-text">Ligado a um professor, o usuário só vê e envia materiais das turmas dele (use o perfil "Professor").</div>
+                </div>
                 <div class="col-12 form-check ps-4">
                     <input type="checkbox" name="ativo" class="form-check-input" id="ativo" <?= ($usuario['ativo'] ?? 1) ? 'checked' : '' ?>>
                     <label class="form-check-label" for="ativo">Usuário ativo</label>
                 </div>
             </div>
-        </form>
 </div>
+<?php $caixaUsuario = $usuario ?? []; $caixaUsuarioId = $id; require __DIR__ . '/../../includes/form_caixa_email.php'; ?>
+</form>
 
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

@@ -4,16 +4,13 @@ exigirVerFinanceiro();
 
 $pdo = getDB();
 
-$status = $_GET['status'] ?? 'pendente';
+$status = implode(',', listaStatusPagar($_GET['status'] ?? 'pendente'));
 $dataInicio = $_GET['data_inicio'] ?? '';
 $dataFim = $_GET['data_fim'] ?? '';
 
 $where = '1=1';
 $params = [];
-if (in_array($status, ['pendente', 'pago', 'cancelado'], true)) {
-    $where .= ' AND cp.status = ?';
-    $params[] = $status;
-}
+$where .= condicaoStatusPagar(listaStatusPagar($status));
 if ($dataInicio !== '') {
     $where .= ' AND cp.data_vencimento >= ?';
     $params[] = $dataInicio;
@@ -43,14 +40,10 @@ $posicaoValor = array_search('valor', array_keys($colunas), true);
 $posicaoValor = $posicaoValor === false || $posicaoValor === 0 ? null : $posicaoValor;
 
 $totalExibido = array_sum(array_column($contas, 'valor'));
-$labelStatus = match ($status) {
-    'pendente' => 'Pendentes',
-    'pago' => 'Pagas',
-    'cancelado' => 'Canceladas',
-    default => 'Todas',
-};
-$labelTotal = match ($status) {
+$labelStatus = listaStatusPagar($status) ? implode(' + ', array_map(fn ($s) => opcoesStatusPagar()[$s], listaStatusPagar($status))) : 'Todas';
+$labelTotal = count(listaStatusPagar($status)) > 1 ? 'Total da seleção' : match ($status) {
     'pendente' => 'Total pendente',
+    'vencido' => 'Total vencido',
     'pago' => 'Total pago',
     'cancelado' => 'Total cancelado',
     default => 'Total geral',

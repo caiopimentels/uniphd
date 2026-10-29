@@ -93,6 +93,15 @@ require_once __DIR__ . '/cupons.php';
 require_once __DIR__ . '/contratos.php';
 require_once __DIR__ . '/protocolos.php';
 require_once __DIR__ . '/whatsapp.php';
+require_once __DIR__ . '/avisos.php';
+require_once __DIR__ . '/seguranca_arquivos.php';
+require_once __DIR__ . '/email_imap.php';
+require_once __DIR__ . '/email_mime.php';
+require_once __DIR__ . '/email_caixa.php';
+require_once __DIR__ . '/materiais.php';
+require_once __DIR__ . '/videoaulas.php';
+require_once __DIR__ . '/cobranca_alunos.php';
+require_once __DIR__ . '/trancamento.php';
 
 // Garante que toda página (logada ou não — login e recuperação de senha
 // também enviam formulário) já tem um token de CSRF disponível pra colocar

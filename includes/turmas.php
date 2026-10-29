@@ -9,7 +9,7 @@ const COMPORTAMENTOS_TURMA_ABERTA = ['aberta', 'em_andamento'];
 
 // Matrícula que ocupa vaga (alias "m"): ativa, ou inscrição do portal
 // aguardando pagamento que ainda segura a vaga (modo "reserva", no prazo).
-const SQL_MATRICULA_OCUPA_VAGA = "(m.status = 'ativa' OR (m.status = 'pendente' AND m.segura_vaga = 1 AND m.pagamento_ate >= NOW()))";
+const SQL_MATRICULA_OCUPA_VAGA = "(m.status = 'ativa' OR (m.status = 'pendente' AND m.segura_vaga = 1 AND m.pagamento_ate >= NOW()) OR (m.status = 'trancada' AND m.trancamento_vaga = 1))";
 
 // Vagas guardadas pela secretaria para alguém (alias da turma: "t"). Contam
 // como ocupadas em todo lugar: na matrícula pela secretaria e no site.

@@ -9,10 +9,12 @@ agendarBaixaBoletosCancelados();
 // Lembra o último filtro usado nesta tela entre uma visita e outra — sem
 // isso, todo acesso pelo menu resetava pra "Pendentes" e perdia o período
 // escolhido, obrigando a escolher tudo de novo só pra ajustar a data.
-$_SESSION['filtro_contas_receber'] = array_merge(['status' => 'pendente', 'data_inicio' => '', 'data_fim' => '', 'agrupar' => '', 'busca' => '', 'boleto' => ''], $_SESSION['filtro_contas_receber'] ?? []);
-if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim']) || isset($_GET['agrupar']) || isset($_GET['busca']) || isset($_GET['boleto'])) {
+$_SESSION['filtro_contas_receber'] = array_merge(['status' => 'pendente', 'data_tipo' => 'vencimento', 'data_inicio' => '', 'data_fim' => '', 'agrupar' => '', 'busca' => '', 'boleto' => ''], $_SESSION['filtro_contas_receber'] ?? []);
+if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim']) || isset($_GET['agrupar']) || isset($_GET['busca']) || isset($_GET['boleto']) || isset($_GET['data_tipo'])) {
     $_SESSION['filtro_contas_receber'] = [
-        'status' => $_GET['status'] ?? '',
+        'status' => implode(',', listaStatusReceber($_GET['status'] ?? [])),
+        // O período vale pelo vencimento ou pela data do pagamento.
+        'data_tipo' => ($_GET['data_tipo'] ?? '') === 'pagamento' ? 'pagamento' : 'vencimento',
         'data_inicio' => $_GET['data_inicio'] ?? '',
         'data_fim' => $_GET['data_fim'] ?? '',
         'agrupar' => $_GET['agrupar'] ?? '',
@@ -65,17 +67,20 @@ $informacoes = [
 ];
 $formasPagamento = $pdo->query("SELECT id, nome, instrumento, instrumento = 'manual' AS na_secretaria FROM formas_pagamento WHERE ativo = 1 ORDER BY nome")->fetchAll();
 
-$labelTotal = match ($status) {
+$statusMarcados = listaStatusReceber($status);
+$labelTotal = count($statusMarcados) > 1 ? 'Total da seleção' : match ($status) {
     'pendente' => 'Total pendente',
     'vencido' => 'Total vencido',
     'pago' => 'Total recebido',
     'cancelado' => 'Total cancelado',
+    'suspenso' => 'Total suspenso',
     'excluido' => 'Total excluído',
     default => 'Total geral',
 };
 
 $queryImpressao = http_build_query([
     'status' => $status,
+    'data_tipo' => $_SESSION['filtro_contas_receber']['data_tipo'],
     'data_inicio' => $dataInicio,
     'data_fim' => $dataFim,
     'agrupar' => $agrupar,
@@ -100,25 +105,18 @@ require __DIR__ . '/../../../includes/layout_header.php';
 
 <div class="filtros">
     <form method="get">
-        <select name="status" class="form-select filtro-controle" style="width:170px" onchange="this.form.submit()">
-            <option value="pendente" <?= $status === 'pendente' ? 'selected' : '' ?>>Pendentes</option>
-            <option value="vencido" <?= $status === 'vencido' ? 'selected' : '' ?>>Vencidas</option>
-            <option value="pago" <?= $status === 'pago' ? 'selected' : '' ?>>Recebidas</option>
-            <option value="cancelado" <?= $status === 'cancelado' ? 'selected' : '' ?>>Canceladas</option>
-            <option value="" <?= $status === '' ? 'selected' : '' ?>>Todas</option>
-            <option value="excluido" <?= $status === 'excluido' ? 'selected' : '' ?>>Excluídas</option>
-        </select>
-        <select name="boleto" class="form-select filtro-controle" style="width:190px" onchange="this.form.submit()" title="Situação do boleto no banco">
+        <?php $opcoesStatus = opcoesStatusReceber(); $statusDicas = ['suspenso' => 'Paradas pelo trancamento da matrícula']; $statusDivisoriaApos = 'suspenso'; require __DIR__ . '/../../../includes/filtro_status.php'; ?>
+        <select name="boleto" class="form-select filtro-controle" style="width:175px" onchange="this.form.submit()" title="Situação do boleto no banco">
             <?php foreach (opcoesFiltroBoletoReceber() as $valorBoleto => $rotuloBoleto): ?>
                 <option value="<?= e($valorBoleto) ?>" <?= ($_SESSION['filtro_contas_receber']['boleto'] ?? '') === $valorBoleto ? 'selected' : '' ?>><?= e($rotuloBoleto) ?></option>
             <?php endforeach; ?>
         </select>
-        <div class="input-group filtro-busca">
+        <div class="input-group filtro-busca" style="width: 250px">
             <span class="input-group-text"><i class="bi bi-search"></i></span>
             <input type="search" name="busca" class="form-control" placeholder="Aluno (nome ou CPF)" value="<?= e($busca) ?>" onsearch="this.form.submit()">
         </div>
-        <?php require __DIR__ . '/../../../includes/filtro_periodo.php'; ?>
-        <select name="agrupar" class="form-select filtro-controle" style="width:190px" onchange="this.form.submit()" title="Agrupar a lista">
+        <?php $periodoTipos = ['vencimento' => 'Vencimento', 'pagamento' => 'Pagamento']; $periodoTipo = $_SESSION['filtro_contas_receber']['data_tipo']; require __DIR__ . '/../../../includes/filtro_periodo.php'; ?>
+        <select name="agrupar" class="form-select filtro-controle" style="width:205px" onchange="this.form.submit()" title="Agrupar a lista">
             <?php foreach ($opcoesAgrupar as $valorOpcao => $rotulo): ?>
                 <option value="<?= e($valorOpcao) ?>" <?= $agrupar === $valorOpcao ? 'selected' : '' ?>><?= e($rotulo) ?></option>
             <?php endforeach; ?>

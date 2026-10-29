@@ -41,7 +41,13 @@ if ($desconto) {
     array_unshift($instrucoes, 'ATÉ ' . formatDate($desconto['data_limite']) . ': DESCONTO DE ' . formatMoney($desconto['desconto'])
         . ' — PAGUE ' . formatMoney($desconto['valor_com_desconto']) . '.');
 }
-$instrucoes[] = 'Referente a: ' . $parcela['descricao'] . '.';
+// Instruções livres da conta bancária (Contas bancárias › Instruções do boleto).
+foreach ([1, 2, 3] as $n) {
+    if (trim((string) ($conta['instrucao_boleto_' . $n] ?? '')) !== '') {
+        $instrucoes[] = trim($conta['instrucao_boleto_' . $n]);
+    }
+}
+$instrucoes[] = 'Referente a: ' . rtrim($parcela['descricao'], '.') . '.';
 // QR Code do Pix: só quando o banco devolveu o Pix. Na prévia (antes de
 // registrar) aparece borrado, marcando o lugar dele.
 $temPix = (bool) $dados['pix_copia_cola'];
