@@ -5,7 +5,7 @@ exigirVerFinanceiro();
 $pdo = getDB();
 
 $filtros = [
-    'status' => implode(',', listaStatusReceber($_GET['status'] ?? 'pendente')),
+    'status' => implode(',', listaStatusReceber($_GET['status'] ?? 'pendente,vencido')),
     'data_tipo' => ($_GET['data_tipo'] ?? '') === 'pagamento' ? 'pagamento' : 'vencimento',
     'data_inicio' => $_GET['data_inicio'] ?? '',
     'data_fim' => $_GET['data_fim'] ?? '',

@@ -4,7 +4,7 @@ exigirVerFinanceiro();
 
 $pdo = getDB();
 
-$status = implode(',', listaStatusPagar($_GET['status'] ?? 'pendente'));
+$status = implode(',', listaStatusPagar($_GET['status'] ?? 'pendente,vencido'));
 $dataInicio = $_GET['data_inicio'] ?? '';
 $dataFim = $_GET['data_fim'] ?? '';
 

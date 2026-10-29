@@ -7,7 +7,7 @@ $pdo = getDB();
 // Lembra o último filtro usado nesta tela entre uma visita e outra — sem
 // isso, todo acesso pelo menu resetava pra "Pendentes" e perdia o período
 // escolhido, obrigando a escolher tudo de novo só pra ajustar a data.
-$_SESSION['filtro_contas_pagar'] = array_merge(['status' => 'pendente', 'data_inicio' => '', 'data_fim' => ''], $_SESSION['filtro_contas_pagar'] ?? []);
+$_SESSION['filtro_contas_pagar'] = array_merge(['status' => 'pendente,vencido', 'data_inicio' => '', 'data_fim' => ''], $_SESSION['filtro_contas_pagar'] ?? []);
 if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim'])) {
     $_SESSION['filtro_contas_pagar'] = [
         'status' => implode(',', listaStatusPagar($_GET['status'] ?? [])),

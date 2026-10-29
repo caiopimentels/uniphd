@@ -301,6 +301,7 @@ function filtroBuscaAlunoReceber(string $busca): array
 }
 
 /** Situações do filtro do Contas a receber (podem ser marcadas várias). */
+/** Situações do filtro do Contas a receber. Pendente = ainda não venceu; Vencida = passou do vencimento sem pagar. */
 function opcoesStatusReceber(): array
 {
     return ['pendente' => 'Pendentes', 'vencido' => 'Vencidas', 'pago' => 'Recebidas', 'cancelado' => 'Canceladas', 'suspenso' => 'Suspensas', 'excluido' => 'Excluídas'];
@@ -329,7 +330,7 @@ function listaStatusPagar($valor): array
 function condicaoStatusPagar(array $marcados): string
 {
     $condicoes = [
-        'pendente' => "cp.status = 'pendente'",
+        'pendente' => "(cp.status = 'pendente' AND cp.data_vencimento >= CURDATE())",
         'vencido' => "(cp.status = 'pendente' AND cp.data_vencimento < CURDATE())",
         'pago' => "cp.status = 'pago'",
         'cancelado' => "cp.status = 'cancelado'",
@@ -770,7 +771,7 @@ function buscarContasReceber(PDO $pdo, array $filtros): array
     // menos as excluídas (já tinham passado pelo banco), que só aparecem
     // quando marcadas.
     $condicoesStatus = [
-        'pendente' => "cr.status = 'pendente'",
+        'pendente' => "cr.status = 'pendente' AND cr.data_vencimento >= CURDATE()",
         'vencido' => "cr.status = 'pendente' AND cr.data_vencimento < CURDATE()",
         'pago' => "cr.status = 'pago'",
         'cancelado' => "cr.status = 'cancelado' AND cr.suspensa_trancamento = 0",

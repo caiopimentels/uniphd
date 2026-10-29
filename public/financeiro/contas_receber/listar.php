@@ -9,7 +9,7 @@ agendarBaixaBoletosCancelados();
 // Lembra o último filtro usado nesta tela entre uma visita e outra — sem
 // isso, todo acesso pelo menu resetava pra "Pendentes" e perdia o período
 // escolhido, obrigando a escolher tudo de novo só pra ajustar a data.
-$_SESSION['filtro_contas_receber'] = array_merge(['status' => 'pendente', 'data_tipo' => 'vencimento', 'data_inicio' => '', 'data_fim' => '', 'agrupar' => '', 'busca' => '', 'boleto' => ''], $_SESSION['filtro_contas_receber'] ?? []);
+$_SESSION['filtro_contas_receber'] = array_merge(['status' => 'pendente,vencido', 'data_tipo' => 'vencimento', 'data_inicio' => '', 'data_fim' => '', 'agrupar' => '', 'busca' => '', 'boleto' => ''], $_SESSION['filtro_contas_receber'] ?? []);
 if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim']) || isset($_GET['agrupar']) || isset($_GET['busca']) || isset($_GET['boleto']) || isset($_GET['data_tipo'])) {
     $_SESSION['filtro_contas_receber'] = [
         'status' => implode(',', listaStatusReceber($_GET['status'] ?? [])),
@@ -58,10 +58,11 @@ $acoesMassa = array_values(array_filter([
 $hoje = date('Y-m-d');
 $pendentesLista = array_filter($contas, fn ($c) => $c['status'] === 'pendente');
 $vencidasLista = array_filter($pendentesLista, fn ($c) => $c['data_vencimento'] < $hoje);
+$aVencerLista = array_filter($pendentesLista, fn ($c) => $c['data_vencimento'] >= $hoje);
 $pagasLista = array_filter($contas, fn ($c) => $c['status'] === 'pago');
 $informacoes = [
     ['Lançamentos na lista', count($contas), ''],
-    ['Em aberto', count($pendentesLista) . ' · ' . formatMoney(array_sum(array_column($pendentesLista, 'valor'))), ''],
+    ['Pendentes', count($aVencerLista) . ' · ' . formatMoney(array_sum(array_column($aVencerLista, 'valor'))), ''],
     ['Vencidas', count($vencidasLista) . ' · ' . formatMoney(array_sum(array_column($vencidasLista, 'valor'))), $vencidasLista ? 'estoque-baixo' : ''],
     ['Recebidas', count($pagasLista) . ' · ' . formatMoney(array_sum(array_map(fn ($c) => (float) ($c['valor_recebido'] ?? $c['valor']), $pagasLista))), ''],
 ];
