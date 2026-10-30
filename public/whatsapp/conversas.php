@@ -40,6 +40,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($acao === 'devolver') {
         $pdo->prepare("UPDATE whatsapp_conversas SET modo = 'ia', aguardando = 0 WHERE id = ?")->execute([$id]);
         gravarMensagemWhatsapp($pdo, $id, 'sistema', usuarioAtualNome() . ' devolveu a conversa para a IA');
+        // A última mensagem é do cliente (ficou sem resposta enquanto estava
+        // com a equipe)? A IA responde agora, depois de a tela já ter voltado.
+        $stmt = $pdo->prepare("SELECT id, autor, texto, criado_em >= NOW() - INTERVAL 24 HOUR AS recente FROM whatsapp_mensagens WHERE conversa_id = ? AND autor <> 'sistema' ORDER BY id DESC LIMIT 1");
+        $stmt->execute([$id]);
+        $ultima = $stmt->fetch();
+        if ($ultima && $ultima['autor'] === 'cliente' && $ultima['texto'] !== null && $ultima['recente']) {
+            header('Location: ' . $voltar);
+            session_write_close();
+            if (function_exists('fastcgi_finish_request')) {
+                fastcgi_finish_request();
+            }
+            set_time_limit(180);
+            try {
+                responderConversaWhatsapp($pdo, $id, (int) $ultima['id']);
+            } catch (Throwable $e) {
+                error_log('[WhatsApp] ' . $e->getMessage());
+            }
+            exit;
+        }
     } elseif ($acao === 'resolvido') {
         $pdo->prepare('UPDATE whatsapp_conversas SET aguardando = 0 WHERE id = ?')->execute([$id]);
     }

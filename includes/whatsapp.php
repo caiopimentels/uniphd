@@ -356,6 +356,11 @@ function contextoCursosWhatsapp(PDO $pdo): string
     }
     $linhas[] = 'Portal do aluno (inscrições online): ' . urlAbsoluta('/portal/turmas.php');
     $linhas[] = '';
+    // Grade curricular = módulos do curso, com a carga horária de cada um.
+    $listarModulos = fn (int $cursoId) => implode('; ', array_map(
+        fn ($m) => $m['nome'] . ($m['carga_horaria'] ? ' (' . (int) $m['carga_horaria'] . 'h)' : ''),
+        modulosDoCurso($pdo, $cursoId)
+    ));
     $turmas = turmasAbertasPortal($pdo);
     if (!$turmas) {
         $linhas[] = 'No momento não há turmas com inscrição aberta.';
@@ -371,7 +376,7 @@ function contextoCursosWhatsapp(PDO $pdo): string
         if (in_array('avista', $modalidades, true) && valorAvistaTurma($t) !== null) {
             $valores[] = 'à vista ' . formatMoney(valorAvistaTurma($t));
         }
-        $modulos = array_column(modulosDoCurso($pdo, (int) $t['curso_id']), 'nome');
+        $modulos = $listarModulos((int) $t['curso_id']);
         $linhas[] = '## ' . $t['curso_nome'] . ' — turma ' . $t['nome'];
         $linhas[] = '- Início: ' . ($t['data_inicio'] ? formatDate($t['data_inicio']) : 'a definir (começa quando atingir o mínimo de alunos)') . ' · duração: ' . textoDuracaoTurma($t);
         if ($agenda = textoAgendaTurma($t)) {
@@ -390,7 +395,7 @@ function contextoCursosWhatsapp(PDO $pdo): string
             $linhas[] = '- Inscrições até: ' . formatDate($t['portal_inscricoes_ate']);
         }
         if ($modulos) {
-            $linhas[] = '- Conteúdo (módulos): ' . implode('; ', $modulos);
+            $linhas[] = '- Grade curricular (módulos): ' . $modulos;
         }
         $descricao = trim((string) ($t['portal_descricao'] ?: $t['curso_descricao']));
         if ($descricao !== '') {
@@ -398,6 +403,23 @@ function contextoCursosWhatsapp(PDO $pdo): string
         }
         $linhas[] = '- Link para se inscrever: ' . urlAbsoluta('/portal/turma.php?id=' . (int) $t['id']);
         $linhas[] = '';
+    }
+
+    // Cursos ativos sem turma aberta agora: a IA conhece o nome e a grade,
+    // mas não tem data nem preço para passar.
+    $abertos = array_map(fn ($t) => mb_strtolower(trim($t['curso_nome'])), $turmas);
+    $outros = [];
+    foreach ($pdo->query('SELECT id, nome, carga_horaria FROM cursos WHERE ativo = 1 ORDER BY nome') as $c) {
+        if (in_array(mb_strtolower(trim($c['nome'])), $abertos, true) || isset($outros[mb_strtolower(trim($c['nome']))])) {
+            continue;
+        }
+        $modulos = $listarModulos((int) $c['id']);
+        $outros[mb_strtolower(trim($c['nome']))] = '- ' . $c['nome'] . ($c['carga_horaria'] ? ' (' . (int) $c['carga_horaria'] . ' horas)' : '')
+            . ($modulos !== '' ? ' — grade curricular (módulos): ' . $modulos : '');
+    }
+    if ($outros) {
+        $linhas[] = '## Outros cursos da instituição, SEM turma com inscrição aberta no momento (não há data, preço nem link para passar)';
+        array_push($linhas, ...array_values($outros));
     }
     return implode("\n", $linhas);
 }
@@ -414,6 +436,8 @@ Como responder:
 - Português do Brasil, simpático, direto e curto (estilo WhatsApp: no máximo uns 5 parágrafos curtos). Pode usar poucos emojis.
 - Use SOMENTE as informações abaixo. Nunca invente cursos, preços, datas, vagas, descontos, formas de pagamento ou regras. Se a informação não estiver abaixo, diga que vai verificar com a equipe.
 - Para se inscrever, mande o link da turma. Se a pessoa quiser saber de todos os cursos, resuma e ofereça detalhes.
+- "Grade curricular", "grade", "ementa", "conteúdo programático", "disciplinas" e "matérias" são os módulos do curso: quando pedirem, liste os módulos (com as horas, se houver).
+- Se perguntarem por um curso que está em "Outros cursos" (sem turma aberta), diga que no momento não há turma com inscrição aberta para ele, responda o que souber (como a grade) e pergunte se a pessoa quer que a equipe avise quando abrir; se ela quiser, responda {$marca}.
 - Não peça CPF, documentos nem dados pessoais.
 - Se você já respondeu antes nesta conversa, não se apresente nem cumprimente de novo: continue a conversa de onde parou. Responda tudo o que a pessoa escreveu numa resposta só, sem repetir o que já disse.
 - Responda exatamente {$marca} (só isso, sem mais nada) quando: a pessoa pedir para falar com uma pessoa/atendente; o assunto for pagamento, boleto, certificado, documentos, notas, faltas, reclamação ou qualquer coisa sobre a matrícula/situação dela; ou você não tiver a resposta nas informações abaixo.
@@ -544,6 +568,28 @@ function transferirConversaWhatsapp(PDO $pdo, array $cfg, array $conversa, strin
 }
 
 /**
+ * A IA já chamou a equipe e parou de responder, mas ninguém assumiu ainda e
+ * o cliente escreveu de novo: avisa que a mensagem chegou, para ele não
+ * ficar no vácuo. No máximo uma vez a cada 30 minutos por conversa, e não
+ * se alguém da equipe respondeu nesse tempo.
+ */
+function avisarClienteAguardandoWhatsapp(PDO $pdo, array $cfg, array $conversa): void
+{
+    if (!$conversa['aguardando']) {
+        return;
+    }
+    $texto = 'Recebemos sua mensagem! 😊 Já chamamos alguém da nossa equipe, que vai te responder por aqui em breve.';
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM whatsapp_mensagens WHERE conversa_id = ? AND criado_em >= NOW() - INTERVAL 30 MINUTE
+                           AND (autor = 'atendente' OR (autor = 'ia' AND texto = ?))");
+    $stmt->execute([$conversa['id'], $texto]);
+    if ((int) $stmt->fetchColumn() > 0) {
+        return;
+    }
+    $envio = enviarTextoWhatsapp($cfg, $conversa['numero'], $texto);
+    gravarMensagemWhatsapp($pdo, (int) $conversa['id'], 'ia', $texto, 'texto', $envio['id'], $envio['ok'] ? null : $envio['erro']);
+}
+
+/**
  * Depois de gravar uma mensagem do cliente: espera alguns segundos (a
  * pessoa costuma mandar várias seguidas), e só a última da sequência gera
  * a resposta. Conversa com atendente (modo humano) ou IA desligada: nada.
@@ -564,7 +610,11 @@ function responderConversaWhatsapp(PDO $pdo, int $conversaId, int $mensagemId): 
     $stmt = $pdo->prepare('SELECT * FROM whatsapp_conversas WHERE id = ?');
     $stmt->execute([$conversaId]);
     $conversa = $stmt->fetch();
-    if (!$conversa || !$cfg['ia_ativa'] || $conversa['modo'] !== 'ia' || !numeroLiberadoWhatsapp($cfg, $conversa['numero']) || ehNumeroAvisoWhatsapp($cfg, $conversa['numero'])) {
+    if (!$conversa || !$cfg['ia_ativa'] || !numeroLiberadoWhatsapp($cfg, $conversa['numero']) || ehNumeroAvisoWhatsapp($cfg, $conversa['numero'])) {
+        return;
+    }
+    if ($conversa['modo'] !== 'ia') {
+        avisarClienteAguardandoWhatsapp($pdo, $cfg, $conversa);
         return;
     }
     $resposta = respostaIaWhatsapp($pdo, $cfg, $conversaId);
