@@ -1348,3 +1348,8 @@ a.lateral-acao { text-decoration: none; }
     .pagina-acoes.acoes-no-topo { display: flex; }
 }
 @media print { .pagina-acoes-lateral { display: none !important; } .pagina-grade-lateral { display: block; } }
+
+/* Matrícula: a coluna de ações (desconto, trancar, cancelar...) acompanha a rolagem. */
+@media (min-width: 992px) {
+    .lateral-fixa { position: sticky; top: calc(var(--topnav-h, 58px) + 1rem); max-height: calc(100vh - var(--topnav-h, 58px) - 2rem); overflow-y: auto; padding-right: 4px; scrollbar-width: thin; }
+}

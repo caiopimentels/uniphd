@@ -181,7 +181,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <?php endif; ?>
                                 <?php if ($p['status'] === 'pago'): ?><a href="/financeiro/contas_receber/recibo.php?id=<?= (int) $p['id'] ?>&voltar=matricula" target="_blank" class="btn btn-sm btn-outline-secondary" title="Imprimir recibo"><i class="bi bi-receipt"></i></a><?php endif; ?>
                             <?php if ($p['status'] === 'pago' && !$p['pago_pelo_banco'] && usuarioPodeBaixarReceber()): ?>
-                                <form action="/financeiro/contas_receber/estornar.php" method="post" class="d-inline" onsubmit="return confirm(<?= e(json_encode('Estornar a baixa de ' . $p['descricao'] . '? A parcela volta a ficar em aberto, como se não tivesse sido paga.')) ?>);">
+                                <form action="/financeiro/contas_receber/estornar.php" method="post" class="d-inline" data-confirmar="<?= e('Estornar a baixa de ' . $p['descricao'] . '? A parcela volta a ficar em aberto, como se não tivesse sido paga.') ?>">
                                     <input type="hidden" name="id" value="<?= (int) $p['id'] ?>">
                                     <input type="hidden" name="voltar" value="matricula">
                                     <button type="submit" class="btn btn-sm btn-outline-warning" title="Estornar baixa (lançada errado)"><i class="bi bi-arrow-counterclockwise"></i></button>
@@ -198,9 +198,48 @@ require __DIR__ . '/../../includes/layout_header.php';
         </div>
     </div>
     <?php endif; ?>
+
+    <?php if (usuarioPodeLiberarCertificado() && in_array($matricula['status'], ['ativa', 'concluida'], true) && ($docsMatricula = documentosMatricula($pdo, (int) $id))): ?>
+    <div class="secao" id="documentos">
+        <div class="secao-titulo"><i class="bi bi-award"></i> Documentos do aluno</div>
+        <?php $bloqueiosMat = bloqueiosDocumentosMatricula($pdo, matriculaParaDocumentos($pdo, (int) $id)); ?>
+        <div class="card"><div class="card-body">
+            <?php foreach ($docsMatricula as $doc): ?>
+                <div class="d-flex flex-wrap align-items-center gap-2 py-2 border-bottom">
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold small"><?= e($doc['nome']) ?></div>
+                        <span class="badge text-bg-<?= e($doc['cor']) ?><?= $doc['cor'] === 'light' ? ' border' : '' ?> fw-normal text-wrap text-start"><?= e($doc['texto']) ?></span>
+                        <?php if ($doc['emitido'] && $doc['emitido']['liberado_por']): ?><div class="small text-muted"><?= $doc['emitido']['liberado'] ? 'liberado' : 'bloqueado' ?> por <?= e($doc['emitido']['liberado_por']) ?> em <?= formatDateTime($doc['emitido']['liberado_em']) ?></div><?php endif; ?>
+                    </div>
+                    <?php if ($doc['emitido']): ?>
+                        <a href="/portal/certificado.php?c=<?= e($doc['emitido']['codigo']) ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Abrir / imprimir"><i class="bi bi-box-arrow-up-right"></i></a>
+                    <?php endif; ?>
+                    <form action="/matriculas/documentos_liberar.php" method="post" class="d-inline-flex gap-1 align-items-center"<?= $doc['situacao'] !== 'liberado' && !($doc['disponivel'] && !$bloqueiosMat && in_array($doc['situacao'], ['aguardando', 'bloqueado'], true)) && usuarioEhAdmin() ? ' data-confirmar="' . e('Liberar mesmo assim? (' . $doc['texto'] . ')') . '"' : '' ?>>
+                        <input type="hidden" name="ids[]" value="<?= (int) $id ?>">
+                        <input type="hidden" name="emissao_id" value="<?= (int) $doc['id'] ?>">
+                        <input type="hidden" name="voltar" value="/matriculas/visualizar.php?id=<?= (int) $id ?>#documentos">
+                        <?php if ($doc['situacao'] === 'liberado'): ?>
+                            <button type="submit" name="liberado" value="0" class="btn btn-sm btn-outline-secondary"><i class="bi bi-lock"></i> Bloquear</button>
+                        <?php elseif ($doc['disponivel'] && !$bloqueiosMat && in_array($doc['situacao'], ['aguardando', 'bloqueado'], true)): ?>
+                            <button type="submit" name="liberado" value="1" class="btn btn-sm btn-success"><i class="bi bi-unlock"></i> Liberar</button>
+                        <?php elseif (usuarioEhAdmin()): ?>
+                            <input type="hidden" name="forcar" value="1">
+                            <button type="submit" name="liberado" value="1" class="btn btn-sm btn-outline-success" title="Liberar mesmo com pendência / antes de concluir"><i class="bi bi-unlock"></i> Liberar mesmo assim</button>
+                        <?php endif; ?>
+                    </form>
+                </div>
+            <?php endforeach; ?>
+            <?php if ($faltamDocs = pendenciasDocumentosMatricula($pdo, (int) $id)): ?>
+                <div class="small text-muted mt-2"><i class="bi bi-file-earmark-x"></i> Falta o aluno enviar / aprovar: <?= e(implode(', ', $faltamDocs)) ?>.
+                    <a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>&tab=documentos">Ver documentos</a></div>
+            <?php endif; ?>
+        </div></div>
+    </div>
+    <?php endif; ?>
 </div>
 
 <div class="col-lg-4">
+<div class="lateral-fixa">
     <?php if (usuarioPodeEditarFinanceiroAluno() && $matricula['status'] === 'ativa'): ?>
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-alarm"></i> Desconto por pontualidade</div>
@@ -232,51 +271,12 @@ require __DIR__ . '/../../includes/layout_header.php';
     </div>
     <?php endif; ?>
 
-    <?php if (usuarioPodeLiberarCertificado() && in_array($matricula['status'], ['ativa', 'concluida'], true) && ($docsMatricula = documentosMatricula($pdo, (int) $id))): ?>
-    <div class="secao" id="documentos">
-        <div class="secao-titulo"><i class="bi bi-award"></i> Documentos do aluno</div>
-        <?php $bloqueiosMat = bloqueiosDocumentosMatricula($pdo, matriculaParaDocumentos($pdo, (int) $id)); ?>
-        <div class="card"><div class="card-body">
-            <?php foreach ($docsMatricula as $doc): ?>
-                <div class="d-flex flex-wrap align-items-center gap-2 py-2 border-bottom">
-                    <div class="flex-grow-1">
-                        <div class="fw-semibold small"><?= e($doc['nome']) ?></div>
-                        <span class="badge text-bg-<?= e($doc['cor']) ?><?= $doc['cor'] === 'light' ? ' border' : '' ?> fw-normal text-wrap text-start"><?= e($doc['texto']) ?></span>
-                        <?php if ($doc['emitido'] && $doc['emitido']['liberado_por']): ?><div class="small text-muted"><?= $doc['emitido']['liberado'] ? 'liberado' : 'bloqueado' ?> por <?= e($doc['emitido']['liberado_por']) ?> em <?= formatDateTime($doc['emitido']['liberado_em']) ?></div><?php endif; ?>
-                    </div>
-                    <?php if ($doc['emitido']): ?>
-                        <a href="/portal/certificado.php?c=<?= e($doc['emitido']['codigo']) ?>" target="_blank" class="btn btn-sm btn-outline-primary" title="Abrir / imprimir"><i class="bi bi-box-arrow-up-right"></i></a>
-                    <?php endif; ?>
-                    <form action="/matriculas/documentos_liberar.php" method="post" class="d-inline-flex gap-1 align-items-center">
-                        <input type="hidden" name="ids[]" value="<?= (int) $id ?>">
-                        <input type="hidden" name="emissao_id" value="<?= (int) $doc['id'] ?>">
-                        <input type="hidden" name="voltar" value="/matriculas/visualizar.php?id=<?= (int) $id ?>#documentos">
-                        <?php if ($doc['situacao'] === 'liberado'): ?>
-                            <button type="submit" name="liberado" value="0" class="btn btn-sm btn-outline-secondary"><i class="bi bi-lock"></i> Bloquear</button>
-                        <?php elseif ($doc['disponivel'] && !$bloqueiosMat && in_array($doc['situacao'], ['aguardando', 'bloqueado'], true)): ?>
-                            <button type="submit" name="liberado" value="1" class="btn btn-sm btn-success"><i class="bi bi-unlock"></i> Liberar</button>
-                        <?php elseif (usuarioEhAdmin()): ?>
-                            <input type="hidden" name="forcar" value="1">
-                            <button type="submit" name="liberado" value="1" class="btn btn-sm btn-outline-success" title="Liberar mesmo com pendência / antes de concluir"
-                                    onclick="return confirm('Liberar mesmo assim? (<?= e(addslashes($doc['texto'])) ?>)');"><i class="bi bi-unlock"></i> Liberar mesmo assim</button>
-                        <?php endif; ?>
-                    </form>
-                </div>
-            <?php endforeach; ?>
-            <?php if ($faltamDocs = pendenciasDocumentosMatricula($pdo, (int) $id)): ?>
-                <div class="small text-muted mt-2"><i class="bi bi-file-earmark-x"></i> Falta o aluno enviar / aprovar: <?= e(implode(', ', $faltamDocs)) ?>.
-                    <a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>&tab=documentos">Ver documentos</a></div>
-            <?php endif; ?>
-        </div></div>
-    </div>
-    <?php endif; ?>
-
     <?php if ($podeGerenciar && $matricula['status'] === 'pendente'): ?>
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-person-check"></i> Confirmar sem esperar o pagamento</div>
         <div class="card"><div class="card-body">
             <p class="small text-muted mb-2">Coloca o aluno na turma agora. As parcelas continuam em aberto para ele pagar.</p>
-            <form action="/matriculas/confirmar.php" method="post" onsubmit="return confirm('Confirmar a matrícula agora, sem o pagamento?');">
+            <form action="/matriculas/confirmar.php" method="post" data-confirmar="Confirmar a matrícula agora, sem o pagamento?">
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
                 <button type="submit" class="btn btn-outline-success w-100"><i class="bi bi-check-lg"></i> Confirmar matrícula</button>
             </form>
@@ -341,7 +341,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                 As mensalidades com vencimento a partir da data abaixo deixam de ser cobradas.
                 As que já venceram e não foram pagas <strong>continuam em aberto</strong>.
             </p>
-            <form action="/matriculas/cancelar.php" method="post" onsubmit="return confirm('Cancelar esta matrícula? As mensalidades futuras serão canceladas.');">
+            <form action="/matriculas/cancelar.php" method="post" data-confirmar="Cancelar esta matrícula? As mensalidades futuras serão canceladas.">
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
                 <label class="form-label">Data do cancelamento</label>
                 <input type="date" name="data_cancelamento" class="form-control mb-2" value="<?= $hoje ?>" required>
@@ -356,7 +356,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="secao-titulo"><i class="bi bi-check2-circle"></i> Concluir</div>
         <div class="card"><div class="card-body">
             <p class="small text-muted mb-2">Marca que o aluno terminou o curso. As parcelas não mudam.</p>
-            <form action="/matriculas/concluir.php" method="post" onsubmit="return confirm('Marcar esta matrícula como concluída?');">
+            <form action="/matriculas/concluir.php" method="post" data-confirmar="Marcar esta matrícula como concluída?">
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
                 <button type="submit" class="btn btn-outline-secondary w-100"><i class="bi bi-check-lg"></i> Marcar como concluída</button>
             </form>
@@ -369,13 +369,14 @@ require __DIR__ . '/../../includes/layout_header.php';
         <div class="secao-titulo"><i class="bi bi-trash"></i> Excluir</div>
         <div class="card"><div class="card-body">
             <p class="small text-muted mb-2">Para corrigir uma matrícula feita por engano. Apaga a matrícula e todas as parcelas dela. Só é possível enquanto nenhuma parcela foi paga.</p>
-            <form action="/matriculas/excluir.php" method="post" onsubmit="return confirm('Excluir esta matrícula e todas as parcelas? Esta ação não pode ser desfeita.');">
+            <form action="/matriculas/excluir.php" method="post" data-confirmar="Excluir esta matrícula e todas as parcelas? Esta ação não pode ser desfeita.">
                 <input type="hidden" name="id" value="<?= (int) $id ?>">
                 <button type="submit" class="btn btn-outline-danger w-100"><i class="bi bi-trash"></i> Excluir matrícula</button>
             </form>
         </div></div>
     </div>
     <?php endif; ?>
+</div>
 </div>
 </div>
 
@@ -385,9 +386,11 @@ require __DIR__ . '/../../includes/layout_header.php';
 document.querySelectorAll('form[data-confirmar]').forEach((f) => f.addEventListener('submit', async (ev) => {
     if (f.dataset.ok) return;
     ev.preventDefault();
+    // requestSubmit com o botão clicado: o name/value dele (ex.: liberado=1) vai junto.
+    const botao = ev.submitter;
     if (await confirmarNoModal({ titulo: 'Confirmar', html: escapeHtml(f.dataset.confirmar) })) {
         f.dataset.ok = '1';
-        f.submit();
+        f.requestSubmit(botao);
     }
 }));
 </script>
