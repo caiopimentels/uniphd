@@ -26,7 +26,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
         responderJson(['sucesso' => false, 'mensagem' => 'Aluno não encontrado.']);
     }
     $stmt = $pdo->prepare("SELECT descricao, data_vencimento, valor FROM contas_receber
-                           WHERE aluno_id = ? AND status = 'pendente' AND excluido_em IS NULL AND data_vencimento < CURDATE() ORDER BY data_vencimento");
+                           WHERE aluno_id = ? AND status = 'pendente' AND excluido_em IS NULL AND data_vencimento < " . sqlCorteAtraso() . " ORDER BY data_vencimento");
     $stmt->execute([$alunoId]);
     $parcelas = $stmt->fetchAll();
     $ficha = fichaCobranca($pdo, $alunoId);

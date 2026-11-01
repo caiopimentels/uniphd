@@ -295,7 +295,7 @@ $turmas = $stmt->fetchAll();
 // aparece assim que o aluno é escolhido.
 $stmt = $pdo->prepare(
     "SELECT a.id, a.nome, a.cpf,
-            (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr WHERE cr.aluno_id = a.id AND cr.status = 'pendente' AND cr.data_vencimento < CURDATE()) AS atraso,
+            (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr WHERE cr.aluno_id = a.id AND cr.status = 'pendente' AND cr.data_vencimento < " . sqlCorteAtraso() . ") AS atraso,
             (SELECT l.status FROM liberacoes_inadimplencia l WHERE l.aluno_id = a.id AND l.status IN ('pendente', 'aprovada', 'negada')
               AND l.criado_em >= NOW() - INTERVAL 2 DAY ORDER BY l.id DESC LIMIT 1) AS liberacao
      FROM alunos a WHERE a.ativo = 1 OR a.id = ? ORDER BY a.nome"
@@ -487,7 +487,6 @@ require __DIR__ . '/../../includes/layout_header.php';
                        value="<?= e($dados['primeiro_vencimento']) ?>" oninput="atualizarPrevia()">
                 <div class="form-text">As demais vencem no mesmo dia, mês a mês.</div>
             </div>
-            <div class="col-12"><div class="form-text mt-0">Valores e formas de pagamento vêm da turma; mude aqui se este aluno paga diferente. Depois, cada parcela pode mudar em Contas a receber (inclusive reparcelar).</div></div>
         </div>
     </div>
 

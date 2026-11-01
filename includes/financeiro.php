@@ -330,8 +330,8 @@ function listaStatusPagar($valor): array
 function condicaoStatusPagar(array $marcados): string
 {
     $condicoes = [
-        'pendente' => "(cp.status = 'pendente' AND cp.data_vencimento >= CURDATE())",
-        'vencido' => "(cp.status = 'pendente' AND cp.data_vencimento < CURDATE())",
+        'pendente' => "(cp.status = 'pendente' AND cp.data_vencimento >= " . sqlCorteAtraso() . ")",
+        'vencido' => "(cp.status = 'pendente' AND cp.data_vencimento < " . sqlCorteAtraso() . ")",
         'pago' => "cp.status = 'pago'",
         'cancelado' => "cp.status = 'cancelado'",
     ];
@@ -370,8 +370,8 @@ function resumoFinanceiroAluno(PDO $pdo, int $alunoId): array
         "SELECT
             COALESCE(SUM(CASE WHEN status = 'pago' THEN COALESCE(valor_recebido, valor) END), 0) AS pago,
             COALESCE(SUM(CASE WHEN status = 'pendente' THEN valor END), 0) AS em_aberto,
-            COALESCE(SUM(CASE WHEN status = 'pendente' AND data_vencimento < CURDATE() THEN valor END), 0) AS vencido,
-            COUNT(CASE WHEN status = 'pendente' AND data_vencimento < CURDATE() THEN 1 END) AS parcelas_vencidas
+            COALESCE(SUM(CASE WHEN status = 'pendente' AND data_vencimento < " . sqlCorteAtraso() . " THEN valor END), 0) AS vencido,
+            COUNT(CASE WHEN status = 'pendente' AND data_vencimento < " . sqlCorteAtraso() . " THEN 1 END) AS parcelas_vencidas
          FROM contas_receber WHERE aluno_id = ?"
     );
     $stmt->execute([$alunoId]);
@@ -392,7 +392,7 @@ function resumoFinanceiroAluno(PDO $pdo, int $alunoId): array
  */
 function listarInadimplentes(PDO $pdo, array $filtros = []): array
 {
-    $where = "cr.status = 'pendente' AND cr.data_vencimento < CURDATE() AND cr.aluno_id IS NOT NULL";
+    $where = "cr.status = 'pendente' AND cr.data_vencimento < " . sqlCorteAtraso() . " AND cr.aluno_id IS NOT NULL";
     $params = [];
 
     if (!empty($filtros['turma_id'])) {
@@ -435,6 +435,9 @@ function listarInadimplentes(PDO $pdo, array $filtros = []): array
  * quanto falta. O dinheiro que de fato entrou/saiu fica no Fluxo de caixa.
  * categoria_id (0 = sem categoria) abre o detalhamento (detalheDRE).
  */
+// Linha "Tarifas bancárias" do DRE (não é uma categoria cadastrada).
+const ID_DRE_TARIFAS = -1;
+
 function calcularDRE(PDO $pdo, string $dataInicio, string $dataFim): array
 {
     $stmt = $pdo->prepare(
@@ -462,6 +465,18 @@ function calcularDRE(PDO $pdo, string $dataInicio, string $dataFim): array
     );
     $stmt->execute([$dataInicio, $dataFim]);
     $despesasPorCategoria = $stmt->fetchAll();
+
+    // Tarifas que o banco cobrou (emissão, liquidação, baixa...): o banco
+    // debita sozinho, então já contam como pagas. As que alguém lançou à mão
+    // em Contas a pagar (conta_pagar_id) já estão na categoria dela.
+    $stmt = $pdo->prepare('SELECT COUNT(*) AS quantidade, COALESCE(SUM(valor), 0) AS total FROM banco_tarifas WHERE conta_pagar_id IS NULL AND data BETWEEN ? AND ?');
+    $stmt->execute([$dataInicio, $dataFim]);
+    $tarifas = $stmt->fetch();
+    if ((int) $tarifas['quantidade'] > 0) {
+        $despesasPorCategoria[] = ['categoria_id' => ID_DRE_TARIFAS, 'categoria' => 'Tarifas bancárias', 'quantidade' => (int) $tarifas['quantidade'],
+            'total' => (float) $tarifas['total'], 'realizado' => (float) $tarifas['total']];
+        usort($despesasPorCategoria, fn ($a, $b) => (float) $b['total'] <=> (float) $a['total']);
+    }
 
     $totalReceitas = (float) array_sum(array_column($receitasPorCategoria, 'total'));
     $totalDespesas = (float) array_sum(array_column($despesasPorCategoria, 'total'));
@@ -491,6 +506,22 @@ function detalheDRE(PDO $pdo, string $tipo, int $id, string $dataInicio, string 
     $categoria = $id ? 'c.id = ?' : 'c.id IS NULL';
     $params = $id ? [$dataInicio, $dataFim, $id] : [$dataInicio, $dataFim];
     $hoje = date('Y-m-d');
+    if ($tipo === 'despesa' && $id === ID_DRE_TARIFAS) {
+        $stmt = $pdo->prepare(
+            "SELECT bt.id, bt.data, bt.tipo, bt.valor, cb.nosso_numero, cr.descricao AS parcela, a.nome AS aluno, ct.apelido AS conta
+             FROM banco_tarifas bt
+             JOIN contas_bancarias ct ON ct.id = bt.conta_bancaria_id
+             LEFT JOIN cobrancas_bancarias cb ON cb.id = bt.cobranca_id
+             LEFT JOIN contas_receber cr ON cr.id = bt.conta_receber_id
+             LEFT JOIN alunos a ON a.id = cr.aluno_id
+             WHERE bt.conta_pagar_id IS NULL AND bt.data BETWEEN ? AND ?
+             ORDER BY bt.data, bt.id"
+        );
+        $stmt->execute([$dataInicio, $dataFim]);
+        return array_map(fn ($l) => ['id' => (int) $l['id'], 'data' => $l['data'],
+            'descricao' => descricaoTarifaBanco($l), 'quem' => (string) ($l['aluno'] ?: $l['conta']), 'valor' => (float) $l['valor'], 'pago' => true,
+            'situacao' => 'Debitada pelo banco'], $stmt->fetchAll());
+    }
     if ($tipo === 'despesa') {
         $stmt = $pdo->prepare(
             "SELECT cp.id, cp.data_emissao AS data, cp.descricao, f.nome AS quem, t.nome AS turma, cp.valor, cp.status, cp.data_pagamento, cp.data_vencimento
@@ -504,7 +535,7 @@ function detalheDRE(PDO $pdo, string $tipo, int $id, string $dataInicio, string 
         $stmt->execute($params);
         return array_map(fn ($l) => ['id' => (int) $l['id'], 'data' => $l['data'], 'descricao' => $l['descricao'] . ($l['turma'] ? ' (' . $l['turma'] . ')' : ''),
             'quem' => (string) $l['quem'], 'valor' => (float) $l['valor'], 'pago' => $l['status'] === 'pago',
-            'situacao' => $l['status'] === 'pago' ? 'Pago em ' . formatDate($l['data_pagamento']) : ($l['data_vencimento'] < $hoje ? 'Vencido em ' . formatDate($l['data_vencimento']) : 'A pagar até ' . formatDate($l['data_vencimento']))],
+            'situacao' => $l['status'] === 'pago' ? 'Pago em ' . formatDate($l['data_pagamento']) : (vencimentoEmAtraso($l['data_vencimento']) ? 'Vencido em ' . formatDate($l['data_vencimento']) : 'A pagar até ' . formatDate($l['data_vencimento']))],
             $stmt->fetchAll());
     }
     $stmt = $pdo->prepare(
@@ -525,84 +556,106 @@ function detalheDRE(PDO $pdo, string $tipo, int $id, string $dataInicio, string 
 
 /**
  * Fluxo de caixa (regime de caixa): só o que realmente entrou/saiu do caixa
- * (contas a receber/pagar já baixadas, pela data de recebimento/pagamento),
- * em ordem cronológica e com saldo acumulado — como um extrato de conta
- * corrente, para acompanhar a evolução real do caixa. Diferente do DRE
- * (regime de competência), que conta pelo mês a que o lançamento se refere,
- * independente de já ter sido recebido ou pago.
+ * (contas a receber/pagar já baixadas, pela data de recebimento/pagamento,
+ * e as tarifas que o banco debitou), em ordem cronológica e com saldo
+ * acumulado — como um extrato de conta corrente. Diferente do DRE (regime
+ * de competência), que conta pelo mês a que o lançamento se refere.
+ *
+ * Saldo informado (Configurações: caixa_saldo_data/valor): o caixa parte
+ * desse valor no fim daquele dia e tudo o que veio antes é ignorado — a
+ * empresa começou a usar o sistema com lançamentos antigos incompletos.
  *
  * $dataInicio/$dataFim vazios = sem limite naquele lado (todo o período).
  */
 function calcularFluxoCaixa(PDO $pdo, string $dataInicio, string $dataFim): array
 {
-    // Saldo inicial = tudo que já tinha entrado/saído do caixa antes do
-    // início do período — sem isso, o saldo acumulado dentro do período
-    // não representaria o caixa real da empresa, só o líquido daqueles dias.
-    $saldoInicial = 0.0;
-    if ($dataInicio !== '') {
-        $stmt = $pdo->prepare("SELECT COALESCE(SUM(COALESCE(valor_recebido, valor)), 0) FROM contas_receber WHERE status = 'pago' AND data_recebimento < ?");
-        $stmt->execute([$dataInicio]);
-        $saldoInicial += (float) $stmt->fetchColumn();
+    $config = buscarConfiguracoes($pdo);
+    $saldoInformado = !empty($config['caixa_saldo_data'])
+        ? ['data' => $config['caixa_saldo_data'], 'valor' => (float) $config['caixa_saldo_valor']]
+        : null;
 
-        $stmt = $pdo->prepare("SELECT COALESCE(SUM(valor), 0) FROM contas_pagar WHERE status = 'pago' AND data_pagamento < ?");
-        $stmt->execute([$dataInicio]);
-        $saldoInicial -= (float) $stmt->fetchColumn();
+    // Movimentos de [$de, $ate] (null = sem limite), já no formato da tela.
+    $movimentosEntre = function (?string $de, ?string $ate) use ($pdo): array {
+        // " AND campo >= ? AND campo <= ?" com os parâmetros, só dos lados que têm limite.
+        $faixa = function (string $campo, array &$params) use ($de, $ate): string {
+            $sql = '';
+            if ($de !== null) {
+                $sql .= " AND {$campo} >= ?";
+                $params[] = $de;
+            }
+            if ($ate !== null) {
+                $sql .= " AND {$campo} <= ?";
+                $params[] = $ate;
+            }
+            return $sql;
+        };
+        $movimentos = [];
+
+        $params = [];
+        $cond = $faixa('cr.data_recebimento', $params);
+        $stmt = $pdo->prepare(
+            "SELECT cr.data_recebimento AS data, cr.descricao, COALESCE(cr.valor_recebido, cr.valor) AS valor, cr.criado_em,
+                    COALESCE(a.nome, c.nome, '-') AS origem
+             FROM contas_receber cr
+             LEFT JOIN alunos a ON a.id = cr.aluno_id
+             LEFT JOIN categorias_financeiras c ON c.id = cr.categoria_id
+             WHERE cr.status = 'pago' AND cr.data_recebimento IS NOT NULL{$cond}"
+        );
+        $stmt->execute($params);
+        foreach ($stmt->fetchAll() as $m) {
+            $movimentos[] = ['data' => $m['data'], 'tipo' => 'entrada', 'descricao' => $m['descricao'], 'origem' => $m['origem'], 'valor' => (float) $m['valor'], 'criado_em' => $m['criado_em']];
+        }
+
+        $params = [];
+        $cond = $faixa('cp.data_pagamento', $params);
+        $stmt = $pdo->prepare(
+            "SELECT cp.data_pagamento AS data, cp.descricao, cp.valor, cp.criado_em,
+                    COALESCE(f.nome, c.nome, '-') AS origem
+             FROM contas_pagar cp
+             LEFT JOIN fornecedores f ON f.id = cp.fornecedor_id
+             LEFT JOIN categorias_financeiras c ON c.id = cp.categoria_id
+             WHERE cp.status = 'pago' AND cp.data_pagamento IS NOT NULL{$cond}"
+        );
+        $stmt->execute($params);
+        foreach ($stmt->fetchAll() as $m) {
+            $movimentos[] = ['data' => $m['data'], 'tipo' => 'saida', 'descricao' => $m['descricao'], 'origem' => $m['origem'], 'valor' => (float) $m['valor'], 'criado_em' => $m['criado_em']];
+        }
+
+        // Tarifas do banco (as lançadas à mão em Contas a pagar já entraram acima).
+        $params = [];
+        $cond = $faixa('bt.data', $params);
+        $stmt = $pdo->prepare(
+            "SELECT bt.data, bt.tipo, bt.valor, bt.criado_em, cb.nosso_numero, cr.descricao AS parcela, ct.apelido AS conta
+             FROM banco_tarifas bt
+             JOIN contas_bancarias ct ON ct.id = bt.conta_bancaria_id
+             LEFT JOIN cobrancas_bancarias cb ON cb.id = bt.cobranca_id
+             LEFT JOIN contas_receber cr ON cr.id = bt.conta_receber_id
+             WHERE bt.conta_pagar_id IS NULL{$cond}"
+        );
+        $stmt->execute($params);
+        foreach ($stmt->fetchAll() as $m) {
+            $movimentos[] = ['data' => $m['data'], 'tipo' => 'saida', 'descricao' => descricaoTarifaBanco($m), 'origem' => $m['conta'], 'valor' => (float) $m['valor'], 'criado_em' => $m['criado_em'], 'tarifa' => true];
+        }
+        return $movimentos;
+    };
+    $liquido = fn (array $movs) => array_sum(array_map(fn ($m) => $m['tipo'] === 'entrada' ? $m['valor'] : -$m['valor'], $movs));
+    $diaSeguinte = fn (string $d) => date('Y-m-d', strtotime($d . ' +1 day'));
+    $diaAnterior = fn (string $d) => date('Y-m-d', strtotime($d . ' -1 day'));
+
+    // Onde o extrato começa de fato: com saldo informado, nunca antes do dia
+    // seguinte a ele. Saldo inicial = o que tinha no caixa antes desse começo.
+    $inicio = $dataInicio !== '' ? $dataInicio : null;
+    if ($saldoInformado) {
+        $aPartir = $diaSeguinte($saldoInformado['data']);
+        if ($inicio === null || $inicio < $aPartir) {
+            $inicio = $aPartir;
+        }
+        $saldoInicial = $saldoInformado['valor'] + ($inicio > $aPartir ? $liquido($movimentosEntre($aPartir, $diaAnterior($inicio))) : 0.0);
+    } else {
+        $saldoInicial = $inicio !== null ? $liquido($movimentosEntre(null, $diaAnterior($inicio))) : 0.0;
     }
 
-    $condEntrada = "cr.status = 'pago' AND cr.data_recebimento IS NOT NULL";
-    $condSaida = "cp.status = 'pago' AND cp.data_pagamento IS NOT NULL";
-    $paramsEntrada = [];
-    $paramsSaida = [];
-
-    if ($dataInicio !== '') {
-        $condEntrada .= ' AND cr.data_recebimento >= ?';
-        $condSaida .= ' AND cp.data_pagamento >= ?';
-        $paramsEntrada[] = $dataInicio;
-        $paramsSaida[] = $dataInicio;
-    }
-    if ($dataFim !== '') {
-        $condEntrada .= ' AND cr.data_recebimento <= ?';
-        $condSaida .= ' AND cp.data_pagamento <= ?';
-        $paramsEntrada[] = $dataFim;
-        $paramsSaida[] = $dataFim;
-    }
-
-    $stmt = $pdo->prepare(
-        "SELECT cr.data_recebimento AS data, cr.descricao, COALESCE(cr.valor_recebido, cr.valor) AS valor, cr.criado_em,
-                COALESCE(a.nome, c.nome, '-') AS origem
-         FROM contas_receber cr
-         LEFT JOIN alunos a ON a.id = cr.aluno_id
-         LEFT JOIN categorias_financeiras c ON c.id = cr.categoria_id
-         WHERE {$condEntrada}"
-    );
-    $stmt->execute($paramsEntrada);
-    $entradas = $stmt->fetchAll();
-
-    $stmt = $pdo->prepare(
-        "SELECT cp.data_pagamento AS data, cp.descricao, cp.valor, cp.criado_em,
-                COALESCE(f.nome, c.nome, '-') AS origem
-         FROM contas_pagar cp
-         LEFT JOIN fornecedores f ON f.id = cp.fornecedor_id
-         LEFT JOIN categorias_financeiras c ON c.id = cp.categoria_id
-         WHERE {$condSaida}"
-    );
-    $stmt->execute($paramsSaida);
-    $saidas = $stmt->fetchAll();
-
-    $movimentos = [];
-    foreach ($entradas as $mov) {
-        $movimentos[] = [
-            'data' => $mov['data'], 'tipo' => 'entrada', 'descricao' => $mov['descricao'],
-            'origem' => $mov['origem'], 'valor' => (float) $mov['valor'], 'criado_em' => $mov['criado_em'],
-        ];
-    }
-    foreach ($saidas as $mov) {
-        $movimentos[] = [
-            'data' => $mov['data'], 'tipo' => 'saida', 'descricao' => $mov['descricao'],
-            'origem' => $mov['origem'], 'valor' => (float) $mov['valor'], 'criado_em' => $mov['criado_em'],
-        ];
-    }
-
+    $movimentos = ($dataFim !== '' && $inicio !== null && $dataFim < $inicio) ? [] : $movimentosEntre($inicio, $dataFim !== '' ? $dataFim : null);
     usort($movimentos, fn ($a, $b) => [$a['data'], $a['criado_em']] <=> [$b['data'], $b['criado_em']]);
 
     $saldo = $saldoInicial;
@@ -612,11 +665,16 @@ function calcularFluxoCaixa(PDO $pdo, string $dataInicio, string $dataFim): arra
     }
     unset($mov);
 
+    $entradas = array_filter($movimentos, fn ($m) => $m['tipo'] === 'entrada');
+    $saidas = array_filter($movimentos, fn ($m) => $m['tipo'] === 'saida');
     return [
         'saldo_inicial' => $saldoInicial,
+        'inicio_efetivo' => $inicio,
+        'saldo_informado' => $saldoInformado,
         'movimentos' => $movimentos,
         'total_entradas' => array_sum(array_column($entradas, 'valor')),
         'total_saidas' => array_sum(array_column($saidas, 'valor')),
+        'total_tarifas' => array_sum(array_column(array_filter($saidas, fn ($m) => !empty($m['tarifa'])), 'valor')),
         'saldo_final' => $saldo,
     ];
 }
@@ -730,7 +788,7 @@ function resultadoTurmas(PDO $pdo, array $filtros = []): array
              SELECT m.turma_id,
                     SUM(CASE WHEN cr.status = 'pago' THEN COALESCE(cr.valor_recebido, cr.valor) ELSE 0 END) AS recebido,
                     SUM(CASE WHEN cr.status = 'pendente' THEN cr.valor ELSE 0 END) AS a_receber,
-                    SUM(CASE WHEN cr.status = 'pendente' AND cr.data_vencimento < CURDATE() THEN cr.valor ELSE 0 END) AS em_atraso
+                    SUM(CASE WHEN cr.status = 'pendente' AND cr.data_vencimento < " . sqlCorteAtraso() . " THEN cr.valor ELSE 0 END) AS em_atraso
              FROM contas_receber cr JOIN matriculas m ON m.id = cr.matricula_id
              GROUP BY m.turma_id
          ) r ON r.turma_id = t.id
@@ -771,8 +829,8 @@ function buscarContasReceber(PDO $pdo, array $filtros): array
     // menos as excluídas (já tinham passado pelo banco), que só aparecem
     // quando marcadas.
     $condicoesStatus = [
-        'pendente' => "cr.status = 'pendente' AND cr.data_vencimento >= CURDATE()",
-        'vencido' => "cr.status = 'pendente' AND cr.data_vencimento < CURDATE()",
+        'pendente' => "cr.status = 'pendente' AND cr.data_vencimento >= " . sqlCorteAtraso(),
+        'vencido' => "cr.status = 'pendente' AND cr.data_vencimento < " . sqlCorteAtraso(),
         'pago' => "cr.status = 'pago'",
         'cancelado' => "cr.status = 'cancelado' AND cr.suspensa_trancamento = 0",
         'suspenso' => "cr.status = 'cancelado' AND cr.suspensa_trancamento = 1",
@@ -846,7 +904,7 @@ function colunasListaPagar(): array
         'vencimento' => 'data_vencimento',
         'valor' => 'valor',
         'pago_em' => fn ($c) => $c['status'] === 'pago' ? $c['data_pagamento'] : null,
-        'status' => fn ($c) => contaStatusLabel($c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d') ? 'vencido' : $c['status']),
+        'status' => fn ($c) => contaStatusLabel($c['status'] === 'pendente' && vencimentoEmAtraso($c['data_vencimento']) ? 'vencido' : $c['status']),
     ];
 }
 
@@ -898,7 +956,7 @@ function agruparContasReceber(array $contas, string $agrupar): array
 // Quanto o aluno tem vencido e não pago (todas as turmas e avulsos).
 function valorAtrasoAluno(PDO $pdo, int $alunoId): float
 {
-    $stmt = $pdo->prepare("SELECT COALESCE(SUM(valor), 0) FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < CURDATE()");
+    $stmt = $pdo->prepare("SELECT COALESCE(SUM(valor), 0) FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < " . sqlCorteAtraso());
     $stmt->execute([$alunoId]);
     return (float) $stmt->fetchColumn();
 }

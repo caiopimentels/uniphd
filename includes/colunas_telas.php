@@ -105,7 +105,7 @@ function colunasTelaCursos(): array
 
 function colunasTelaReceber(PDO $pdo): array
 {
-    $vencida = fn ($c) => $c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d');
+    $vencida = fn ($c) => $c['status'] === 'pendente' && vencimentoEmAtraso($c['data_vencimento']);
     $status = fn ($c) => statusTelaParcela($c);
     $forma = fn ($c) => $c['forma_pagamento_id'] ? (string) meiosCobrancaForma($pdo, (int) $c['forma_pagamento_id'])['nome'] : '';
     return [
@@ -152,7 +152,7 @@ function colunasTelaReceber(PDO $pdo): array
 
 function colunasTelaPagar(): array
 {
-    $vencida = fn ($c) => $c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d');
+    $vencida = fn ($c) => $c['status'] === 'pendente' && vencimentoEmAtraso($c['data_vencimento']);
     return [
         'descricao' => ['rotulo' => 'Descrição', 'ordem' => 'descricao',
             'html' => fn ($c) => e($c['descricao'])

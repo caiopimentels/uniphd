@@ -57,7 +57,7 @@ function bloqueiosDocumentosMatricula(PDO $pdo, array $matricula): array
         $bloqueios['documentacao'] = 'Pendente de documentação (' . implode(', ', $faltam) . ')';
     }
     if ($matricula['bloquear_inadimplente']) {
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < CURDATE() AND excluido_em IS NULL");
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < " . sqlCorteAtraso() . " AND excluido_em IS NULL");
         $stmt->execute([$matricula['aluno_id']]);
         if ((int) $stmt->fetchColumn() > 0) {
             $bloqueios['financeiro'] = 'Pendência financeira';

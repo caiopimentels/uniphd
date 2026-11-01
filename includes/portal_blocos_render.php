@@ -97,7 +97,7 @@ $abrirLink = fn (array $c, string $chaveLink = 'botao_link') => !empty($c[$chave
                 $stmt = $pdo->prepare("SELECT m.pagamento_ate, m.lista_espera, c.nome AS curso_nome FROM matriculas m JOIN turmas t ON t.id = m.turma_id JOIN cursos c ON c.id = t.curso_id WHERE m.aluno_id = ? AND m.status = 'pendente'");
                 $stmt->execute([alunoAtualId()]);
                 $pendencias = $stmt->fetchAll();
-                $stmt = $pdo->prepare("SELECT COUNT(*) FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < CURDATE()");
+                $stmt = $pdo->prepare("SELECT COUNT(*) FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < " . sqlCorteAtraso());
                 $stmt->execute([alunoAtualId()]);
                 $vencidas = (int) $stmt->fetchColumn();
                 $faltamDocumentos = documentosParaEnviar(documentosDoAluno($pdo, alunoAtualId()));

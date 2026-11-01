@@ -5,7 +5,7 @@ $caixaTemSenha = !empty($caixaUsuario['email_caixa_senha_cripto']);
 ?>
 <div class="secao" style="max-width: 760px;">
     <div class="secao-titulo"><i class="bi bi-envelope"></i> Caixa de e-mail <span class="small text-muted fw-normal ms-1">(menu E-mail)</span></div>
-    <p class="small text-muted">O e-mail e a senha da caixa dele no provedor (o servidor fica em Configurações › E-mail). Com isso ele lê, responde e envia e-mails pelo sistema — cada um só vê a própria caixa.</p>
+    <p class="small text-muted">O e-mail e a senha da caixa dele no provedor (o servidor fica em Configurações › E-mail). Com isso ele lê, responde e envia e-mails pelo sistema.</p>
     <div class="row g-3">
         <div class="col-md-6">
             <label class="form-label">E-mail da caixa</label>
@@ -18,7 +18,6 @@ $caixaTemSenha = !empty($caixaUsuario['email_caixa_senha_cripto']);
             <?php if ($caixaTemSenha): ?>
                 <div class="form-check mt-1"><input class="form-check-input" type="checkbox" name="email_caixa_remover_senha" id="caixa-remover" value="1"><label class="form-check-label small" for="caixa-remover">Tirar a senha (desliga a caixa)</label></div>
             <?php endif; ?>
-            <div class="form-text">Guardada criptografada; ninguém consegue ver depois.</div>
         </div>
         <div class="col-md-6">
             <label class="form-label">Nome que aparece para quem recebe</label>

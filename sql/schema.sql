@@ -172,6 +172,9 @@ CREATE TABLE configuracoes (
     empresa_bairro VARCHAR(100) DEFAULT NULL,
     empresa_cidade VARCHAR(100) DEFAULT NULL,
     empresa_uf CHAR(2) DEFAULT NULL,
+    -- Saldo do caixa informado à mão (fim do dia): o Fluxo de caixa parte dele e ignora o que veio antes.
+    caixa_saldo_data DATE DEFAULT NULL,
+    caixa_saldo_valor DECIMAL(12,2) DEFAULT NULL,
 
     -- Matrícula: dia do mês sugerido para o vencimento das mensalidades.
     dia_vencimento_padrao TINYINT UNSIGNED NOT NULL DEFAULT 10,
@@ -382,6 +385,9 @@ CREATE TABLE contas_bancarias (
     juros_percentual DECIMAL(7,4) NOT NULL DEFAULT 0,
     multa_tipo CHAR(2) NOT NULL DEFAULT '03',
     multa_percentual DECIMAL(7,4) NOT NULL DEFAULT 0,
+    -- Protesto automático (opcional): pedido ao Itaú no registro, sem texto nas instruções.
+    protesto_ativo TINYINT(1) NOT NULL DEFAULT 0,
+    protesto_dias SMALLINT DEFAULT NULL,
     tarifa_emissao DECIMAL(10,2) NOT NULL DEFAULT 0,
     tarifa_liquidacao DECIMAL(10,2) NOT NULL DEFAULT 0,
     tarifa_baixa DECIMAL(10,2) NOT NULL DEFAULT 0,
@@ -934,6 +940,17 @@ CREATE TABLE parcela_historico (
     descricao VARCHAR(255) NOT NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_parcela_historico (conta_receber_id, criado_em)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Feriados da cidade: vencimento em feriado só atrasa depois do próximo dia
+-- útil. todo_ano = repete no mesmo dia/mês; senão vale só naquela data.
+CREATE TABLE feriados (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    data DATE NOT NULL,
+    nome VARCHAR(100) NOT NULL,
+    todo_ano TINYINT(1) NOT NULL DEFAULT 1,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_feriados_data (data)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE banco_tarifas (

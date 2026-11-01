@@ -16,7 +16,7 @@ $stmt = $pdo->prepare(
     "SELECT tipo,
             SUM(CASE WHEN status = 'pago' THEN COALESCE(valor_recebido, valor) ELSE 0 END) AS recebido,
             SUM(CASE WHEN status = 'pendente' THEN valor ELSE 0 END) AS a_receber,
-            SUM(CASE WHEN status = 'pendente' AND data_vencimento < CURDATE() THEN valor ELSE 0 END) AS em_atraso
+            SUM(CASE WHEN status = 'pendente' AND data_vencimento < " . sqlCorteAtraso() . " THEN valor ELSE 0 END) AS em_atraso
      FROM (
          SELECT CASE cf.chave WHEN 'taxa_matricula' THEN 'Taxas de matrícula' WHEN 'mensalidade' THEN 'Mensalidades' ELSE 'Outras' END AS tipo,
                 cr.status, cr.valor, cr.valor_recebido, cr.data_vencimento
@@ -156,7 +156,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <?php if ($d['status'] === 'pago'): ?>
                                     <span class="badge text-bg-success">Pago <?= formatDate($d['data_pagamento']) ?></span>
                                 <?php else: ?>
-                                    <span class="badge <?= $d['data_vencimento'] < $hoje ? 'text-bg-danger' : 'text-bg-warning' ?>"><?= $d['data_vencimento'] < $hoje ? 'Vencida' : 'A pagar' ?></span>
+                                    <span class="badge <?= vencimentoEmAtraso($d['data_vencimento']) ? 'text-bg-danger' : 'text-bg-warning' ?>"><?= vencimentoEmAtraso($d['data_vencimento']) ? 'Vencida' : 'A pagar' ?></span>
                                 <?php endif; ?>
                             </td>
                         </tr>

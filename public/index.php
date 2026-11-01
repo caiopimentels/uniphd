@@ -41,7 +41,7 @@ if ($podeVerFinanceiro) {
         "SELECT
             COALESCE(SUM(CASE WHEN status = 'pago' AND data_recebimento BETWEEN DATE_FORMAT(CURDATE(), '%Y-%m-01') AND LAST_DAY(CURDATE()) THEN COALESCE(valor_recebido, valor) END), 0) AS recebido_mes,
             COALESCE(SUM(CASE WHEN status = 'pendente' AND data_vencimento BETWEEN CURDATE() AND LAST_DAY(CURDATE()) THEN valor END), 0) AS a_receber_mes,
-            COALESCE(SUM(CASE WHEN status = 'pendente' AND data_vencimento < CURDATE() THEN valor END), 0) AS em_atraso
+            COALESCE(SUM(CASE WHEN status = 'pendente' AND data_vencimento < " . sqlCorteAtraso() . " THEN valor END), 0) AS em_atraso
          FROM contas_receber"
     )->fetch();
 
@@ -192,7 +192,7 @@ require __DIR__ . '/../includes/layout_header.php';
                     <?php foreach ($contasAPagar as $c): ?>
                         <tr class="cursor-pointer" onclick="window.location='/financeiro/contas_pagar/baixar.php?id=<?= (int) $c['id'] ?>'">
                             <td><?= e($c['descricao']) ?><?php if ($c['fornecedor_nome']): ?> <span class="small text-muted">· <?= e($c['fornecedor_nome']) ?></span><?php endif; ?></td>
-                            <td class="<?= $c['data_vencimento'] < date('Y-m-d') ? 'estoque-baixo' : '' ?>"><?= formatDate($c['data_vencimento']) ?></td>
+                            <td class="<?= vencimentoEmAtraso($c['data_vencimento']) ? 'estoque-baixo' : '' ?>"><?= formatDate($c['data_vencimento']) ?></td>
                             <td class="text-end"><?= formatMoney($c['valor']) ?></td>
                         </tr>
                     <?php endforeach; ?>

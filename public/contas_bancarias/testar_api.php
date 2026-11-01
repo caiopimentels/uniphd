@@ -27,4 +27,4 @@ $stmt->execute([$resultado['ok'] ? 1 : 0, mb_strimwidth($resultado['mensagem'], 
 registrarAtividade('configuracoes', 'edicao', 'Teste da API do banco (' . $conta['apelido'] . '): ' . ($resultado['ok'] ? 'sucesso' : 'falha'));
 
 flash($resultado['ok'] ? 'success' : 'danger', ($resultado['ok'] ? 'Conexão OK! ' : 'A conexão falhou. ') . $resultado['mensagem']);
-redirect('/contas_bancarias/form.php?id=' . $id);
+redirect('/contas_bancarias/form.php?id=' . $id . '&aba=api');

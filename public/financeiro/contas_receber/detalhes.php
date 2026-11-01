@@ -27,7 +27,7 @@ if (!$p) {
 }
 
 $hoje = date('Y-m-d');
-$vencida = $p['status'] === 'pendente' && $p['data_vencimento'] < $hoje;
+$vencida = $p['status'] === 'pendente' && vencimentoEmAtraso($p['data_vencimento']);
 $podeAlterar = $p['status'] === 'pendente' && !$p['excluido_em'] && usuarioPodeEditarFinanceiroAluno();
 
 // Último boleto/Pix da parcela no banco (o que vale, ou o último que houve).

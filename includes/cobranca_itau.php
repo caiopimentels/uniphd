@@ -387,6 +387,12 @@ function previaCobrancaItau(PDO $pdo, int $contaReceberId): array
             'desconto' => $desconto,
         ],
     ];
+    // Protesto automático (opcional na conta): o Itaú protesta sozinho N dias
+    // corridos depois do vencimento se não houver pagamento. De propósito,
+    // nada sobre protesto vai nas instruções impressas do boleto.
+    if (!empty($conta['protesto_ativo']) && (int) $conta['protesto_dias'] >= 1 && (int) $conta['protesto_dias'] <= 99) {
+        $payload['dado_boleto']['protesto'] = ['protesto' => true, 'quantidade_dias_protesto' => (int) $conta['protesto_dias']];
+    }
     // Chave Pix da conta (opcional na API): vai em dados_qrcode.chave. Sem
     // ela, o Itaú usa a chave do cadastro do beneficiário, se houver.
     if ($instrumento === 'boleto_pix' && !empty($conta['chave_pix'])) {
@@ -1277,6 +1283,14 @@ function descontoDoBlocoItau(?array $bloco): ?array
 function tiposTarifaBanco(): array
 {
     return ['emissao' => 'Emissão de boleto', 'liquidacao' => 'Liquidação (boleto pago)', 'baixa' => 'Baixa (cancelamento)', 'alteracao' => 'Alteração de boleto'];
+}
+
+/** "Tarifa Itaú: liquidação (boleto pago) · nº 00010005 · Mensalidade 3/16" (DRE e fluxo de caixa). */
+function descricaoTarifaBanco(array $tarifa): string
+{
+    return 'Tarifa bancária: ' . mb_strtolower(tiposTarifaBanco()[$tarifa['tipo']] ?? $tarifa['tipo'])
+        . (!empty($tarifa['nosso_numero']) ? ' · nº ' . formatarNossoNumeroItau((int) $tarifa['nosso_numero']) : '')
+        . (!empty($tarifa['parcela']) ? ' · ' . $tarifa['parcela'] : '');
 }
 
 function registrarTarifaBanco(PDO $pdo, ?array $conta, string $tipo, ?int $contaReceberId, ?int $cobrancaId, ?string $data = null): void

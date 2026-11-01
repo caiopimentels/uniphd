@@ -17,6 +17,12 @@ if (!$conta) {
     redirect('/contas_bancarias/listar.php');
 }
 
+// Troca o certificado e o client_secret: pede a senha de quem está mexendo.
+if (!senhaDoUsuarioConfere($pdo, (string) ($_POST['senha_confirmacao'] ?? ''))) {
+    flash('danger', 'Senha incorreta: o certificado não foi gerado. Confirme com a sua senha de acesso ao sistema.');
+    redirect('/contas_bancarias/form.php?id=' . $id . '&aba=api#certificado');
+}
+
 $comToken = input('modo') === 'token';
 $resultado = solicitarCertificadoItau($pdo, $conta, $comToken ? (string) ($_POST['token_temporario'] ?? '') : null);
 if (!$resultado['ok']) {
@@ -25,4 +31,4 @@ if (!$resultado['ok']) {
 }
 registrarAtividade('configuracoes', 'edicao', 'Certificado do Itaú (' . $conta['apelido'] . ') — ' . ($comToken ? 'com token temporário' : 'com o access token') . ': ' . ($resultado['ok'] ? 'gerado' : 'falhou'));
 flash($resultado['ok'] ? 'success' : 'danger', $resultado['mensagem']);
-redirect('/contas_bancarias/form.php?id=' . $id . '#certificado');
+redirect('/contas_bancarias/form.php?id=' . $id . '&aba=api#certificado');

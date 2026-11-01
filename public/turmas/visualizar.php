@@ -34,9 +34,9 @@ $podeLiberarCertificado = usuarioPodeLiberarCertificado();
 $stmt = $pdo->prepare(
     "SELECT m.*, a.nome AS aluno_nome, a.telefone AS aluno_telefone,
             (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr
-              WHERE cr.matricula_id = m.id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < CURDATE()) AS valor_vencido,
+              WHERE cr.matricula_id = m.id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < " . sqlCorteAtraso() . ") AS valor_vencido,
             (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr
-              WHERE cr.aluno_id = m.aluno_id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < CURDATE()) AS valor_vencido_aluno,
+              WHERE cr.aluno_id = m.aluno_id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < " . sqlCorteAtraso() . ") AS valor_vencido_aluno,
             (SELECT COALESCE(SUM(COALESCE(cr.valor_recebido, cr.valor)), 0) FROM contas_receber cr
               WHERE cr.matricula_id = m.id AND cr.status = 'pago') AS valor_pago,
             EXISTS (SELECT 1 FROM contas_receber cr WHERE cr.matricula_id = m.id AND cr.status = 'pago') AS tem_pago,
@@ -613,7 +613,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <?php if (!$despesasTurma): ?>
                 <tr><td colspan="6" class="text-center text-muted py-4">Nenhuma despesa lançada. Use "Lançar despesa" para pagamento do professor, palestrante, material...</td></tr>
             <?php endif; ?>
-            <?php foreach ($despesasTurma as $d): $vencidaDespesa = $d['status'] === 'pendente' && $d['data_vencimento'] < date('Y-m-d'); ?>
+            <?php foreach ($despesasTurma as $d): $vencidaDespesa = $d['status'] === 'pendente' && vencimentoEmAtraso($d['data_vencimento']); ?>
                 <tr>
                     <td class="<?= $vencidaDespesa ? 'estoque-baixo' : '' ?>"><?= formatDate($d['data_vencimento']) ?></td>
                     <td><?= e($d['descricao']) ?></td>

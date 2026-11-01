@@ -55,7 +55,7 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
 
 <?php if ($semTarifa): ?>
     <div class="alert alert-warning" style="max-width: 900px;">
-        Nenhuma tarifa configurada nesta conta. Informe os valores em <a href="/contas_bancarias/form.php?id=<?= $id ?>">Dados da conta › Tarifas do banco</a>;
+        Nenhuma tarifa configurada nesta conta. Informe os valores em <a href="/contas_bancarias/form.php?id=<?= $id ?>&aba=cobranca">Cobrança › Tarifas do banco</a>;
         daí em diante cada operação passa a ser anotada aqui.
     </div>
 <?php endif; ?>

@@ -494,3 +494,23 @@ function exigirEditarDocumentos(): void
 {
     exigirPermissao('editar_documentos', 'Seu perfil não pode editar os modelos de documentos.');
 }
+
+/**
+ * Confirmação de ação sensível (dados da API do banco): a senha digitada é a
+ * do usuário logado? No máximo 5 erros a cada 15 minutos.
+ */
+function senhaDoUsuarioConfere(PDO $pdo, string $senha): bool
+{
+    $quem = (string) usuarioAtualId();
+    if (limiteDeTentativasExcedido($pdo, 'senha_confirmacao', $quem, 5, 20, 15)) {
+        return false;
+    }
+    $stmt = $pdo->prepare('SELECT senha FROM usuarios WHERE id = ?');
+    $stmt->execute([usuarioAtualId()]);
+    if ($senha !== '' && password_verify($senha, (string) $stmt->fetchColumn())) {
+        limparTentativasAcesso($pdo, 'senha_confirmacao', $quem);
+        return true;
+    }
+    registrarTentativaAcesso($pdo, 'senha_confirmacao', $quem);
+    return false;
+}

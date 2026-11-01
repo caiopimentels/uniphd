@@ -267,7 +267,7 @@ if (usuarioLogado() && usuarioEhAdmin() && empty($_SESSION['aviso_certificado_mo
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Depois</button>
-                <a href="/contas_bancarias/form.php?id=<?= (int) $problemasCertificado[0]['id'] ?>#certificado" class="btn btn-danger"><i class="bi bi-key"></i> Abrir a conta bancária</a>
+                <a href="/contas_bancarias/form.php?id=<?= (int) $problemasCertificado[0]['id'] ?>&aba=api#certificado" class="btn btn-danger"><i class="bi bi-key"></i> Abrir a conta bancária</a>
             </div>
         </div>
     </div>

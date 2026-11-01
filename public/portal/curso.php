@@ -57,7 +57,7 @@ foreach ($aulas as $a) {
 $stmt = $pdo->prepare("SELECT * FROM contas_receber WHERE matricula_id = ? AND status IN ('pendente', 'pago') AND excluido_em IS NULL ORDER BY data_vencimento, id");
 $stmt->execute([$m['id']]);
 $parcelas = $stmt->fetchAll();
-$emAtraso = array_filter($parcelas, fn ($p) => $p['status'] === 'pendente' && $p['data_vencimento'] < $hoje);
+$emAtraso = array_filter($parcelas, fn ($p) => $p['status'] === 'pendente' && vencimentoEmAtraso($p['data_vencimento']));
 $proximaParcela = null;
 foreach ($parcelas as $p) {
     if ($p['status'] === 'pendente') {
@@ -290,7 +290,7 @@ require __DIR__ . '/../../includes/portal_header.php';
         <div class="portal-card portal-vazio"><i class="bi bi-wallet2"></i>Nenhuma parcela deste curso.</div>
     <?php else: ?>
         <div class="lista-card">
-            <?php foreach ($parcelas as $p): $atrasada = $p['status'] === 'pendente' && $p['data_vencimento'] < $hoje; ?>
+            <?php foreach ($parcelas as $p): $atrasada = $p['status'] === 'pendente' && vencimentoEmAtraso($p['data_vencimento']); ?>
                 <div class="linha-lista">
                     <i class="bi <?= $p['status'] === 'pago' ? 'bi-check-circle-fill text-success' : ($atrasada ? 'bi-exclamation-circle-fill text-danger' : 'bi-circle text-muted') ?> fs-5"></i>
                     <span class="flex-grow-1"><span class="fw-semibold d-block"><?= e($p['descricao']) ?></span>

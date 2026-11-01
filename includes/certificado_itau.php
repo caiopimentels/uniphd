@@ -184,7 +184,7 @@ function solicitarCertificadoItau(PDO $pdo, array $conta, ?string $tokenTemporar
 // administrador ativo (perfil administrador) que tenha e-mail cadastrado.
 function avisarAdministradorCertificado(PDO $pdo, array $conta, string $titulo, string $texto): void
 {
-    criarNotificacao($pdo, 'sistema', $titulo, $conta['apelido'] . ' — ' . $texto, '/contas_bancarias/form.php?id=' . (int) $conta['id'], (int) $conta['id']);
+    criarNotificacao($pdo, 'sistema', $titulo, $conta['apelido'] . ' — ' . $texto, '/contas_bancarias/form.php?id=' . (int) $conta['id'] . '&aba=api', (int) $conta['id']);
     try {
         $config = buscarConfiguracoes($pdo);
         $administradores = $pdo->query(
@@ -228,7 +228,7 @@ function verificarCertificadosItau(PDO $pdo): void
             registrarAtividadeSistema('rotinas', 'verificacao', 'Renovação automática do certificado do Itaú — ' . $conta['apelido'] . ': '
                 . ($resultado['ok'] ? 'renovado' : 'não renovou. ' . $resultado['mensagem']));
             if ($resultado['ok']) {
-                criarNotificacao($pdo, 'sistema', 'Certificado do Itaú renovado', $conta['apelido'] . ' — ' . $resultado['mensagem'], '/contas_bancarias/form.php?id=' . (int) $conta['id'], (int) $conta['id']);
+                criarNotificacao($pdo, 'sistema', 'Certificado do Itaú renovado', $conta['apelido'] . ' — ' . $resultado['mensagem'], '/contas_bancarias/form.php?id=' . (int) $conta['id'] . '&aba=api', (int) $conta['id']);
                 continue;
             }
             $erro = mb_strimwidth($resultado['mensagem'], 0, 255, '…', 'UTF-8');

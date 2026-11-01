@@ -57,7 +57,7 @@ $acoesMassa = array_values(array_filter([
 ]));
 $hoje = date('Y-m-d');
 $pendentesLista = array_filter($contas, fn ($c) => $c['status'] === 'pendente');
-$vencidasLista = array_filter($pendentesLista, fn ($c) => $c['data_vencimento'] < $hoje);
+$vencidasLista = array_filter($pendentesLista, fn ($c) => vencimentoEmAtraso($c['data_vencimento']));
 $aVencerLista = array_filter($pendentesLista, fn ($c) => $c['data_vencimento'] >= $hoje);
 $pagasLista = array_filter($contas, fn ($c) => $c['status'] === 'pago');
 $informacoes = [
@@ -150,7 +150,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                     </tr>
                 <?php endif; ?>
             <?php foreach ($grupo['contas'] as $c): ?>
-                <?php $vencida = $c['status'] === 'pendente' && $c['data_vencimento'] < date('Y-m-d'); ?>
+                <?php $vencida = $c['status'] === 'pendente' && vencimentoEmAtraso($c['data_vencimento']); ?>
                 <tr <?= $agrupar ? 'data-linha-grupo="' . e($grupo['id']) . '" style="display:none"' : '' ?> class="cursor-pointer" onclick="abrirParcela(<?= (int) $c['id'] ?>)" title="Clique para ver os dados do boleto, alterar e ver o histórico">
                     <td onclick="event.stopPropagation();">
                         <?php if ($c['status'] === 'pendente' && $temPendente): ?>

@@ -108,8 +108,8 @@ documentoCabecalho($doc, 'Ficha do aluno', 'Cadastro nº ' . str_pad((string) $i
             <thead><tr><th>Parcela em aberto</th><th>Vencimento</th><th class="text-end">Valor</th></tr></thead>
             <tbody>
             <?php foreach ($abertas as $p): ?>
-                <tr<?= $p['data_vencimento'] < date('Y-m-d') ? ' style="color:#b91c1c"' : '' ?>>
-                    <td><?= e($p['descricao']) ?><?= $p['data_vencimento'] < date('Y-m-d') ? ' (vencida)' : '' ?></td>
+                <tr<?= vencimentoEmAtraso($p['data_vencimento']) ? ' style="color:#b91c1c"' : '' ?>>
+                    <td><?= e($p['descricao']) ?><?= vencimentoEmAtraso($p['data_vencimento']) ? ' (vencida)' : '' ?></td>
                     <td><?= formatDate($p['data_vencimento']) ?></td>
                     <td class="text-end"><?= formatMoney($p['valor']) ?></td>
                 </tr>

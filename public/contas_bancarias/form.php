@@ -29,91 +29,138 @@ if ($id) {
 $bancos = bancosConhecidos();
 $erros = [];
 
+// A conta fica em três abas, e cada uma salva só os seus campos:
+//   dados    → banco, agência, conta, Pix, padrão/ativa
+//   cobranca → integração, carteira, nosso número, juros/multa, protesto, tarifas, instruções
+//   api      → credenciais da API (OAuth, URLs, certificado)
+// Conta nova começa pelos dados. Mudar credencial da API (ou agência/conta
+// de uma conta integrada) pede a senha de quem está mexendo.
+$aba = $id && in_array($_GET['aba'] ?? '', ['cobranca', 'api'], true) ? $_GET['aba'] : 'dados';
+$integrada = ($conta['integracao'] ?? 'nenhuma') === 'itau';
+
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $dados = [
-        'apelido' => input('apelido'),
-        'banco_codigo' => apenasDigitos(input('banco_codigo')),
-        'agencia' => input('agencia'),
-        'conta' => input('conta'),
-        'conta_digito' => input('conta_digito'),
-        'chave_pix' => input('chave_pix'),
-        'integracao' => input('integracao') === 'itau' ? 'itau' : 'nenhuma',
-        'itau_carteira' => apenasDigitos(input('itau_carteira', '109')) ?: '109',
-        'itau_especie' => array_key_exists(input('itau_especie'), especiesItau()) ? input('itau_especie') : '04',
-        'proximo_nosso_numero' => (int) ($_POST['proximo_nosso_numero'] ?? 1),
-        'juros_tipo' => array_key_exists(input('juros_tipo'), tiposJurosItau()) ? input('juros_tipo') : '05',
-        'juros_percentual' => decimalInput('juros_percentual', 0),
-        'multa_tipo' => array_key_exists(input('multa_tipo'), tiposMultaItau()) ? input('multa_tipo') : '03',
-        'multa_percentual' => decimalInput('multa_percentual', 0),
-        'tarifa_emissao' => max(0, decimalInput('tarifa_emissao', 0)),
-        'tarifa_liquidacao' => max(0, decimalInput('tarifa_liquidacao', 0)),
-        'tarifa_baixa' => max(0, decimalInput('tarifa_baixa', 0)),
-        'tarifa_alteracao' => max(0, decimalInput('tarifa_alteracao', 0)),
-        'api_ambiente' => input('api_ambiente') === 'producao' ? 'producao' : 'sandbox',
-        'api_client_id' => input('api_client_id'),
-        'api_url_token' => input('api_url_token'),
-        'api_url_base' => input('api_url_base'),
-        'itau_url_instrucoes' => isset(urlsInstrucoesItau()[input('itau_url_instrucoes')]) ? input('itau_url_instrucoes') : null,
-        'padrao' => isset($_POST['padrao']) ? 1 : 0,
-        'ativo' => isset($_POST['ativo']) ? 1 : 0,
-        'instrucao_boleto_1' => mb_substr(input('instrucao_boleto_1'), 0, 150),
-        'instrucao_boleto_2' => mb_substr(input('instrucao_boleto_2'), 0, 150),
-        'instrucao_boleto_3' => mb_substr(input('instrucao_boleto_3'), 0, 150),
-    ];
-    // Segredo em branco = mantém o que já está salvo (ele nunca volta para
-    // a tela, então não dá para "reenviar" o valor atual).
-    $novoClientSecret = (string) ($_POST['api_client_secret'] ?? '');
-    $novaSenhaChave = (string) ($_POST['api_chave_senha'] ?? '');
-    $enviouCertificado = ($_FILES['api_certificado']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
-    $enviouChave = ($_FILES['api_chave']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
-    $dados['banco_nome'] = $bancos[$dados['banco_codigo']] ?? input('banco_nome');
+    $aba = $id && in_array($_POST['aba'] ?? '', ['cobranca', 'api'], true) ? $_POST['aba'] : 'dados';
+    $novoClientSecret = '';
+    $novaSenhaChave = '';
+    $enviouCertificado = false;
+    $enviouChave = false;
 
-    if ($dados['apelido'] === '') {
-        $erros[] = 'Dê um nome para identificar a conta (ex.: "Itaú principal").';
-    }
-    if (strlen($dados['banco_codigo']) !== 3) {
-        $erros[] = 'O código do banco tem 3 dígitos (ex.: 341 para Itaú).';
-    }
-    if ($dados['banco_nome'] === '') {
-        $erros[] = 'Informe o nome do banco.';
-    }
-    if ($dados['agencia'] === '' || $dados['conta'] === '') {
-        $erros[] = 'Agência e conta são obrigatórias.';
+    if ($aba === 'dados') {
+        $dados = [
+            'apelido' => input('apelido'),
+            'banco_codigo' => apenasDigitos(input('banco_codigo')),
+            'agencia' => input('agencia'),
+            'conta' => input('conta'),
+            'conta_digito' => input('conta_digito'),
+            'chave_pix' => input('chave_pix'),
+            'padrao' => isset($_POST['padrao']) ? 1 : 0,
+            'ativo' => isset($_POST['ativo']) ? 1 : 0,
+        ];
+        $dados['banco_nome'] = $bancos[$dados['banco_codigo']] ?? input('banco_nome');
+        if ($dados['apelido'] === '') {
+            $erros[] = 'Dê um nome para identificar a conta (ex.: "Itaú principal").';
+        }
+        if (strlen($dados['banco_codigo']) !== 3) {
+            $erros[] = 'O código do banco tem 3 dígitos (ex.: 341 para Itaú).';
+        }
+        if ($dados['banco_nome'] === '') {
+            $erros[] = 'Informe o nome do banco.';
+        }
+        if ($dados['agencia'] === '' || $dados['conta'] === '') {
+            $erros[] = 'Agência e conta são obrigatórias.';
+        }
+        if ($dados['padrao'] && !$dados['ativo']) {
+            $erros[] = 'Uma conta inativa não pode ser a padrão.';
+        }
+        if ($integrada) {
+            if ($dados['banco_codigo'] !== '341') {
+                $erros[] = 'Esta conta tem a integração Itaú: o banco precisa continuar 341 (Itaú). Desligue a integração na aba Cobrança antes.';
+            }
+            if (!idBeneficiarioItau($dados)) {
+                $erros[] = 'Para a integração Itaú: agência com até 4 dígitos, conta com até 7 dígitos e o dígito (DAC) com 1 dígito.';
+            }
+        }
+        // Agência/conta formam o código do beneficiário no Itaú: trocar numa
+        // conta integrada faz os boletos novos irem para outro cadastro.
+        $sensivel = $integrada && ($dados['agencia'] !== (string) $conta['agencia'] || $dados['conta'] !== (string) $conta['conta'] || $dados['conta_digito'] !== (string) $conta['conta_digito']);
+    } elseif ($aba === 'cobranca') {
+        $dados = [
+            'integracao' => input('integracao') === 'itau' ? 'itau' : 'nenhuma',
+            'itau_carteira' => apenasDigitos(input('itau_carteira', '109')) ?: '109',
+            'itau_especie' => array_key_exists(input('itau_especie'), especiesItau()) ? input('itau_especie') : '04',
+            'proximo_nosso_numero' => (int) ($_POST['proximo_nosso_numero'] ?? 1),
+            'juros_tipo' => array_key_exists(input('juros_tipo'), tiposJurosItau()) ? input('juros_tipo') : '05',
+            'juros_percentual' => decimalInput('juros_percentual', 0),
+            'multa_tipo' => array_key_exists(input('multa_tipo'), tiposMultaItau()) ? input('multa_tipo') : '03',
+            'multa_percentual' => decimalInput('multa_percentual', 0),
+            'protesto_ativo' => isset($_POST['protesto_ativo']) ? 1 : 0,
+            'protesto_dias' => (int) ($_POST['protesto_dias'] ?? 0) ?: null,
+            'tarifa_emissao' => max(0, decimalInput('tarifa_emissao', 0)),
+            'tarifa_liquidacao' => max(0, decimalInput('tarifa_liquidacao', 0)),
+            'tarifa_baixa' => max(0, decimalInput('tarifa_baixa', 0)),
+            'tarifa_alteracao' => max(0, decimalInput('tarifa_alteracao', 0)),
+            'instrucao_boleto_1' => mb_substr(input('instrucao_boleto_1'), 0, 150),
+            'instrucao_boleto_2' => mb_substr(input('instrucao_boleto_2'), 0, 150),
+            'instrucao_boleto_3' => mb_substr(input('instrucao_boleto_3'), 0, 150),
+        ];
+        if ($dados['integracao'] === 'itau') {
+            if ($conta['banco_codigo'] !== '341') {
+                $erros[] = 'A integração Itaú só vale para conta do banco 341 (Itaú).';
+            }
+            if (!idBeneficiarioItau($conta)) {
+                $erros[] = 'Para a integração Itaú: na aba Dados da conta, agência com até 4 dígitos, conta com até 7 e o dígito (DAC) com 1.';
+            }
+            // Voltar a sequência para trás reaproveitaria um nosso número já
+            // registrado, e o banco recusa título repetido na carteira.
+            if ($dados['proximo_nosso_numero'] <= $maiorNossoNumeroUsado) {
+                $erros[] = 'O próximo nosso número precisa ser maior que o último já usado nesta conta (' . formatarNossoNumeroItau($maiorNossoNumeroUsado) . ').';
+            }
+            if ($dados['proximo_nosso_numero'] < 1 || $dados['proximo_nosso_numero'] > 99999999) {
+                $erros[] = 'Na carteira 109 o nosso número vai de 1 a 99999999.';
+            }
+            if ($dados['juros_tipo'] !== '05' && $dados['juros_percentual'] <= 0) {
+                $erros[] = 'Informe o percentual de juros (ou escolha "Isento").';
+            }
+            if ($dados['multa_tipo'] !== '03' && $dados['multa_percentual'] <= 0) {
+                $erros[] = 'Informe o percentual de multa (ou escolha "Isento").';
+            }
+            if ($dados['protesto_ativo'] && ($dados['protesto_dias'] < 1 || $dados['protesto_dias'] > 99)) {
+                $erros[] = 'Protesto: informe em quantos dias depois do vencimento (de 1 a 99).';
+            }
+        }
+        // Desligar a integração ou mexer no nosso número afeta o registro dos boletos.
+        $sensivel = $integrada && ($dados['integracao'] !== 'itau' || $dados['proximo_nosso_numero'] !== (int) $conta['proximo_nosso_numero']);
+    } else {
+        $dados = [
+            'api_ambiente' => input('api_ambiente') === 'producao' ? 'producao' : 'sandbox',
+            'api_client_id' => input('api_client_id'),
+            'api_url_token' => input('api_url_token'),
+            'api_url_base' => input('api_url_base'),
+            'itau_url_instrucoes' => isset(urlsInstrucoesItau()[input('itau_url_instrucoes')]) ? input('itau_url_instrucoes') : null,
+        ];
+        // Segredo em branco = mantém o que já está salvo (ele nunca volta para
+        // a tela, então não dá para "reenviar" o valor atual).
+        $novoClientSecret = (string) ($_POST['api_client_secret'] ?? '');
+        $novaSenhaChave = (string) ($_POST['api_chave_senha'] ?? '');
+        $enviouCertificado = ($_FILES['api_certificado']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
+        $enviouChave = ($_FILES['api_chave']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK;
+        foreach (['api_url_token' => 'URL do token', 'api_url_base' => 'URL base da API'] as $campo => $rotulo) {
+            if ($dados[$campo] !== '' && !preg_match('#^https://#i', $dados[$campo])) {
+                $erros[] = "A {$rotulo} precisa começar com https://.";
+            }
+        }
+        if ($enviouCertificado !== $enviouChave) {
+            $erros[] = 'Envie o certificado e a chave juntos (os dois arquivos do par).';
+        }
+        $sensivel = $novoClientSecret !== '' || $novaSenhaChave !== '' || $enviouCertificado || $enviouChave;
+        foreach ($dados as $campo => $v) {
+            $sensivel = $sensivel || (string) $v !== (string) ($conta[$campo] ?? '');
+        }
     }
 
-    if ($dados['integracao'] === 'itau') {
-        if ($dados['banco_codigo'] !== '341') {
-            $erros[] = 'A integração Itaú só vale para conta do banco 341 (Itaú).';
-        }
-        if (!idBeneficiarioItau($dados)) {
-            $erros[] = 'Para a integração Itaú: agência com até 4 dígitos, conta com até 7 dígitos e o dígito (DAC) com 1 dígito.';
-        }
-        // Voltar a sequência para trás reaproveitaria um nosso número já
-        // registrado, e o banco recusa título repetido na carteira.
-        if ($dados['proximo_nosso_numero'] <= $maiorNossoNumeroUsado) {
-            $erros[] = 'O próximo nosso número precisa ser maior que o último já usado nesta conta (' . formatarNossoNumeroItau($maiorNossoNumeroUsado) . ').';
-        }
-        if ($dados['proximo_nosso_numero'] < 1 || $dados['proximo_nosso_numero'] > 99999999) {
-            $erros[] = 'Na carteira 109 o nosso número vai de 1 a 99999999.';
-        }
-        if ($dados['juros_tipo'] !== '05' && $dados['juros_percentual'] <= 0) {
-            $erros[] = 'Informe o percentual de juros (ou escolha "Isento").';
-        }
-        if ($dados['multa_tipo'] !== '03' && $dados['multa_percentual'] <= 0) {
-            $erros[] = 'Informe o percentual de multa (ou escolha "Isento").';
-        }
-    }
-    foreach (['api_url_token' => 'URL do token', 'api_url_base' => 'URL base da API'] as $campo => $rotulo) {
-        if ($dados[$campo] !== '' && !preg_match('#^https://#i', $dados[$campo])) {
-            $erros[] = "A {$rotulo} precisa começar com https://.";
-        }
-    }
-    if ($enviouCertificado !== $enviouChave) {
-        $erros[] = 'Envie o certificado e a chave juntos (os dois arquivos do par).';
-    }
-
-    if ($dados['padrao'] && !$dados['ativo']) {
-        $erros[] = 'Uma conta inativa não pode ser a padrão.';
+    if (!$erros && !empty($sensivel) && !senhaDoUsuarioConfere($pdo, (string) ($_POST['senha_confirmacao'] ?? ''))) {
+        $erros[] = 'Senha incorreta: nada foi salvo. Para mudar os dados da API (ou agência/conta de uma conta integrada), confirme com a sua senha de acesso ao sistema.';
     }
 
     if (!$erros) {
@@ -121,7 +168,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $valores = array_map(fn ($v) => $v === '' ? null : $v, array_values($dados));
 
         $pdo->beginTransaction();
-        if ($dados['padrao']) {
+        if (!empty($dados['padrao'])) {
             $pdo->exec('UPDATE contas_bancarias SET padrao = 0');
         }
         if ($id) {
@@ -144,10 +191,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$certificado['ok']) {
                 $pdo->rollBack();
                 $erros[] = $certificado['mensagem'];
-                // Conta nova: o INSERT foi desfeito, então o id não existe mais.
-                if ($operacao === 'criacao') {
-                    $id = null;
-                }
             } else {
                 $stmt = $pdo->prepare('UPDATE contas_bancarias SET api_certificado_arquivo = ?, api_chave_arquivo = ?, api_certificado_validade = ? WHERE id = ?');
                 $stmt->execute([$certificado['certificado'], $certificado['chave'], $certificado['validade'], $id]);
@@ -156,30 +199,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (!$erros) {
-        if ($novoClientSecret !== '') {
-            $stmt = $pdo->prepare('UPDATE contas_bancarias SET api_client_secret_cripto = ? WHERE id = ?');
-            $stmt->execute([criptografar($novoClientSecret), $id]);
-        }
-        if ($novaSenhaChave !== '') {
-            $stmt = $pdo->prepare('UPDATE contas_bancarias SET api_chave_senha_cripto = ? WHERE id = ?');
-            $stmt->execute([criptografar($novaSenhaChave), $id]);
-        }
-        // Qualquer mudança de credencial invalida o token guardado — senão
-        // o sistema continuaria usando um token da configuração antiga.
-        $mudouCredencial = $novoClientSecret !== '' || $novaSenhaChave !== '' || $enviouCertificado
-            || $dados['api_client_id'] !== (string) ($conta['api_client_id'] ?? '')
-            || $dados['api_url_token'] !== (string) ($conta['api_url_token'] ?? '')
-            || $dados['api_ambiente'] !== ($conta['api_ambiente'] ?? 'sandbox');
-        if ($mudouCredencial) {
-            $stmt = $pdo->prepare('UPDATE contas_bancarias SET api_token_cripto = NULL, api_token_expira_em = NULL, api_ultimo_teste_ok = NULL, api_ultimo_teste_mensagem = NULL WHERE id = ?');
-            $stmt->execute([$id]);
+        if ($aba === 'api') {
+            if ($novoClientSecret !== '') {
+                $stmt = $pdo->prepare('UPDATE contas_bancarias SET api_client_secret_cripto = ? WHERE id = ?');
+                $stmt->execute([criptografar($novoClientSecret), $id]);
+            }
+            if ($novaSenhaChave !== '') {
+                $stmt = $pdo->prepare('UPDATE contas_bancarias SET api_chave_senha_cripto = ? WHERE id = ?');
+                $stmt->execute([criptografar($novaSenhaChave), $id]);
+            }
+            // Qualquer mudança de credencial invalida o token guardado — senão
+            // o sistema continuaria usando um token da configuração antiga.
+            $mudouCredencial = $novoClientSecret !== '' || $novaSenhaChave !== '' || $enviouCertificado
+                || $dados['api_client_id'] !== (string) ($conta['api_client_id'] ?? '')
+                || $dados['api_url_token'] !== (string) ($conta['api_url_token'] ?? '')
+                || $dados['api_ambiente'] !== ($conta['api_ambiente'] ?? 'sandbox');
+            if ($mudouCredencial) {
+                $stmt = $pdo->prepare('UPDATE contas_bancarias SET api_token_cripto = NULL, api_token_expira_em = NULL, api_ultimo_teste_ok = NULL, api_ultimo_teste_mensagem = NULL WHERE id = ?');
+                $stmt->execute([$id]);
+            }
         }
 
         $pdo->commit();
 
-        registrarAtividade('configuracoes', $operacao, ($operacao === 'criacao' ? 'Conta bancária criada: ' : 'Conta bancária editada: ') . $dados['apelido']);
-        flash('success', 'Conta bancária salva.');
-        redirect('/contas_bancarias/form.php?id=' . $id);
+        $nomeAba = ['dados' => 'dados', 'cobranca' => 'cobrança', 'api' => 'API'][$aba];
+        registrarAtividade('configuracoes', $operacao, ($operacao === 'criacao' ? 'Conta bancária criada: ' : 'Conta bancária editada (' . $nomeAba . '): ') . ($dados['apelido'] ?? $conta['apelido'])
+            . (!empty($sensivel) ? ' — alteração confirmada com senha' : ''));
+        flash('success', $operacao === 'criacao' ? 'Conta bancária criada. Agora configure a cobrança e a API nas outras abas, se for usar boleto pelo banco.' : 'Conta bancária salva.');
+        redirect('/contas_bancarias/form.php?id=' . $id . ($aba !== 'dados' ? '&aba=' . $aba : ''));
     }
 
     $conta = $dados + ($conta ?? []);
@@ -198,7 +245,7 @@ $abaAtiva = 'contas';
 require __DIR__ . '/../../includes/abas_configuracoes.php';
 if ($id) {
     $contaAbaId = $id;
-    $contaAba = 'dados';
+    $contaAba = $aba;
     require __DIR__ . '/../../includes/abas_conta_bancaria.php';
 }
 ?>
@@ -207,7 +254,10 @@ if ($id) {
     <div class="alert alert-danger"><ul class="mb-0"><?php foreach ($erros as $erro): ?><li><?= e($erro) ?></li><?php endforeach; ?></ul></div>
 <?php endif; ?>
 
-<form method="post" id="form-conta" enctype="multipart/form-data">
+<form method="post" id="form-conta" enctype="multipart/form-data"<?= $aba === 'api' ? ' data-senha="tudo"' : ($integrada ? ' data-senha="' . ($aba === 'dados' ? 'agencia,conta,conta_digito' : 'integracao,proximo_nosso_numero') . '"' : '') ?>>
+<input type="hidden" name="aba" value="<?= e($aba) ?>">
+<input type="hidden" name="senha_confirmacao" id="senha_confirmacao">
+<?php if ($aba === 'dados'): ?>
 <div class="secao" style="max-width: 900px;">
     <div class="secao-titulo"><i class="bi bi-bank"></i> Dados da conta</div>
     <div class="row g-3">
@@ -228,15 +278,15 @@ if ($id) {
         </div>
         <div class="col-md-3">
             <label class="form-label">Agência *</label>
-            <input type="text" name="agencia" id="agencia" class="form-control" required value="<?= e($valor('agencia')) ?>" oninput="atualizarBeneficiario()">
+            <input type="text" name="agencia" id="agencia" class="form-control" required value="<?= e($valor('agencia')) ?>">
         </div>
         <div class="col-md-3">
             <label class="form-label">Conta *</label>
-            <input type="text" name="conta" id="conta" class="form-control" required value="<?= e($valor('conta')) ?>" oninput="atualizarBeneficiario()">
+            <input type="text" name="conta" id="conta" class="form-control" required value="<?= e($valor('conta')) ?>">
         </div>
         <div class="col-md-2">
             <label class="form-label">Dígito</label>
-            <input type="text" name="conta_digito" id="conta_digito" class="form-control" maxlength="2" value="<?= e($valor('conta_digito')) ?>" oninput="atualizarBeneficiario()">
+            <input type="text" name="conta_digito" id="conta_digito" class="form-control" maxlength="2" value="<?= e($valor('conta_digito')) ?>">
         </div>
         <div class="col-md-4">
             <label class="form-label">Chave Pix</label>
@@ -252,6 +302,22 @@ if ($id) {
         </div>
     </div>
 </div>
+<?php if ($id): ?>
+<div class="secao" style="max-width: 900px;">
+    <div class="secao-titulo"><i class="bi bi-credit-card"></i> Formas de pagamento que caem nesta conta</div>
+    <?php if (!$formasVinculadas): ?>
+        <p class="text-muted mb-0">Nenhuma. Vincule em <a href="/formas_pagamento/listar.php">Formas de pagamento</a> (ex.: Boleto e Pix → esta conta).</p>
+    <?php else: ?>
+        <ul class="mb-0">
+            <?php foreach ($formasVinculadas as $f): ?>
+                <li><a href="/formas_pagamento/form.php?id=<?= (int) $f['id'] ?>"><?= e($f['nome']) ?></a> <span class="text-muted small">· <?= e(instrumentosCobranca()[$f['instrumento']] ?? $f['instrumento']) ?></span></li>
+            <?php endforeach; ?>
+        </ul>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
+
+<?php elseif ($aba === 'cobranca'): ?>
 
 <div class="secao" style="max-width: 900px;">
     <div class="secao-titulo"><i class="bi bi-plug"></i> Integração com o banco</div>
@@ -265,8 +331,8 @@ if ($id) {
         </div>
         <div class="col-md-6 bloco-itau">
             <label class="form-label">Código do beneficiário (id_beneficiario)</label>
-            <input type="text" id="id_beneficiario" class="form-control" disabled>
-            <div class="form-text">Agência (4) + conta (7) + dígito (1). Confira com o que o Itaú informou.</div>
+            <input type="text" class="form-control" disabled value="<?= e(idBeneficiarioItau($conta) ?: 'Confira agência, conta e dígito na aba Dados da conta') ?>">
+            <div class="form-text">Agência (4) + conta (7) + dígito (1), da aba Dados da conta. Confira com o que o Itaú informou.</div>
         </div>
 
         <div class="col-md-3 bloco-itau">
@@ -321,6 +387,26 @@ if ($id) {
 </div>
 
 <div class="secao bloco-itau" style="max-width: 900px;">
+    <div class="secao-titulo"><i class="bi bi-hammer"></i> Protesto automático</div>
+    <div class="row g-3 align-items-end">
+        <div class="col-md-8">
+            <div class="form-check form-switch">
+                <input type="checkbox" name="protesto_ativo" class="form-check-input" id="protesto_ativo" value="1" <?= $valor('protesto_ativo', 0) ? 'checked' : '' ?> onchange="document.getElementById('protesto_dias').disabled = !this.checked">
+                <label class="form-check-label" for="protesto_ativo">Pedir ao Itaú que proteste o boleto não pago</label>
+            </div>
+            <div class="form-text">
+                Vale para os boletos <strong>emitidos depois</strong> de ligar (os que já foram registrados não mudam).
+                O banco cuida do protesto sozinho e cobra as tarifas de cartório. Nada sobre protesto é impresso nas instruções do boleto.
+            </div>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Dias depois do vencimento</label>
+            <input type="number" name="protesto_dias" id="protesto_dias" class="form-control" min="1" max="99" value="<?= e((string) $valor('protesto_dias', '')) ?>" placeholder="1 a 99" <?= $valor('protesto_ativo', 0) ? '' : 'disabled' ?>>
+        </div>
+    </div>
+</div>
+
+<div class="secao bloco-itau" style="max-width: 900px;">
     <div class="secao-titulo"><i class="bi bi-receipt"></i> Tarifas do banco</div>
     <p class="text-muted small mb-3">
         Quanto o banco cobra de você em cada operação (veja no seu contrato ou pergunte ao gerente). O sistema anota cada tarifa quando a
@@ -357,7 +443,15 @@ if ($id) {
     </div>
 </div>
 
-<div class="secao bloco-itau" style="max-width: 900px;">
+<?php else: ?>
+<?php if (!$integrada): ?>
+    <div class="alert alert-secondary" style="max-width: 900px;">Esta conta não está integrada ao banco. Ligue a integração na aba <a href="/contas_bancarias/form.php?id=<?= (int) $id ?>&aba=cobranca">Cobrança</a> para usar a API.</div>
+<?php endif; ?>
+<div class="alert alert-warning small d-flex gap-2" style="max-width: 900px;">
+    <i class="bi bi-shield-lock"></i>
+    <span>Estes dados ligam o sistema ao banco: um valor errado faz parar a emissão e a baixa automática dos boletos. Para salvar uma mudança aqui o sistema pede a sua senha.</span>
+</div>
+<div class="secao" style="max-width: 900px;">
     <div class="secao-titulo">
         <i class="bi bi-shield-lock"></i> API Itaú (OAuth 2.0)
         <?php if ($id && ($conta['integracao'] ?? '') === 'itau'): ?>
@@ -455,20 +549,6 @@ if ($id) {
         </div>
     </div>
 </div>
-
-<?php if ($id): ?>
-<div class="secao" style="max-width: 900px;">
-    <div class="secao-titulo"><i class="bi bi-credit-card"></i> Formas de pagamento que caem nesta conta</div>
-    <?php if (!$formasVinculadas): ?>
-        <p class="text-muted mb-0">Nenhuma. Vincule em <a href="/formas_pagamento/listar.php">Formas de pagamento</a> (ex.: Boleto e Pix → esta conta).</p>
-    <?php else: ?>
-        <ul class="mb-0">
-            <?php foreach ($formasVinculadas as $f): ?>
-                <li><a href="/formas_pagamento/form.php?id=<?= (int) $f['id'] ?>"><?= e($f['nome']) ?></a> <span class="text-muted small">· <?= e(instrumentosCobranca()[$f['instrumento']] ?? $f['instrumento']) ?></span></li>
-            <?php endforeach; ?>
-        </ul>
-    <?php endif; ?>
-</div>
 <?php endif; ?>
 </form>
 
@@ -478,28 +558,67 @@ if ($id) {
 </form>
 <?php endif; ?>
 
+<div class="modal fade" id="modal-senha-api" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" id="form-senha-api" autocomplete="off">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-shield-lock"></i> Confirme com a sua senha</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small">Você está mudando dados que ligam o sistema ao banco. Se algo ficar errado, a emissão e a baixa automática dos boletos param.
+                    Confira antes de salvar.</p>
+                <label class="form-label" for="senha-api">Sua senha de acesso ao sistema</label>
+                <input type="password" id="senha-api" class="form-control" autocomplete="current-password" required>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-brand"><i class="bi bi-check-lg"></i> Confirmar e salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
-// Mesma regra de idBeneficiarioItau() no PHP.
-function atualizarBeneficiario() {
-    const agencia = document.getElementById('agencia').value.replace(/\D/g, '');
-    const conta = document.getElementById('conta').value.replace(/\D/g, '');
-    const digito = document.getElementById('conta_digito').value.replace(/\D/g, '');
-    const saida = document.getElementById('id_beneficiario');
-    if (!agencia || !conta || digito.length !== 1 || agencia.length > 4 || conta.length > 7) {
-        saida.value = 'Preencha agência, conta e dígito';
-        return;
-    }
-    saida.value = agencia.padStart(4, '0') + conta.padStart(7, '0') + digito;
-}
-
 function atualizarIntegracao() {
-    const itau = document.getElementById('integracao').value === 'itau';
-    document.querySelectorAll('.bloco-itau').forEach((el) => { el.style.display = itau ? '' : 'none'; });
+    const campo = document.getElementById('integracao');
+    if (!campo) return;
+    document.querySelectorAll('.bloco-itau').forEach((el) => { el.style.display = campo.value === 'itau' ? '' : 'none'; });
 }
-
-atualizarBeneficiario();
 atualizarIntegracao();
+
+// Mudou algo sensível (data-senha: "tudo" ou a lista de campos)? Antes de
+// salvar, pede a senha do usuário num modal; o servidor confere de novo.
+(() => {
+    const form = document.getElementById('form-conta');
+    const quais = form.dataset.senha;
+    if (!quais) return;
+    // Campos ocultos ficam de fora (o token de segurança entra na hora de enviar).
+    const campos = () => [...form.elements].filter((el) => el.name && el.type !== 'hidden'
+        && (quais === 'tudo' || quais.split(',').includes(el.name)));
+    const foto = () => campos().map((el) => el.type === 'file' ? el.files.length : (el.type === 'checkbox' ? el.checked : el.value)).join('|');
+    const inicial = foto();
+    // Criado na hora: o Bootstrap só carrega no rodapé, depois deste script.
+    const modal = () => bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-senha-api'));
+    const senha = document.getElementById('senha-api');
+    form.addEventListener('submit', (ev) => {
+        if (form.dataset.confirmado || foto() === inicial) return;
+        ev.preventDefault();
+        senha.value = '';
+        modal().show();
+        setTimeout(() => senha.focus(), 300);
+    });
+    document.getElementById('form-senha-api').addEventListener('submit', (ev) => {
+        ev.preventDefault();
+        if (!senha.value) return;
+        document.getElementById('senha_confirmacao').value = senha.value;
+        form.dataset.confirmado = '1';
+        modal().hide();
+        form.requestSubmit();
+    });
+})();
 </script>
+
 
 <?php if ($id && ($valor('api_ambiente') === 'producao')): ?>
 <div class="modal fade" id="modal-gerar-certificado" tabindex="-1">
@@ -519,6 +638,8 @@ atualizarIntegracao();
                     <textarea name="token_temporario" class="form-control font-monospace small mt-2" rows="4" placeholder="Cole aqui o token que a implantação do Itaú enviou por e-mail (vale 7 dias)"></textarea>
                     <button type="submit" class="btn btn-sm btn-outline-secondary mt-2" onclick="document.getElementById('modo-certificado').value = 'token';"><i class="bi bi-key"></i> Gerar com o token temporário</button>
                 </details>
+                <label class="form-label small mt-3" for="senha-certificado">Sua senha de acesso ao sistema</label>
+                <input type="password" name="senha_confirmacao" id="senha-certificado" class="form-control" autocomplete="current-password" required>
                 <div class="gerando d-none mt-3 small"><span class="spinner-border spinner-border-sm"></span> Falando com o Itaú...</div>
             </div>
             <div class="modal-footer">

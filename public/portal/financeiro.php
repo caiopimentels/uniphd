@@ -26,7 +26,7 @@ $hoje = date('Y-m-d');
 $abertas = [];
 $pagas = [];
 foreach ($stmt->fetchAll() as $p) {
-    $p['vencida'] = $p['status'] === 'pendente' && $p['data_vencimento'] < $hoje;
+    $p['vencida'] = $p['status'] === 'pendente' && vencimentoEmAtraso($p['data_vencimento']);
     if ($p['status'] === 'pago') {
         $pagas[] = $p;
     } else {

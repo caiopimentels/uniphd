@@ -437,7 +437,7 @@ function valoresTagsCobranca(PDO $pdo, ?int $alunoId): array
     $atraso = ['parcelas' => 0, 'valor' => 0, 'mais_antigo' => null];
     if ($alunoId) {
         $stmt = $pdo->prepare("SELECT COUNT(*) AS parcelas, COALESCE(SUM(valor), 0) AS valor, MIN(data_vencimento) AS mais_antigo
-                               FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < CURDATE() AND excluido_em IS NULL");
+                               FROM contas_receber WHERE aluno_id = ? AND status = 'pendente' AND data_vencimento < " . sqlCorteAtraso() . " AND excluido_em IS NULL");
         $stmt->execute([$alunoId]);
         $atraso = $stmt->fetch() ?: $atraso;
     }

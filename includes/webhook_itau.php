@@ -518,6 +518,11 @@ function dataNotificacao($valor): ?string
 function processarNotificacaoBoletoItau(PDO $pdo, array $conta, array $aviso, int $eventoId): array
 {
     $tipo = strtoupper((string) (campoNotificacao($aviso, ['tipo_notificacao', 'tipo_baixa', 'tipo_movimentacao']) ?? ''));
+    // O aviso do boleto não diz o tipo, só o código da liquidação ("06", "95"):
+    // fica registrado para dar para ver qual aviso chegou.
+    if ($tipo === '' && ($codigo = campoNotificacao($aviso, ['tipo_liquidacao'])) !== null) {
+        $tipo = 'LIQUIDACAO_' . preg_replace('/\W/', '', (string) $codigo);
+    }
     $nossoNumeroBruto = apenasDigitos((string) (campoNotificacao($aviso, ['numero_nosso_numero', 'nosso_numero']) ?? ''));
     $nossoNumero = $nossoNumeroBruto !== '' ? (int) substr($nossoNumeroBruto, -8) : null;
     $valorPago = valorNotificacao(campoNotificacao($aviso, [

@@ -37,7 +37,7 @@ function buscarListaAlunos(PDO $pdo, array $filtro, bool $comFinanceiro): array
         "SELECT a.*,
                 (SELECT COUNT(*) FROM matriculas m WHERE m.aluno_id = a.id AND m.status = 'ativa') AS matriculas_ativas,
                 (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr
-                  WHERE cr.aluno_id = a.id AND cr.status = 'pendente' AND cr.data_vencimento < CURDATE()) AS valor_vencido
+                  WHERE cr.aluno_id = a.id AND cr.status = 'pendente' AND cr.data_vencimento < " . sqlCorteAtraso() . ") AS valor_vencido
          FROM alunos a
          WHERE {$where}
          {$having}
@@ -86,7 +86,7 @@ function buscarListaTurmas(PDO $pdo, array $filtro): array
                 (SELECT COUNT(*) FROM matriculas m WHERE m.turma_id = t.id AND m.status = 'ativa') AS alunos_ativos,
                 " . SQL_RESERVAS_TURMA . " AS reservas,
                 (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr JOIN matriculas m ON m.id = cr.matricula_id
-                  WHERE m.turma_id = t.id AND cr.status = 'pendente' AND cr.data_vencimento < CURDATE()) AS valor_vencido
+                  WHERE m.turma_id = t.id AND cr.status = 'pendente' AND cr.data_vencimento < " . sqlCorteAtraso() . ") AS valor_vencido
          FROM turmas t
          JOIN cursos c ON c.id = t.curso_id
          JOIN situacoes_turma s ON s.id = t.situacao_id

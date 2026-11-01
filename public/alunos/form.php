@@ -730,7 +730,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <tr><td colspan="7" class="text-center text-muted py-3">Nenhum lançamento financeiro para este aluno.</td></tr>
                 <?php endif; ?>
                 <?php foreach ($parcelas as $p): ?>
-                    <?php $vencida = $p['status'] === 'pendente' && $p['data_vencimento'] < date('Y-m-d'); ?>
+                    <?php $vencida = $p['status'] === 'pendente' && vencimentoEmAtraso($p['data_vencimento']); ?>
                     <tr class="cursor-pointer" onclick="abrirParcela(<?= (int) $p['id'] ?>)" title="Clique para ver o boleto, alterar e ver o histórico">
                         <td><?= e($p['descricao']) ?><?php if ($seloBanco = seloBancoParcela($pdo, (int) $p['id'])): ?><div class="mt-1"><?= $seloBanco ?></div><?php endif; ?></td>
                         <td class="<?= $vencida ? 'estoque-baixo' : '' ?>"><?= formatDate($p['data_vencimento']) ?></td>
