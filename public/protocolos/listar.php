@@ -154,7 +154,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <?php foreach ($pagina as $p): ?>
                 <tr class="cursor-pointer" onclick="location.href='/protocolos/ver.php?id=<?= (int) $p['id'] ?>'">
                     <td class="text-nowrap fw-semibold"><?= numeroProtocolo($p) ?></td>
-                    <td><?= e($p['aluno_nome']) ?><?php if ($p['cpf']): ?><div class="small text-muted"><?= e(cpfFormatado($p['cpf'])) ?></div><?php endif; ?></td>
+                    <td><?= e($p['aluno_nome']) ?><?php if ($p['cpf']): ?><div class="small text-muted"><?= cpfTela($p['cpf'], (int) $p['aluno_id']) ?></div><?php endif; ?></td>
                     <td><?= e($p['assunto_nome']) ?><?php if ($p['tema_nome']): ?> <span class="badge text-bg-light border fw-normal"><?= e($p['tema_nome']) ?></span><?php endif; ?><?php if ($p['data_referencia']): ?><div class="small text-muted">data: <?= formatDate($p['data_referencia']) ?></div><?php endif; ?></td>
                     <td class="small"><?= $p['turma_nome'] ? e($p['curso_nome']) . '<div class="text-muted">' . e($p['turma_nome']) . ($p['modulo_nome'] ? ' · ' . e($p['modulo_nome']) : '') . '</div>' : '<span class="text-muted">—</span>' ?></td>
                     <td class="text-nowrap small"><?= formatDateTime($p['criado_em']) ?></td>

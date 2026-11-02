@@ -352,6 +352,45 @@ function cpfFormatado(?string $cpf): string
     return strlen($d) === 11 ? substr($d, 0, 3) . '.' . substr($d, 3, 3) . '.' . substr($d, 6, 3) . '-' . substr($d, 9) : (string) $cpf;
 }
 
+// CPF do aluno na área da equipe: só os 4 primeiros dígitos (800.3**.***-**).
+// Quem tem a permissão ver_cpf_completo vê o olhinho que busca o número em
+// /alunos/ver_cpf.php (e fica registrado). Documentos oficiais (contrato,
+// certificado, comprovante, recibo) e o boleto continuam com o CPF inteiro.
+function cpfMascarado(?string $cpf): string
+{
+    $d = preg_replace('/\D/', '', (string) $cpf);
+    if ($d === '') {
+        return '';
+    }
+    return strlen($d) === 11 ? substr($d, 0, 3) . '.' . $d[3] . '**.***-**' : str_repeat('*', strlen($d));
+}
+
+/** HTML: CPF mascarado e, para quem pode, o olhinho que mostra o completo. */
+function cpfTela(?string $cpf, ?int $alunoId): string
+{
+    if (preg_replace('/\D/', '', (string) $cpf) === '') {
+        return '';
+    }
+    $html = '<span class="cpf-mascarado">' . e(cpfMascarado($cpf)) . '</span>';
+    if ($alunoId && usuarioVeCpfCompleto()) {
+        $html .= ' <button type="button" class="btn btn-link btn-sm p-0 align-baseline ver-cpf" data-aluno="' . (int) $alunoId . '" title="Mostrar o CPF completo (fica registrado)"><i class="bi bi-eye"></i></button>';
+    }
+    return '<span class="cpf-campo text-nowrap">' . $html . '</span>';
+}
+
+/** Texto (impressões e planilhas): completo só para quem tem a permissão. */
+function cpfTexto(?string $cpf): string
+{
+    return usuarioVeCpfCompleto() ? cpfFormatado($cpf) : cpfMascarado($cpf);
+}
+
+/** O que vai para as buscas feitas no navegador: sem a permissão, só os 4 primeiros dígitos. */
+function cpfBusca(?string $cpf): string
+{
+    $d = preg_replace('/\D/', '', (string) $cpf);
+    return usuarioVeCpfCompleto() ? $d : substr($d, 0, 4);
+}
+
 // (77) 98100-4911 (celular) ou (77) 3421-1234 (fixo); outro tamanho sai como veio.
 function telefoneFormatado(?string $telefone): string
 {

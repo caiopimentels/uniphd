@@ -42,5 +42,5 @@ registrarHistoricoAluno($pdo, $id, 'cadastro', 'Aluno cadastrado no sistema (cad
 
 responderJson([
     'sucesso' => true,
-    'aluno' => ['id' => $id, 'nome' => $nome, 'cpf' => $cpf ?: null, 'telefone' => $telefone ?: null],
+    'aluno' => ['id' => $id, 'nome' => $nome, 'cpf' => $cpf ? cpfBusca($cpf) : null, 'cpf_tela' => $cpf ? cpfMascarado($cpf) : null, 'telefone' => $telefone ?: null],
 ]);

@@ -116,6 +116,16 @@ function usuarioPodeExcluirReceber(): bool
     return usuarioTemPermissao('excluir_receber');
 }
 
+function usuarioVeCpfCompleto(): bool
+{
+    return usuarioTemPermissao('ver_cpf_completo');
+}
+
+function usuarioPodeEstornarReceber(): bool
+{
+    return usuarioTemPermissao('estornar_receber');
+}
+
 function usuarioPodePagarConta(): bool
 {
     return usuarioTemPermissao('pagar_conta');

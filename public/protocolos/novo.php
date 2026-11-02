@@ -64,13 +64,13 @@ require __DIR__ . '/../../includes/layout_header.php';
 <script src="/assets/js/busca.js"></script>
 <script>
 // Pesquisa do aluno (nome ou CPF); escolhido, a página recarrega com as turmas dele.
-const alunosProtocolo = <?= json_encode(array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome'], 'cpf' => $a['cpf']], $alunos), JSON_UNESCAPED_UNICODE) ?>;
+const alunosProtocolo = <?= json_encode(array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome'], 'cpf' => cpfBusca($a['cpf']), 'cpf_tela' => cpfMascarado($a['cpf'])], $alunos), JSON_UNESCAPED_UNICODE) ?>;
 montarBusca({
     campo: 'aluno-busca', lista: 'aluno-lista', oculto: 'aluno-escolhido',
     itens: () => alunosProtocolo,
-    combina: (a, termo, digitos) => normalizar(a.nome).includes(termo) || (digitos && String(a.cpf || '').replace(/\D/g, '').includes(digitos)),
+    combina: (a, termo, digitos) => normalizar(a.nome).includes(termo) || cpfCombina(a.cpf, digitos),
     titulo: (a) => a.nome,
-    detalhe: (a) => a.cpf ? 'CPF ' + String(a.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : 'Sem CPF cadastrado',
+    detalhe: (a) => a.cpf_tela ? 'CPF ' + a.cpf_tela : 'Sem CPF cadastrado',
     vazio: 'Nenhum aluno encontrado.',
     aoEscolher: () => {
         const id = document.getElementById('aluno-escolhido').value;

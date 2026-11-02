@@ -166,7 +166,7 @@ require __DIR__ . '/../../../includes/layout_header.php';
                             <a href="/financeiro/contas_receber/baixar.php?id=<?= (int) $c['id'] ?>" class="btn btn-sm btn-outline-success" title="Dar baixa (receber)"><i class="bi bi-check-lg"></i></a>
                         <?php endif; ?>
                         <?php if ($c['status'] === 'pago'): ?><a href="/financeiro/contas_receber/recibo.php?id=<?= (int) $c['id'] ?>" target="_blank" class="btn btn-sm btn-outline-secondary" title="Imprimir recibo"><i class="bi bi-receipt"></i></a><?php endif; ?>
-                            <?php if ($c['status'] === 'pago' && !$c['pago_pelo_banco'] && usuarioPodeBaixarReceber()): ?>
+                            <?php if ($c['status'] === 'pago' && !$c['pago_pelo_banco'] && usuarioPodeEstornarReceber()): ?>
                                 <form action="/financeiro/contas_receber/estornar.php" method="post" class="d-inline" onsubmit="return confirm(<?= e(json_encode('Estornar a baixa de ' . $c['descricao'] . '? A parcela volta a ficar em aberto, como se não tivesse sido paga.')) ?>);">
                                     <input type="hidden" name="id" value="<?= (int) $c['id'] ?>">
                                     <input type="hidden" name="voltar" value="lista">

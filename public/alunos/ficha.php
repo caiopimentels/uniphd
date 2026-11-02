@@ -51,7 +51,7 @@ documentoCabecalho($doc, 'Ficha do aluno', 'Cadastro nº ' . str_pad((string) $i
             <div class="dois"><div class="rotulo">Nome</div><strong><?= e($aluno['nome']) ?></strong></div>
             <div><div class="rotulo">Situação</div><?= $aluno['ativo'] ? 'Ativo' : 'Inativo' ?></div>
             <div><div class="rotulo">Nascimento</div><?= formatDate($aluno['data_nascimento']) ?></div>
-            <div><div class="rotulo">CPF</div><?= e(cpfFormatado($aluno['cpf']) ?: '-') ?></div>
+            <div><div class="rotulo">CPF</div><?= e(cpfTexto($aluno['cpf']) ?: '-') ?></div>
             <div><div class="rotulo">RG</div><?= e($aluno['rg'] ?: '-') ?></div>
             <div class="dois"><div class="rotulo">Nome da mãe</div><?= e($aluno['nome_mae'] ?: '-') ?></div>
             <div class="dois"><div class="rotulo">Nome do pai</div><?= e($aluno['nome_pai'] ?: '-') ?></div>

@@ -67,7 +67,7 @@ $link = fn (array $mudar) => '?' . http_build_query(array_filter(array_merge(['i
             <tr>
                 <td><?= $i + 1 ?></td>
                 <td><?= e($a['nome']) ?></td>
-                <td class="text-nowrap"><?= e(cpfFormatado($a['cpf']) ?: '-') ?></td>
+                <td class="text-nowrap"><?= e(cpfTexto($a['cpf']) ?: '-') ?></td>
                 <?php if ($comContato): ?>
                     <td class="text-nowrap"><?= e(telefoneFormatado($a['telefone']) ?: '-') ?></td>
                     <td><?= e($a['email'] ?: '-') ?></td>

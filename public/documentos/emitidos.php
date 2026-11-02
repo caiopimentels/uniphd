@@ -133,7 +133,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <?php endif; ?>
             <?php foreach ($pagina as $d): ?>
                 <tr>
-                    <td><a href="/alunos/form.php?id=<?= (int) $d['aluno_id'] ?>"><?= e($d['aluno_nome']) ?></a><?php if ($d['cpf']): ?><div class="small text-muted"><?= e(cpfFormatado($d['cpf'])) ?></div><?php endif; ?></td>
+                    <td><a href="/alunos/form.php?id=<?= (int) $d['aluno_id'] ?>"><?= e($d['aluno_nome']) ?></a><?php if ($d['cpf']): ?><div class="small text-muted"><?= cpfTela($d['cpf'], (int) $d['aluno_id']) ?></div><?php endif; ?></td>
                     <td><?= e($d['documento_nome']) ?></td>
                     <td><?= e($d['curso_nome']) ?><div class="small text-muted"><a href="/turmas/visualizar.php?id=<?= (int) $d['turma_id'] ?>" class="text-muted"><?= e($d['turma_nome']) ?></a></div></td>
                     <td class="text-nowrap"><?= formatDateTime($d['liberado_em'] ?: $d['emitido_em']) ?><?php if ($d['liberado_por']): ?><div class="small text-muted"><?= e($d['liberado_por']) ?></div><?php endif; ?></td>

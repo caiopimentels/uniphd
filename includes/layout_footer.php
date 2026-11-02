@@ -153,6 +153,7 @@ function marcarTodosAlertas() {
 <script src="<?= e(assetUrl('/assets/js/imprimir-lista.js')) ?>"></script>
 <script src="/assets/js/escapar-html.js"></script>
 <script src="/assets/js/csrf.js"></script>
+<script src="<?= e(assetUrl('/assets/js/ver-cpf.js')) ?>"></script>
 <script>
 (function () {
     let restante = <?= (int) sessaoSegundosRestantes() ?>;

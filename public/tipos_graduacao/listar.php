@@ -66,6 +66,7 @@ require __DIR__ . '/../../includes/abas_cadastros_auxiliares.php';
 <p class="text-muted" style="max-width: 900px;">
     As graduações que o aluno escolhe no cadastro ("Possui graduação? Qual?"). <strong>Liberado no site</strong>: aparece no cadastro do portal;
     desligado, só a secretaria escolhe na ficha do aluno. <strong>Inativo</strong>: some das duas listas (quem já escolheu continua com ela).
+    Para ver quantos alunos há em cada graduação e quem são, use <a href="/alunos/relatorio.php">Relatórios › Alunos por graduação e curso</a>.
 </p>
 
 <form method="post" class="d-flex flex-wrap gap-2 align-items-end mb-3" style="max-width: 700px;">
@@ -107,7 +108,7 @@ require __DIR__ . '/../../includes/abas_cadastros_auxiliares.php';
                             <div class="form-check form-switch d-inline-block"><input type="checkbox" class="form-check-input" role="switch" <?= $t['ativo'] ? 'checked' : '' ?> onchange="this.form.submit()"></div>
                         </form>
                     </td>
-                    <td class="text-center"><?= (int) $t['alunos'] ?></td>
+                    <td class="text-center"><?php if ($t['alunos']): ?><a href="/alunos/relatorio.php?visao=graduacao&grupo=<?= (int) $t['id'] ?>#alunos" title="Ver quem são (Relatórios › Alunos por graduação e curso)"><?= (int) $t['alunos'] ?></a><?php else: ?>0<?php endif; ?></td>
                     <td class="text-end">
                         <form method="post" onsubmit="return confirm(<?= e(json_encode('Excluir "' . $t['nome'] . '"?')) ?>);">
                             <input type="hidden" name="acao" value="excluir"><input type="hidden" name="id" value="<?= (int) $t['id'] ?>">

@@ -111,7 +111,7 @@ $opcoes = [
     'turma' => array_map(fn ($t) => ['id' => (int) $t['id'], 'nome' => $t['curso_nome'] . ' · ' . $t['nome'], 'detalhe' => (int) $t['alunos'] . ' aluno(s) em andamento'],
         $pdo->query("SELECT t.id, t.nome, c.nome AS curso_nome, (SELECT COUNT(*) FROM matriculas m WHERE m.turma_id = t.id AND m.status IN ('ativa', 'pendente')) AS alunos
                      FROM turmas t JOIN cursos c ON c.id = t.curso_id ORDER BY t.data_inicio IS NULL, t.data_inicio DESC, c.nome, t.nome")->fetchAll()),
-    'aluno' => array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome'], 'detalhe' => $a['cpf'] ? 'CPF ' . cpfFormatado($a['cpf']) : 'Sem CPF', 'cpf' => (string) $a['cpf']],
+    'aluno' => array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome'], 'detalhe' => $a['cpf'] ? 'CPF ' . cpfMascarado($a['cpf']) : 'Sem CPF', 'cpf' => cpfBusca($a['cpf'])],
         $pdo->query('SELECT id, nome, cpf FROM alunos ORDER BY nome')->fetchAll()),
 ];
 $paraInput = fn ($v) => $v ? str_replace(' ', 'T', substr((string) $v, 0, 16)) : '';
@@ -415,7 +415,7 @@ function listarBusca() {
     const termo = semAcento(campoBusca.value.trim());
     const digitos = campoBusca.value.replace(/\D/g, '');
     const achados = OPCOES_DESTINO[p].filter((o) => !escolhidos[p].includes(o.id)
-        && (!termo || semAcento(o.nome).includes(termo) || (digitos.length >= 3 && String(o.cpf || '').includes(digitos)))).slice(0, 12);
+        && (!termo || semAcento(o.nome).includes(termo) || (digitos.length >= 3 && cpfCombina(o.cpf, digitos)))).slice(0, 12);
     listaBusca.innerHTML = achados.map((o) => `<button type="button" class="typeahead-item" data-id="${o.id}"><span class="typeahead-nome">${escapar(o.nome)}</span><span class="typeahead-meta">${escapar(o.detalhe)}</span></button>`).join('')
         || '<div class="typeahead-vazio">Nada encontrado.</div>';
     listaBusca.classList.remove('d-none');

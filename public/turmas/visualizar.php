@@ -666,7 +666,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <input type="text" name="nome" id="reserva-nome" class="form-control" required maxlength="150" list="reserva-alunos" autocomplete="off" placeholder="Nome (escolha um aluno da lista ou digite)">
                     <datalist id="reserva-alunos">
                         <?php foreach ($alunosReserva as $a): ?>
-                            <option value="<?= e($a['nome']) ?>" data-id="<?= (int) $a['id'] ?>"><?= e($a['cpf'] ? 'CPF ' . cpfFormatado($a['cpf']) : 'aluno cadastrado') ?></option>
+                            <option value="<?= e($a['nome']) ?>" data-id="<?= (int) $a['id'] ?>"><?= e($a['cpf'] ? 'CPF ' . cpfMascarado($a['cpf']) : 'aluno cadastrado') ?></option>
                         <?php endforeach; ?>
                     </datalist>
                     <div class="form-text" id="reserva-aluno-aviso"></div>

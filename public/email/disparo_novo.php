@@ -100,7 +100,7 @@ $opcoes = [
                      FROM turmas t JOIN cursos c ON c.id = t.curso_id ORDER BY t.data_inicio IS NULL, t.data_inicio DESC, c.nome, t.nome")->fetchAll()),
     'curso' => array_map(fn ($c) => ['id' => (int) $c['id'], 'nome' => $c['nome'], 'detalhe' => $c['ativo'] ? 'Curso' : 'Curso inativo'],
         $pdo->query('SELECT id, nome, ativo FROM cursos ORDER BY ativo DESC, nome')->fetchAll()),
-    'alunos' => array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome'], 'detalhe' => $a['email'] ?: 'sem e-mail', 'cpf' => (string) $a['cpf']],
+    'alunos' => array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome'], 'detalhe' => $a['email'] ?: 'sem e-mail', 'cpf' => cpfBusca($a['cpf'])],
         $pdo->query("SELECT id, nome, email, cpf FROM alunos WHERE ativo = 1 ORDER BY nome")->fetchAll()),
 ];
 // Contagem de cada público "fixo", para mostrar na hora.
@@ -259,7 +259,7 @@ function listar() {
     const p = publico();
     const t = semAcento(campoBusca.value.trim());
     const dig = campoBusca.value.replace(/\D/g, '');
-    const achados = OPCOES[p].filter((o) => !escolhidos[p].includes(o.id) && (!t || semAcento(o.nome).includes(t) || (dig.length >= 3 && String(o.cpf || '').includes(dig)))).slice(0, 12);
+    const achados = OPCOES[p].filter((o) => !escolhidos[p].includes(o.id) && (!t || semAcento(o.nome).includes(t) || (dig.length >= 3 && cpfCombina(o.cpf, dig)))).slice(0, 12);
     listaBusca.innerHTML = achados.map((o) => `<button type="button" class="typeahead-item" data-id="${o.id}"><span class="typeahead-nome">${escapeHtml(o.nome)}</span><span class="typeahead-meta">${escapeHtml(o.detalhe)}</span></button>`).join('') || '<div class="typeahead-vazio">Nada encontrado.</div>';
     listaBusca.classList.remove('d-none');
 }

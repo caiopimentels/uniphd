@@ -95,6 +95,7 @@ $menus = [
             ['Fluxo de caixa', '/financeiro/fluxo_caixa.php', usuarioPodeVerDRE(), 'fluxo-caixa'],
             ['Recebimentos', '/financeiro/recebimentos.php', usuarioPodeVerFinanceiro(), 'recebimentos'],
             ['Resultado por turma', '/financeiro/turmas_resultado.php', usuarioPodeVerFinanceiro(), 'resultado-turmas'],
+            ['Alunos por graduação e curso', '/alunos/relatorio.php', usuarioPodeVerAlunos(), 'relatorio-alunos', false, true],
         ],
     ],
 ];

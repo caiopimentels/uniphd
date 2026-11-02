@@ -7,7 +7,9 @@ $id = isset($_GET['id']) ? (int) $_GET['id'] : null;
 $perfil = null;
 $permissoesSelecionadas = [];
 
+require_once __DIR__ . '/../../includes/permissoes_layout.php';
 $todasPermissoes = $pdo->query('SELECT * FROM permissoes ORDER BY ordem, id')->fetchAll();
+$idPorChave = array_column($todasPermissoes, 'id', 'chave');
 $outrosPerfis = $pdo->query('SELECT id, nome FROM perfis WHERE administrador = 0 ORDER BY nome')->fetchAll();
 $perfisAlvoSelecionados = [];
 $permissoesPorGrupo = [];
@@ -39,7 +41,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nome = input('nome');
     $administrador = isset($_POST['administrador']) ? 1 : 0;
     $descontoMax = decimalInput('desconto_max', 0);
-    $permissoesMarcadas = array_map('intval', $_POST['permissoes'] ?? []);
+    // permissoes[] = caixas de uma permissão (e as mantidas de uma caixa
+    // "pela metade"); permissoes_juntas[] = caixas que valem por várias
+    // ("Inclusão e edição"), com os ids separados por vírgula.
+    $permissoesMarcadas = array_map('intval', (array) ($_POST['permissoes'] ?? []));
+    foreach ((array) ($_POST['permissoes_juntas'] ?? []) as $lista) {
+        array_push($permissoesMarcadas, ...array_map('intval', explode(',', (string) $lista)));
+    }
+    $permissoesMarcadas = array_values(array_unique(array_filter($permissoesMarcadas)));
     $perfisAlvoMarcados = array_map('intval', $_POST['perfis_alvo'] ?? []);
 
     if ($nome === '') {
@@ -107,7 +116,7 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="alert alert-danger"><ul class="mb-0"><?php foreach ($erros as $erro): ?><li><?= e($erro) ?></li><?php endforeach; ?></ul></div>
 <?php endif; ?>
 
-<div class="secao" style="max-width: 760px;">
+<div class="secao" style="max-width: 1000px;">
     <div class="secao-titulo"><i class="bi bi-shield-lock"></i> Dados do perfil</div>
         <form method="post" id="form-principal">
             <div class="row g-3">
@@ -126,21 +135,81 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <div class="col-12" id="bloco-permissoes">
                     <label class="form-label">Permissões</label>
                     <div class="form-text mt-0 mb-2">Marque o que as pessoas com este perfil podem fazer. Cada usuário tem um perfil (Administração › Usuários); crie quantos perfis precisar (ex.: Secretaria, Financeiro, Coordenação).</div>
-                    <?php foreach ($permissoesPorGrupo as $grupo => $permissoes): $chaveGrupo = 'g' . md5($grupo); ?>
-                        <div class="border rounded p-3 mb-2">
-                            <div class="form-check mb-2">
-                                <input type="checkbox" class="form-check-input marcar-grupo" id="<?= $chaveGrupo ?>" data-grupo="<?= $chaveGrupo ?>">
-                                <label class="form-check-label fw-semibold" for="<?= $chaveGrupo ?>"><?= e($grupo) ?></label>
-                            </div>
-                            <?php foreach ($permissoes as $perm): ?>
-                                <div class="form-check ps-5">
-                                    <input type="checkbox" name="permissoes[]" value="<?= (int) $perm['id'] ?>" class="form-check-input permissao-item" data-grupo="<?= $chaveGrupo ?>" id="perm-<?= (int) $perm['id'] ?>"
-                                           <?= in_array((int) $perm['id'], $permissoesSelecionadas, true) ? 'checked' : '' ?>>
-                                    <label class="form-check-label" for="perm-<?= (int) $perm['id'] ?>"><?= e($perm['descricao']) ?></label>
+                    <?php
+                    // Caixa que vale por uma ou mais permissões. Marcada só se tem
+                    // todas; "pela metade" (traço) se tem parte — aí as que já tem
+                    // vão escondidas e continuam até alguém mexer na caixa.
+                    $marcadas = array_map('intval', $permissoesSelecionadas);
+                    $usadas = [];
+                    $descricaoPorId = array_column($todasPermissoes, 'descricao', 'id');
+                    $caixa = function (array $chaves, string $rotulo, string $classe, string $linha, ?string $dica = null) use ($idPorChave, $marcadas, $descricaoPorId, &$usadas): string {
+                        $ids = array_values(array_filter(array_map(fn ($c) => $idPorChave[$c] ?? null, $chaves)));
+                        if (!$ids) {
+                            return '';
+                        }
+                        array_push($usadas, ...$ids);
+                        $tem = array_values(array_intersect($ids, $marcadas));
+                        $todas = count($tem) === count($ids);
+                        $parcial = $tem && !$todas;
+                        $idHtml = 'perm-' . implode('-', $ids);
+                        $nome = count($ids) > 1 ? 'permissoes_juntas[]' : 'permissoes[]';
+                        $html = '<div class="form-check' . ($classe === 'principal' ? ' fw-semibold' : '') . '">'
+                            . '<input type="checkbox" class="form-check-input perm ' . $classe . '" name="' . $nome . '" value="' . implode(',', $ids) . '" id="' . $idHtml . '" data-linha="' . $linha . '"'
+                            . ($todas ? ' checked' : '') . ($parcial ? ' data-parcial="1"' : '') . '>'
+                            . '<label class="form-check-label" for="' . $idHtml . '">' . e($rotulo) . '</label>';
+                        foreach ($parcial ? $tem : [] as $mantida) {
+                            $html .= '<input type="hidden" name="permissoes[]" value="' . $mantida . '" class="manter" data-de="' . $idHtml . '">';
+                        }
+                        if ($parcial) {
+                            $html .= ' <span class="badge text-bg-light border fw-normal" title="Hoje tem só parte desta caixa. Marque para liberar tudo ou desmarque para tirar.">hoje só: '
+                                . e(implode(', ', array_map(fn ($id) => $descricaoPorId[$id], $tem))) . '</span>';
+                        }
+                        return $html . ($dica ? '<div class="form-text mt-0">' . e($dica) . '</div>' : '') . '</div>';
+                    };
+                    $abasPermissoes = estruturaPermissoes();
+                    ?>
+                    <ul class="nav nav-tabs" role="tablist">
+                        <?php $n = 0; foreach (array_keys($abasPermissoes) as $nomeAba): ?>
+                            <li class="nav-item"><button type="button" class="nav-link <?= $n++ === 0 ? 'active' : '' ?>" data-bs-toggle="tab" data-bs-target="#aba-perm-<?= $n ?>"><?= e($nomeAba) ?></button></li>
+                        <?php endforeach; ?>
+                        <li class="nav-item d-none" id="aba-outras-item"><button type="button" class="nav-link" data-bs-toggle="tab" data-bs-target="#aba-perm-outras">Outras</button></li>
+                    </ul>
+                    <div class="tab-content border border-top-0 rounded-bottom p-3 mb-3">
+                        <?php $n = 0; foreach ($abasPermissoes as $nomeAba => $linhas): $n++; ?>
+                            <div class="tab-pane fade <?= $n === 1 ? 'show active' : '' ?>" id="aba-perm-<?= $n ?>">
+                                <div class="form-check mb-2">
+                                    <input type="checkbox" class="form-check-input marcar-aba" id="marcar-aba-<?= $n ?>">
+                                    <label class="form-check-label" for="marcar-aba-<?= $n ?>">Selecionar todos</label>
                                 </div>
-                            <?php endforeach; ?>
+                                <?php foreach ($linhas as $k => $l): $linha = 'l' . $n . '-' . $k; ?>
+                                    <div class="border rounded p-3 mb-2 linha-perm">
+                                        <div class="row g-2">
+                                            <div class="col-md-5">
+                                                <?php if ($l['ver']): ?>
+                                                    <?= $caixa([$l['ver']], $l['titulo'], 'principal', $linha, $l['dica'] ?? null) ?>
+                                                <?php else: ?>
+                                                    <div class="fw-semibold"><?= e($l['titulo']) ?></div>
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="col-md-7 d-flex flex-wrap gap-4">
+                                                <?php if (!empty($l['incluir'])): ?><div><?= $caixa($l['incluir'], 'Inclusão e edição', 'sub', $linha, $l['dica_incluir'] ?? null) ?></div><?php endif; ?>
+                                                <?php if (!empty($l['excluir'])): ?><div><?= $caixa($l['excluir'], 'Exclusão', 'sub', $linha, $l['dica_excluir'] ?? null) ?></div><?php endif; ?>
+                                            </div>
+                                        </div>
+                                        <?php if (!empty($l['extras'])): ?>
+                                            <div class="ps-4 mt-1">
+                                                <?php foreach ($l['extras'] as $chave => $rotulo): ?><?= $caixa([$chave], $rotulo, 'sub', $linha) ?><?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endforeach; ?>
+                        <?php $outras = array_filter($todasPermissoes, fn ($p) => !in_array((int) $p['id'], $usadas, true)); ?>
+                        <div class="tab-pane fade" id="aba-perm-outras" data-tem="<?= $outras ? '1' : '' ?>">
+                            <?php foreach ($outras as $p): ?><?= $caixa([$p['chave']], $p['descricao'], 'sub', 'outras') ?><?php endforeach; ?>
                         </div>
-                    <?php endforeach; ?>
+                    </div>
                     <div class="border rounded p-3 mb-2">
                         <div class="fw-semibold mb-1">Usuários que este perfil pode cadastrar e editar</div>
                         <div class="form-text mt-0 mb-2">Vale para quem tem as permissões de "Usuários do sistema" acima. Ex.: Secretaria pode criar só Secretaria; Gerente pode criar Secretaria e Financeiro. Perfis de administrador só um administrador cria.</div>
@@ -164,26 +233,50 @@ require __DIR__ . '/../../includes/layout_header.php';
 </div>
 
 <script>
-// "Marcar tudo" de cada área; com o perfil de administrador, as caixas não
-// valem (ele pode tudo) e ficam esmaecidas.
-function atualizarGrupos() {
-    document.querySelectorAll('.marcar-grupo').forEach((g) => {
-        const itens = [...document.querySelectorAll('.permissao-item[data-grupo="' + g.dataset.grupo + '"]')];
+// Caixas das permissões (estilo Bling): "pela metade" quando o perfil tem só
+// parte do que a caixa libera; desmarcar a principal (ver/usar) de uma linha
+// desmarca as outras dela; marcar qualquer uma marca a principal.
+// Com o perfil de administrador, as caixas não valem e ficam esmaecidas.
+const caixasPerm = [...document.querySelectorAll('.perm')];
+caixasPerm.filter((c) => c.dataset.parcial).forEach((c) => { c.indeterminate = true; });
+const soltarParcial = (c) => {
+    c.indeterminate = false;
+    delete c.dataset.parcial;
+    document.querySelectorAll('.manter[data-de="' + c.id + '"]').forEach((h) => h.remove());
+    c.closest('.form-check').querySelector('.badge')?.remove();
+};
+function atualizarAbas() {
+    document.querySelectorAll('.tab-pane').forEach((aba) => {
+        const todo = aba.querySelector('.marcar-aba');
+        if (!todo) return;
+        const itens = [...aba.querySelectorAll('.perm')];
         const n = itens.filter((c) => c.checked).length;
-        g.checked = n === itens.length;
-        g.indeterminate = n > 0 && n < itens.length;
+        todo.checked = n === itens.length;
+        todo.indeterminate = n > 0 && n < itens.length;
     });
 }
-document.querySelectorAll('.marcar-grupo').forEach((g) => g.addEventListener('change', () => {
-    document.querySelectorAll('.permissao-item[data-grupo="' + g.dataset.grupo + '"]').forEach((c) => { c.checked = g.checked; });
-    atualizarGrupos();
+caixasPerm.forEach((c) => c.addEventListener('change', () => {
+    soltarParcial(c);
+    const daLinha = caixasPerm.filter((o) => o.dataset.linha === c.dataset.linha);
+    if (c.classList.contains('principal') && !c.checked) {
+        daLinha.forEach((o) => { soltarParcial(o); o.checked = false; });
+    } else if (c.classList.contains('sub') && c.checked) {
+        daLinha.filter((o) => o.classList.contains('principal')).forEach((o) => { soltarParcial(o); o.checked = true; });
+    }
+    atualizarAbas();
 }));
-document.querySelectorAll('.permissao-item').forEach((c) => c.addEventListener('change', atualizarGrupos));
+document.querySelectorAll('.marcar-aba').forEach((todo) => todo.addEventListener('change', () => {
+    todo.closest('.tab-pane').querySelectorAll('.perm').forEach((c) => { soltarParcial(c); c.checked = todo.checked; });
+    atualizarAbas();
+}));
+if (document.getElementById('aba-perm-outras').dataset.tem) {
+    document.getElementById('aba-outras-item').classList.remove('d-none');
+}
 function atualizarAdmin() {
     document.getElementById('bloco-permissoes').style.opacity = document.getElementById('administrador').checked ? .45 : 1;
 }
 document.getElementById('administrador').addEventListener('change', atualizarAdmin);
-atualizarGrupos();
+atualizarAbas();
 atualizarAdmin();
 </script>
 

@@ -111,7 +111,7 @@ require __DIR__ . '/../../includes/layout_header.php';
         <?php endif; ?>
         <div class="card"><div class="card-body">
             <div class="row g-3">
-                <div class="col-md-6"><div class="kpi-rotulo">Aluno</div><div><a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>"><?= e($matricula['aluno_nome']) ?></a><?= $matricula['aluno_ra'] ? ' · ' . e($matricula['aluno_ra']) : '' ?><?= $matricula['aluno_cpf'] ? ' · ' . e(cpfFormatado($matricula['aluno_cpf'])) : '' ?></div></div>
+                <div class="col-md-6"><div class="kpi-rotulo">Aluno</div><div><a href="/alunos/form.php?id=<?= (int) $matricula['aluno_id'] ?>"><?= e($matricula['aluno_nome']) ?></a><?= $matricula['aluno_ra'] ? ' · ' . e($matricula['aluno_ra']) : '' ?><?= $matricula['aluno_cpf'] ? ' · ' . cpfTela($matricula['aluno_cpf'], (int) $matricula['aluno_id']) : '' ?></div></div>
                 <div class="col-md-6"><div class="kpi-rotulo">Turma</div><div><a href="/turmas/visualizar.php?id=<?= (int) $matricula['turma_id'] ?>"><?= e($matricula['curso_nome']) ?> · <?= e($matricula['turma_nome']) ?></a></div></div>
                 <div class="col-md-3"><div class="kpi-rotulo">Data da matrícula</div><div><?= formatDate($matricula['data_matricula']) ?></div>
                     <div class="small text-muted">lançada em <?= formatDateTime($matricula['criado_em']) ?></div></div>
@@ -180,7 +180,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                     <a href="/financeiro/contas_receber/baixar.php?id=<?= (int) $p['id'] ?>&voltar=matricula" class="btn btn-sm btn-outline-success" title="Dar baixa (receber)"><i class="bi bi-check-lg"></i></a>
                                 <?php endif; ?>
                                 <?php if ($p['status'] === 'pago'): ?><a href="/financeiro/contas_receber/recibo.php?id=<?= (int) $p['id'] ?>&voltar=matricula" target="_blank" class="btn btn-sm btn-outline-secondary" title="Imprimir recibo"><i class="bi bi-receipt"></i></a><?php endif; ?>
-                            <?php if ($p['status'] === 'pago' && !$p['pago_pelo_banco'] && usuarioPodeBaixarReceber()): ?>
+                            <?php if ($p['status'] === 'pago' && !$p['pago_pelo_banco'] && usuarioPodeEstornarReceber()): ?>
                                 <form action="/financeiro/contas_receber/estornar.php" method="post" class="d-inline" data-confirmar="<?= e('Estornar a baixa de ' . $p['descricao'] . '? A parcela volta a ficar em aberto, como se não tivesse sido paga.') ?>">
                                     <input type="hidden" name="id" value="<?= (int) $p['id'] ?>">
                                     <input type="hidden" name="voltar" value="matricula">

@@ -166,7 +166,7 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="card"><div class="card-body">
         <div class="kpi-rotulo">Aluno</div>
         <div class="mb-2"><a href="/alunos/form.php?id=<?= (int) $protocolo['aluno_id'] ?>&tab=protocolos"><?= e($protocolo['aluno_nome']) ?></a>
-            <?php if ($protocolo['aluno_cpf']): ?><div class="small text-muted"><?= e(cpfFormatado($protocolo['aluno_cpf'])) ?></div><?php endif; ?>
+            <?php if ($protocolo['aluno_cpf']): ?><div class="small text-muted"><?= cpfTela($protocolo['aluno_cpf'], (int) $protocolo['aluno_id']) ?></div><?php endif; ?>
             <?php if ($totalDoAluno > 1): ?><div class="small"><a href="/alunos/form.php?id=<?= (int) $protocolo['aluno_id'] ?>&tab=protocolos"><?= $totalDoAluno ?> protocolos deste aluno</a></div><?php endif; ?>
         </div>
         <?php if ($protocolo['turma_nome']): ?>

@@ -310,7 +310,8 @@ $formasPagamento = $pdo->query("SELECT id, nome, instrumento, instrumento = 'man
 $alunosJson = array_map(fn ($a) => [
     'id' => (int) $a['id'],
     'nome' => $a['nome'],
-    'cpf' => $a['cpf'],
+    'cpf' => cpfBusca($a['cpf']),
+    'cpf_tela' => cpfMascarado($a['cpf']),
     'atraso' => (float) $a['atraso'],
     'liberacao' => $a['liberacao'],
 ], $alunos);
@@ -771,9 +772,9 @@ const alunos = <?= json_encode($alunosJson, JSON_UNESCAPED_UNICODE) ?>;
 const buscaAluno = montarBusca({
     campo: 'aluno-busca', lista: 'aluno-lista', oculto: 'aluno_id',
     itens: () => alunos,
-    combina: (a, termo, digitos) => normalizar(a.nome).includes(termo) || (digitos && String(a.cpf || '').replace(/\D/g, '').includes(digitos)),
+    combina: (a, termo, digitos) => normalizar(a.nome).includes(termo) || cpfCombina(a.cpf, digitos),
     titulo: (a) => a.nome,
-    detalhe: (a) => a.cpf ? 'CPF ' + String(a.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : 'Sem CPF cadastrado',
+    detalhe: (a) => a.cpf_tela ? 'CPF ' + a.cpf_tela : 'Sem CPF cadastrado',
     vazio: 'Nenhum aluno encontrado.<?= $podeCriarAluno ? ' Use o botão <i class="bi bi-person-plus"></i> para cadastrar.' : '' ?>',
     aoEscolher: () => { atualizarInadimplencia(); if (document.getElementById('cupom').value) conferirCupom(); },
 });

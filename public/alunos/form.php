@@ -62,7 +62,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $nome = formatarNomePessoa(input('nome'));
     $dataNascimento = input('data_nascimento');
     // CPF e telefones: só os números no banco (a máscara é da tela).
-    $cpf = apenasDigitos(input('cpf'));
+    // Aluno que já tem CPF: o campo vem mascarado e sem nome — só quem
+    // revelou pelo olhinho (permissão ver_cpf_completo) consegue trocar.
+    $cpfAtual = apenasDigitos((string) ($aluno['cpf'] ?? ''));
+    $cpf = $cpfAtual !== '' && (!isset($_POST['cpf']) || !usuarioVeCpfCompleto()) ? $cpfAtual : apenasDigitos(input('cpf'));
     $rg = input('rg');
     $telefone = apenasDigitos(input('telefone'));
     $email = input('email');
@@ -250,9 +253,20 @@ if ($id) {
 $pageTitle = $id ? e($aluno['nome']) : 'Novo aluno';
 $pageBreadcrumb = 'Acadêmico · Alunos';
 $activeMenu = 'alunos';
-$pageAction = ($id ? '<a href="/alunos/ficha.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Ficha</a>' : '')
-    . '<a href="/alunos/listar.php" class="btn btn-outline-secondary">' . ($podeEditarAluno || $podeAtivarAluno ? 'Cancelar' : 'Voltar') . '</a>'
-    . ($podeEditarAluno || $podeAtivarAluno ? '<button type="submit" form="form-aluno" class="btn btn-brand"><i class="bi bi-check-lg"></i> Salvar</button>' : '');
+// Ficha de aluno já cadastrado abre travada (só leitura); quem pode editar
+// clica em "Editar" para destravar. Aluno novo, ?editar=1 ou envio com erro
+// já abrem editando.
+$abrirTravado = $id && $podeEditarAluno && !$erros && !isset($_GET['editar']);
+$pageAction = ($id ? '<a href="/alunos/ficha.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Ficha</a>' : '');
+if ($abrirTravado) {
+    $pageAction .= '<a href="/alunos/listar.php" class="btn btn-outline-secondary modo-ver">Voltar</a>'
+        . '<button type="button" class="btn btn-brand modo-ver" onclick="destravarAluno()"><i class="bi bi-pencil"></i> Editar</button>'
+        . '<a href="/alunos/form.php?id=' . (int) $id . '" class="btn btn-outline-secondary modo-editar d-none">Cancelar</a>'
+        . '<button type="submit" form="form-aluno" class="btn btn-brand modo-editar d-none"><i class="bi bi-check-lg"></i> Salvar</button>';
+} else {
+    $pageAction .= '<a href="' . ($id && $podeEditarAluno ? '/alunos/form.php?id=' . (int) $id : '/alunos/listar.php') . '" class="btn btn-outline-secondary">' . ($podeEditarAluno || $podeAtivarAluno ? 'Cancelar' : 'Voltar') . '</a>'
+        . ($podeEditarAluno || $podeAtivarAluno ? '<button type="submit" form="form-aluno" class="btn btn-brand"><i class="bi bi-check-lg"></i> Salvar</button>' : '');
+}
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
 
@@ -307,8 +321,19 @@ require __DIR__ . '/../../includes/layout_header.php';
 
                 <div class="col-md-3">
                     <label class="form-label">CPF</label>
-                    <input type="text" name="cpf" class="form-control" inputmode="numeric" data-mascara="cpf" value="<?= e(cpfFormatado($aluno['cpf'] ?? '')) ?>"
-                           onblur="validarCampoDocumento(this)" oninput="this.classList.remove('is-invalid')">
+                    <?php if ($id && apenasDigitos((string) ($aluno['cpf'] ?? '')) !== ''): ?>
+                        <?php // Mascarado; o olhinho (quem pode) revela e libera para corrigir. ?>
+                        <div class="input-group cpf-campo">
+                            <input type="text" class="form-control cpf-mascarado" inputmode="numeric" readonly value="<?= e(cpfMascarado($aluno['cpf'])) ?>"
+                                   onblur="if (!this.readOnly) validarCampoDocumento(this)" oninput="this.classList.remove('is-invalid')">
+                            <?php if (usuarioVeCpfCompleto()): ?>
+                                <button type="button" class="btn btn-outline-secondary ver-cpf" data-aluno="<?= (int) $id ?>" title="Mostrar o CPF completo (fica registrado)"><i class="bi bi-eye"></i></button>
+                            <?php endif; ?>
+                        </div>
+                    <?php else: ?>
+                        <input type="text" name="cpf" class="form-control" inputmode="numeric" data-mascara="cpf" value="<?= e(cpfFormatado($aluno['cpf'] ?? '')) ?>"
+                               onblur="validarCampoDocumento(this)" oninput="this.classList.remove('is-invalid')">
+                    <?php endif; ?>
                     <div class="invalid-feedback">CPF inválido.</div>
                 </div>
                 <div class="col-md-3">
@@ -395,8 +420,8 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <div class="alert alert-success">
                     <div class="fw-semibold mb-1"><i class="bi bi-check-circle"></i> Acesso criado! Passe estes dados para o aluno (a senha só aparece agora):</div>
                     <div>Endereço: <strong><?= e(urlAbsoluta('/portal/entrar.php')) ?></strong></div>
-                    <div>CPF: <strong><?= e($senhaCriada['cpf']) ?></strong> · Senha provisória: <strong class="font-monospace fs-5" id="senha-criada"><?= e($senhaCriada['senha']) ?></strong>
-                        <button type="button" class="btn btn-sm btn-outline-success ms-1" onclick="navigator.clipboard.writeText(<?= e(json_encode('Portal do aluno: ' . urlAbsoluta('/portal/entrar.php') . ' — CPF: ' . $senhaCriada['cpf'] . ' — senha provisória: ' . $senhaCriada['senha'] . ' (no primeiro acesso você cria a sua)')) ?>); this.textContent = 'Copiado!';">Copiar mensagem</button>
+                    <div>CPF: <strong><?= e(cpfMascarado($senhaCriada['cpf'])) ?></strong> <span class="small text-muted">(o do aluno)</span> · Senha provisória: <strong class="font-monospace fs-5" id="senha-criada"><?= e($senhaCriada['senha']) ?></strong>
+                        <button type="button" class="btn btn-sm btn-outline-success ms-1" onclick="navigator.clipboard.writeText(<?= e(json_encode('Portal do aluno: ' . urlAbsoluta('/portal/entrar.php') . ' — entre com o seu CPF e a senha provisória: ' . $senhaCriada['senha'] . ' (no primeiro acesso você cria a sua)')) ?>); this.textContent = 'Copiado!';">Copiar mensagem</button>
                     </div>
                     <div class="small mt-1">No primeiro acesso o portal pede para ele criar a própria senha.</div>
                 </div>
@@ -759,7 +784,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <a href="/financeiro/contas_receber/baixar.php?id=<?= (int) $p['id'] ?>&voltar=aluno" class="btn btn-sm btn-outline-success" title="Dar baixa (receber)"><i class="bi bi-check-lg"></i></a>
                             <?php endif; ?>
                             <?php if ($p['status'] === 'pago'): ?><a href="/financeiro/contas_receber/recibo.php?id=<?= (int) $p['id'] ?>&voltar=aluno" target="_blank" class="btn btn-sm btn-outline-secondary" title="Imprimir recibo"><i class="bi bi-receipt"></i></a><?php endif; ?>
-                            <?php if ($p['status'] === 'pago' && !$p['pago_pelo_banco'] && usuarioPodeBaixarReceber()): ?>
+                            <?php if ($p['status'] === 'pago' && !$p['pago_pelo_banco'] && usuarioPodeEstornarReceber()): ?>
                                 <form action="/financeiro/contas_receber/estornar.php" method="post" class="d-inline" onsubmit="return confirm(<?= e(json_encode('Estornar a baixa de ' . $p['descricao'] . '? A parcela volta a ficar em aberto, como se não tivesse sido paga.')) ?>);">
                                     <input type="hidden" name="id" value="<?= (int) $p['id'] ?>">
                                     <input type="hidden" name="voltar" value="aluno">
@@ -779,6 +804,30 @@ require __DIR__ . '/../../includes/layout_header.php';
 <?php endif; ?>
 <?php endif; ?>
 
+<?php if ($abrirTravado): ?>
+<script>
+// Ficha travada: todos os campos desabilitados (o olhinho do CPF continua).
+// "Editar" devolve cada campo ao estado que o servidor mandou.
+const camposAluno = () => [...document.querySelectorAll('#form-aluno input, #form-aluno select, #form-aluno textarea, #form-aluno button')]
+    .filter((el) => !el.classList.contains('ver-cpf'));
+camposAluno().forEach((el) => { el.dataset.jaDesabilitado = el.disabled ? '1' : ''; el.disabled = true; });
+document.getElementById('form-aluno').classList.add('ficha-travada');
+
+function destravarAluno() {
+    camposAluno().forEach((el) => { el.disabled = !!el.dataset.jaDesabilitado; });
+    // CPF revelado com a ficha travada: agora pode ser corrigido.
+    const cpf = document.querySelector('#form-aluno .cpf-mascarado[data-revelado]');
+    if (cpf) {
+        cpfCampoRevelar(cpf, cpf.value);
+    }
+    document.getElementById('form-aluno').classList.remove('ficha-travada');
+    document.querySelectorAll('.modo-ver').forEach((el) => el.classList.add('d-none'));
+    document.querySelectorAll('.modo-editar').forEach((el) => el.classList.remove('d-none'));
+    document.querySelector('[data-tab="dados"]')?.click();
+    document.querySelector('#form-aluno input:not([readonly]):not([type=hidden]):not([disabled])')?.focus();
+}
+</script>
+<?php endif; ?>
 <?php if ($podeEditarAluno === false): ?>
 <script>
 // Sem permissão de editar: a ficha fica só para leitura (o servidor também

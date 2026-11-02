@@ -165,7 +165,7 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
                             <?php if ($c['parcela_aluno']): ?><div class="fw-semibold"><?= e($c['parcela_aluno']) ?></div><?php endif; ?>
                             <div class="small">
                                 <a href="?<?= e(http_build_query(['id' => $id, 'ver' => 'enviadas', 'parcela' => $c['conta_receber_id']])) ?>" title="Ver só esta parcela"><?= e($c['parcela_descricao'] ?: 'nº ' . $c['conta_receber_id']) ?></a>
-                                <?php if ($c['parcela_cpf']): ?><span class="text-muted">· CPF <?= e(cpfFormatado((string) $c['parcela_cpf'])) ?></span><?php endif; ?>
+                                <?php if ($c['parcela_cpf']): ?><span class="text-muted">· CPF <?= e(cpfTexto((string) $c['parcela_cpf'])) ?></span><?php endif; ?>
                             </div>
                         <?php else: ?>
                             <span class="text-muted">-</span>

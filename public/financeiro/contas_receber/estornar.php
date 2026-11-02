@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/../../../includes/bootstrap.php';
-exigirPermissaoAcao('baixar_receber', 'Seu perfil não pode estornar baixas.');
+exigirPermissaoAcao('estornar_receber', 'Seu perfil não pode estornar baixas.');
 
 // Desfaz uma baixa lançada à mão por engano: a parcela volta a ficar em
 // aberto. Baixa vinda do banco (boleto/Pix pago no Itaú) não se desfaz —

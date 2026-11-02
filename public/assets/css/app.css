@@ -1353,3 +1353,7 @@ a.lateral-acao { text-decoration: none; }
 @media (min-width: 992px) {
     .lateral-fixa { position: sticky; top: calc(var(--topnav-h, 58px) + 1rem); max-height: calc(100vh - var(--topnav-h, 58px) - 2rem); overflow-y: auto; padding-right: 4px; scrollbar-width: thin; }
 }
+
+/* Ficha do aluno travada (antes de clicar em "Editar"): campos cinza, com cara de bloqueado, mas o texto bem legível. */
+.ficha-travada .form-control:disabled, .ficha-travada .form-select:disabled { background-color: var(--bs-secondary-bg, #e9ecef); color: var(--bs-body-color, inherit); opacity: 1; box-shadow: inset 0 1px 2px rgba(0, 0, 0, .06); cursor: not-allowed; }
+.ficha-travada .form-check-input:disabled ~ .form-check-label { opacity: 1; }

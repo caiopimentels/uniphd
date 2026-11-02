@@ -34,7 +34,8 @@ function colunasTelaAlunos(): array
         'nome' => ['rotulo' => 'Nome', 'ordem' => 'nome',
             'html' => fn ($a) => e($a['nome']), 'texto' => fn ($a) => $a['nome']],
         'cpf' => ['rotulo' => 'CPF', 'ordem' => 'cpf', 'classe' => 'text-nowrap',
-            'html' => fn ($a) => e(cpfFormatado($a['cpf']) ?: '-'), 'texto' => fn ($a) => cpfFormatado($a['cpf']) ?: '-'],
+            // Na lista (e na impressão dela) fica sempre mascarado, sem o olhinho — ele fica na ficha do aluno.
+            'html' => fn ($a) => e(cpfMascarado($a['cpf']) ?: '-'), 'texto' => fn ($a) => cpfMascarado($a['cpf']) ?: '-'],
         'telefone' => ['rotulo' => 'Telefone', 'ordem' => 'telefone', 'classe' => 'text-nowrap',
             'html' => fn ($a) => e(telefoneFormatado($a['telefone']) ?: '-'), 'texto' => fn ($a) => telefoneFormatado($a['telefone']) ?: '-'],
         'email' => ['rotulo' => 'E-mail', 'ordem' => 'email', 'padrao' => false,

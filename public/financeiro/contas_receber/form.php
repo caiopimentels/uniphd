@@ -4,7 +4,7 @@ exigirPermissaoAcao('lancar_receber', 'Seu perfil não pode lançar cobranças.'
 
 $pdo = getDB();
 $alunos = $pdo->query('SELECT id, nome, cpf FROM alunos WHERE ativo = 1 ORDER BY nome')->fetchAll();
-$alunosJson = array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome'], 'cpf' => $a['cpf']], $alunos);
+$alunosJson = array_map(fn ($a) => ['id' => (int) $a['id'], 'nome' => $a['nome'], 'cpf' => cpfBusca($a['cpf']), 'cpf_tela' => cpfMascarado($a['cpf'])], $alunos);
 // Vindo do cadastro do aluno (?aluno_id=), o aluno já chega escolhido.
 $alunoEscolhido = (int) ($_POST['aluno_id'] ?? $_GET['aluno_id'] ?? 0) ?: '';
 $categorias = $pdo->query("SELECT id, nome FROM categorias_financeiras WHERE tipo = 'receita' AND ativo = 1 ORDER BY nome")->fetchAll();
@@ -110,9 +110,9 @@ const alunos = <?= json_encode($alunosJson, JSON_UNESCAPED_UNICODE) ?>;
 montarBusca({
     campo: 'aluno-busca', lista: 'aluno-lista', oculto: 'aluno_id',
     itens: () => alunos,
-    combina: (a, termo, digitos) => normalizar(a.nome).includes(termo) || (digitos && String(a.cpf || '').replace(/\D/g, '').includes(digitos)),
+    combina: (a, termo, digitos) => normalizar(a.nome).includes(termo) || cpfCombina(a.cpf, digitos),
     titulo: (a) => a.nome,
-    detalhe: (a) => a.cpf ? 'CPF ' + String(a.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : 'Sem CPF cadastrado',
+    detalhe: (a) => a.cpf_tela ? 'CPF ' + a.cpf_tela : 'Sem CPF cadastrado',
     vazio: 'Nenhum aluno encontrado.',
 });
 // Texto digitado sem escolher da lista não vale: avisa antes de salvar.
