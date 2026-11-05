@@ -872,6 +872,7 @@ function historicoAluno(PDO $pdo, int $alunoId, int $limite = 200): array
         'exclusao' => ['Matrícula excluída', 'bi-trash', 'danger'],
         'documento' => ['Documento', 'bi-file-earmark-check', 'primary'],
         'protocolo' => ['Protocolo', 'bi-chat-left-text', 'info'],
+        'postit' => ['Post-it', 'bi-sticky', 'warning'],
     ];
     $item = fn ($quando, $quem, $titulo, $detalhe, $icone, $cor) => compact('quando', 'quem', 'titulo', 'detalhe', 'icone', 'cor');
     $itens = [];

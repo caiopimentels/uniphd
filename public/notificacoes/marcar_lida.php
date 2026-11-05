@@ -16,8 +16,12 @@ $id = (int) ($_POST['id'] ?? 0);
 $todas = isset($_POST['todas']);
 
 try {
-    if ($todas) {
+    if ($todas && !empty($_POST['nao_lida'])) {
+        marcarTodasNotificacoesNaoLidas($pdo, $usuarioId);
+    } elseif ($todas) {
         marcarTodasNotificacoesLidas($pdo, $usuarioId);
+    } elseif ($id && !empty($_POST['nao_lida'])) {
+        marcarNotificacaoNaoLida($pdo, $usuarioId, $id);
     } elseif ($id) {
         marcarNotificacaoLida($pdo, $usuarioId, $id);
     } else {

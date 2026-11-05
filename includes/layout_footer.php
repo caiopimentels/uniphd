@@ -94,19 +94,42 @@
 .alerta-tempo { font-size: .72rem; color: var(--text-muted); }
 
 .alerta-ponto {
-    width: 8px;
-    height: 8px;
-    flex: none;
-    margin-top: .35rem;
+    display: block;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
-    background: var(--accent);
+    border: 2px solid var(--accent);
+    background: transparent;
 }
+.alerta-item.nao-lida .alerta-ponto { background: var(--accent); }
+
+/* Bolinha de cada alerta: clicar alterna lida / não lida (sem abrir o link). */
+.alerta-marcar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin: -.1rem -.35rem 0 0;
+    border-radius: 50%;
+    cursor: pointer;
+    opacity: .45;
+}
+.alerta-item.nao-lida .alerta-marcar, .alerta-item:hover .alerta-marcar { opacity: 1; }
+.alerta-marcar:hover { background: var(--border); }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 function atualizarBadgeAlertas(naoLidas) {
-    const badge = document.getElementById('sino-badge');
+    let badge = document.getElementById('sino-badge');
+    if (!badge && naoLidas > 0) {
+        badge = document.createElement('span');
+        badge.className = 'sino-badge';
+        badge.id = 'sino-badge';
+        document.querySelector('.topnav-sino')?.appendChild(badge);
+    }
     if (!badge) return;
 
     if (naoLidas > 0) {
@@ -114,6 +137,29 @@ function atualizarBadgeAlertas(naoLidas) {
     } else {
         badge.remove();
     }
+}
+
+// Bolinha do alerta: marca como lida ou volta para não lida, sem abrir o link.
+function alternarAlertaLido(ev, botao) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const item = botao.closest('.alerta-item');
+    const naoLida = !item.classList.contains('nao-lida');
+    const corpo = new URLSearchParams({ id: item.dataset.id });
+    if (naoLida) corpo.set('nao_lida', '1');
+    fetch('/notificacoes/marcar_lida.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+        body: corpo.toString(),
+    })
+        .then((r) => r.json())
+        .then((data) => {
+            if (!data.sucesso) return;
+            item.classList.toggle('nao-lida', naoLida);
+            botao.title = naoLida ? 'Marcar como lida' : 'Marcar como não lida';
+            atualizarBadgeAlertas(data.nao_lidas);
+        })
+        .catch(() => {});
 }
 
 function marcarAlertaLido(id) {
@@ -127,22 +173,22 @@ function marcarAlertaLido(id) {
     }).catch(() => {});
 }
 
-function marcarTodosAlertas() {
+// lidas = true: todos lidos; false: todos voltam a não lidos.
+function marcarTodosAlertas(lidas) {
     fetch('/notificacoes/marcar_lida.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
-        body: 'todas=1',
+        body: lidas ? 'todas=1' : 'todas=1&nao_lida=1',
     })
         .then((r) => r.json())
         .then((data) => {
             if (!data.sucesso) return;
             atualizarBadgeAlertas(data.nao_lidas);
-            document.querySelectorAll('.alerta-item.nao-lida').forEach(function (item) {
-                item.classList.remove('nao-lida');
-                const ponto = item.querySelector('.alerta-ponto');
-                if (ponto) ponto.remove();
+            document.querySelectorAll('.alerta-item').forEach(function (item) {
+                item.classList.toggle('nao-lida', !lidas);
+                const marcar = item.querySelector('.alerta-marcar');
+                if (marcar) marcar.title = lidas ? 'Marcar como não lida' : 'Marcar como lida';
             });
-            document.querySelectorAll('.alertas-cabecalho .btn-link').forEach((b) => b.remove());
         })
         .catch(() => {});
 }
@@ -275,5 +321,73 @@ if (usuarioLogado() && usuarioEhAdmin() && empty($_SESSION['aviso_certificado_mo
 </div>
 <script>bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-aviso-certificado')).show();</script>
 <?php endif; endif; ?>
+<?php
+// Post-its que avisam este usuário (includes/postits.php): abrem sozinhos,
+// uma vez por login. Falha aqui (ex.: tabela ainda não criada no servidor)
+// não pode derrubar a página.
+$postitsAvisar = [];
+if (usuarioLogado()) {
+    try {
+        $postitsAvisar = postitsParaAvisarAgora(getDB(), (int) usuarioAtualId(), (int) ($_SESSION['user_perfil_id'] ?? 0));
+    } catch (Throwable $e) {
+        error_log('Post-its: ' . $e->getMessage());
+    }
+}
+if ($postitsAvisar): ?>
+<div class="modal fade" id="modal-postits-aviso" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-sticky"></i> <?= count($postitsAvisar) > 1 ? 'Post-its para você' : 'Post-it para você' ?></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body d-flex flex-column gap-3">
+                <?php foreach ($postitsAvisar as $pa):
+                    $linkPostit = $pa['matricula_id'] ? '/matriculas/visualizar.php?id=' . (int) $pa['matricula_id'] : '/alunos/form.php?id=' . (int) $pa['aluno_id']; ?>
+                    <div class="border rounded p-3" style="<?= e(postitEstilo($pa['cor'])) ?>" data-postit-aviso="<?= (int) $pa['id'] ?>">
+                        <div class="fw-semibold mb-1"><i class="bi bi-person"></i> <?= e($pa['aluno_nome']) ?><?= $pa['matricula_nome'] ? ' <span class="fw-normal small">· ' . e($pa['matricula_nome']) . '</span>' : '' ?></div>
+                        <div style="word-break:break-word"><?= nl2br(e($pa['texto'])) ?></div>
+                        <div class="small mt-2" style="opacity:.8"><?= e($pa['usuario_nome']) ?> · <?= formatDateTime($pa['criado_em']) ?></div>
+                        <div class="d-flex flex-wrap gap-2 mt-2">
+                            <a href="<?= e($linkPostit) ?>" class="btn btn-sm btn-dark"><i class="bi bi-box-arrow-up-right"></i> Abrir <?= $pa['matricula_id'] ? 'a matrícula' : 'o aluno' ?></a>
+                            <button type="button" class="btn btn-sm btn-outline-dark" onclick="acaoPostitAviso(this, 'resolver')"><i class="bi bi-check2-circle"></i> Resolvido</button>
+                            <?php if ($pa['repeticao'] !== 'uma_vez'): ?>
+                                <button type="button" class="btn btn-sm btn-link link-dark" onclick="acaoPostitAviso(this, 'dispensar')">Não me avisar mais</button>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+// Resolver ou "não me avisar mais" sem sair da página: o cartão vira a
+// resposta do servidor.
+function acaoPostitAviso(botao, acao) {
+    const cartao = botao.closest('[data-postit-aviso]');
+    const corpo = new URLSearchParams({ id: cartao.dataset.postitAviso, acao: acao });
+    botao.disabled = true;
+    fetch('/alunos/postit_acao.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+        body: corpo.toString(),
+    })
+        .then((r) => r.json())
+        .then((r) => {
+            const aviso = document.createElement('div');
+            aviso.className = 'small mt-2 fw-semibold';
+            aviso.textContent = r.mensagem || 'Não foi possível.';
+            cartao.querySelectorAll('button').forEach((b) => b.remove());
+            cartao.appendChild(aviso);
+        })
+        .catch(() => { botao.disabled = false; });
+}
+bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-postits-aviso')).show();
+</script>
+<?php endif; ?>
 </body>
 </html>

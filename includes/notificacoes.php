@@ -58,6 +58,16 @@ function marcarNotificacaoLida(PDO $pdo, int $usuarioId, int $notificacaoId): vo
     $stmt->execute([$notificacaoId, $usuarioId]);
 }
 
+function marcarNotificacaoNaoLida(PDO $pdo, int $usuarioId, int $notificacaoId): void
+{
+    $pdo->prepare('DELETE FROM notificacoes_lidas WHERE notificacao_id = ? AND usuario_id = ?')->execute([$notificacaoId, $usuarioId]);
+}
+
+function marcarTodasNotificacoesNaoLidas(PDO $pdo, int $usuarioId): void
+{
+    $pdo->prepare('DELETE FROM notificacoes_lidas WHERE usuario_id = ?')->execute([$usuarioId]);
+}
+
 function marcarTodasNotificacoesLidas(PDO $pdo, int $usuarioId): void
 {
     $stmt = $pdo->prepare(

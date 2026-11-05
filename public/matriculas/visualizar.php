@@ -72,14 +72,17 @@ $mensalidadeCheia = $cupomNoCurso ? round($mensalidadeFinal + (float) $matricula
 
 $pageTitle = 'Matrícula · ' . e($matricula['aluno_nome']);
 $pageBreadcrumb = 'Acadêmico · ' . $matricula['curso_nome'] . ' · ' . $matricula['turma_nome'];
-$activeMenu = 'turmas';
-$pageAction = '<a href="/turmas/visualizar.php?id=' . (int) $matricula['turma_id'] . '" class="btn btn-outline-secondary">Ver turma</a>'
+$activeMenu = 'matriculas';
+$pageAction = postitBotaoNovo()
+    . '<a href="/turmas/visualizar.php?id=' . (int) $matricula['turma_id'] . '" class="btn btn-outline-secondary">Ver turma</a>'
     . '<a href="/alunos/form.php?id=' . (int) $matricula['aluno_id'] . '" class="btn btn-outline-secondary">Ver aluno</a>'
     . '<a href="/matriculas/comprovante.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Comprovante</a>'
     . '<a href="/matriculas/contrato.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-text"></i> Contrato</a>'
     . ($matricula['status'] === 'concluida' ? '<a href="#documentos" class="btn btn-brand"><i class="bi bi-award"></i> Documentos</a>' : '');
 require __DIR__ . '/../../includes/layout_header.php';
 ?>
+
+<?php $postitAlunoId = (int) $matricula['aluno_id']; $postitMatriculaId = (int) $id; require __DIR__ . '/../../includes/postits_quadro.php'; ?>
 
 <div class="row g-4">
 <div class="col-lg-8">

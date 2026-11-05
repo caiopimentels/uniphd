@@ -6,13 +6,14 @@
 
 function telasComColunas(): array
 {
-    return ['alunos' => 'Alunos', 'turmas' => 'Turmas', 'cursos' => 'Cursos', 'contas_receber' => 'Contas a receber', 'contas_pagar' => 'Contas a pagar'];
+    return ['alunos' => 'Alunos', 'matriculas' => 'Matrículas', 'turmas' => 'Turmas', 'cursos' => 'Cursos', 'contas_receber' => 'Contas a receber', 'contas_pagar' => 'Contas a pagar'];
 }
 
 function definicaoColunasTela(PDO $pdo, string $tela): array
 {
     return match ($tela) {
         'alunos' => colunasTelaAlunos(),
+        'matriculas' => colunasTelaMatriculas(),
         'turmas' => colunasTelaTurmas(),
         'cursos' => colunasTelaCursos(),
         'contas_receber' => colunasTelaReceber($pdo),
@@ -51,6 +52,51 @@ function colunasTelaAlunos(): array
             'texto' => fn ($a) => (float) $a['valor_vencido'] > 0 ? 'Em atraso · ' . formatMoney($a['valor_vencido']) : 'Em dia'],
         'situacao' => ['rotulo' => 'Situação', 'ordem' => 'situacao',
             'html' => fn ($a) => seloAtivo((bool) $a['ativo']), 'texto' => fn ($a) => $a['ativo'] ? 'Ativo' : 'Inativo'],
+    ];
+    if (!usuarioPodeVerInadimplencia()) {
+        unset($colunas['financeiro']);
+    }
+    return $colunas;
+}
+
+function colunasTelaMatriculas(): array
+{
+    $mensalidade = fn ($m) => valorMensalidadeComDesconto((float) $m['valor_mensalidade'], (float) $m['desconto_percentual']);
+    $parcelas = fn ($m) => $m['pagamento_avista'] ? 'À vista' : (int) $m['num_parcelas'] . '×';
+    $colunas = [
+        'aluno' => ['rotulo' => 'Aluno', 'ordem' => 'aluno',
+            'html' => fn ($m) => e($m['aluno_nome']), 'texto' => fn ($m) => $m['aluno_nome']],
+        'ra' => ['rotulo' => 'RA', 'ordem' => 'ra', 'classe' => 'text-nowrap small text-muted',
+            'html' => fn ($m) => e($m['ra'] ?: '-'), 'texto' => fn ($m) => $m['ra'] ?: '-'],
+        'cpf' => ['rotulo' => 'CPF', 'ordem' => 'cpf', 'classe' => 'text-nowrap', 'padrao' => false,
+            'html' => fn ($m) => e(cpfMascarado($m['cpf']) ?: '-'), 'texto' => fn ($m) => cpfMascarado($m['cpf']) ?: '-'],
+        'telefone' => ['rotulo' => 'Telefone', 'ordem' => 'telefone', 'classe' => 'text-nowrap', 'padrao' => false,
+            'html' => fn ($m) => e(telefoneFormatado($m['telefone']) ?: '-'), 'texto' => fn ($m) => telefoneFormatado($m['telefone']) ?: '-'],
+        'curso' => ['rotulo' => 'Curso', 'ordem' => 'curso',
+            'html' => fn ($m) => e($m['curso_nome']), 'texto' => fn ($m) => $m['curso_nome']],
+        'turma' => ['rotulo' => 'Turma', 'ordem' => 'turma',
+            'html' => fn ($m) => e($m['turma_nome']), 'texto' => fn ($m) => $m['turma_nome']],
+        'data' => ['rotulo' => 'Matrícula em', 'ordem' => 'data', 'classe' => 'text-nowrap',
+            'html' => fn ($m) => formatDate($m['data_matricula']), 'texto' => fn ($m) => formatDate($m['data_matricula'])],
+        'status' => ['rotulo' => 'Situação', 'ordem' => 'status',
+            'html' => fn ($m) => '<span class="badge ' . matriculaStatusBadgeClass($m['status']) . '">' . e(matriculaStatusLabel($m['status'])) . '</span>',
+            'texto' => fn ($m) => matriculaStatusLabel($m['status'])],
+        'origem' => ['rotulo' => 'Origem', 'ordem' => 'origem', 'padrao' => false,
+            'html' => fn ($m) => $m['origem'] === 'portal' ? 'Portal' : 'Secretaria', 'texto' => fn ($m) => $m['origem'] === 'portal' ? 'Portal' : 'Secretaria'],
+        'mensalidade' => ['rotulo' => 'Mensalidade', 'ordem' => 'mensalidade', 'classe' => 'text-end text-nowrap', 'padrao' => false,
+            'html' => fn ($m) => formatMoney($mensalidade($m)), 'texto' => fn ($m) => formatMoney($mensalidade($m))],
+        'parcelas' => ['rotulo' => 'Parcelas', 'ordem' => 'parcelas', 'classe' => 'text-center', 'padrao' => false,
+            'html' => fn ($m) => e($parcelas($m)), 'texto' => $parcelas],
+        'financeiro' => ['rotulo' => 'Financeiro', 'ordem' => 'financeiro',
+            'html' => fn ($m) => (float) $m['valor_vencido'] > 0
+                ? '<span class="badge text-bg-danger">Em atraso · ' . formatMoney($m['valor_vencido']) . '</span>'
+                : '<span class="badge text-bg-success">Em dia</span>',
+            'texto' => fn ($m) => (float) $m['valor_vencido'] > 0 ? 'Em atraso · ' . formatMoney($m['valor_vencido']) : 'Em dia'],
+        'postits' => ['rotulo' => 'Post-its', 'ordem' => 'postits', 'classe' => 'text-center',
+            'html' => fn ($m) => (int) $m['postits'] ? '<span class="badge text-bg-warning" title="Post-its em aberto no aluno"><i class="bi bi-sticky"></i> ' . (int) $m['postits'] . '</span>' : '',
+            'texto' => fn ($m) => (int) $m['postits'] ? (string) (int) $m['postits'] : ''],
+        'matriculado_por' => ['rotulo' => 'Matriculado por', 'ordem' => 'matriculado_por', 'padrao' => false,
+            'html' => fn ($m) => e($m['origem'] === 'portal' ? 'Portal' : ($m['usuario_nome'] ?: '-')), 'texto' => fn ($m) => $m['origem'] === 'portal' ? 'Portal' : ($m['usuario_nome'] ?: '-')],
     ];
     if (!usuarioPodeVerInadimplencia()) {
         unset($colunas['financeiro']);

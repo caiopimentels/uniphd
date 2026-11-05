@@ -145,3 +145,86 @@ function colunasListaCursos(): array
         'situacao' => fn ($c) => $c['ativo'] ? 'Ativo' : 'Inativo',
     ];
 }
+
+// Lista de todas as matrículas (menu Acadêmico > Matrículas). Filtro salvo:
+// busca (aluno), status[], cursos[], turmas[], postit ('com' = só com post-it em
+// aberto) e financeiro (atraso | em_dia, só com $comFinanceiro).
+function buscarListaMatriculas(PDO $pdo, array $filtro, bool $comFinanceiro): array
+{
+    $where = '1=1';
+    $params = [];
+    $busca = trim((string) ($filtro['busca'] ?? ''));
+    if ($busca !== '') {
+        $where .= ' AND (a.nome LIKE ? OR a.ra LIKE ? OR a.email LIKE ?';
+        $params = array_fill(0, 3, "%{$busca}%");
+        $digitos = apenasDigitos($busca);
+        if (strlen($digitos) >= 3) {
+            $where .= ' OR a.cpf LIKE ? OR a.telefone LIKE ?';
+            array_push($params, "%{$digitos}%", "%{$digitos}%");
+        }
+        $where .= ')';
+    }
+    $status = array_values(array_intersect((array) ($filtro['status'] ?? []), ['pendente', 'ativa', 'trancada', 'concluida', 'cancelada']));
+    if ($status) {
+        $where .= ' AND m.status IN (' . implode(',', array_fill(0, count($status), '?')) . ')';
+        array_push($params, ...$status);
+    }
+    $cursos = array_values(array_filter(array_map('intval', (array) ($filtro['cursos'] ?? []))));
+    if ($cursos) {
+        $where .= ' AND t.curso_id IN (' . implode(',', $cursos) . ')';
+    }
+    $turmas = array_values(array_filter(array_map('intval', (array) ($filtro['turmas'] ?? []))));
+    if ($turmas) {
+        $where .= ' AND m.turma_id IN (' . implode(',', $turmas) . ')';
+    }
+    $having = [];
+    if (($filtro['postit'] ?? '') === 'com') {
+        $having[] = 'postits > 0';
+    }
+    if ($comFinanceiro && ($filtro['financeiro'] ?? '') === 'atraso') {
+        $having[] = 'valor_vencido > 0';
+    } elseif ($comFinanceiro && ($filtro['financeiro'] ?? '') === 'em_dia') {
+        $having[] = 'valor_vencido = 0';
+    }
+    $stmt = $pdo->prepare(
+        "SELECT m.id, m.aluno_id, m.turma_id, m.status, m.origem, m.data_matricula, m.valor_mensalidade, m.desconto_percentual,
+                m.num_parcelas, m.pagamento_avista, m.criado_em,
+                a.nome AS aluno_nome, a.ra, a.cpf, a.telefone, t.nome AS turma_nome, t.curso_id, c.nome AS curso_nome,
+                u.nome AS usuario_nome,
+                (SELECT COUNT(*) FROM aluno_postits p WHERE p.aluno_id = m.aluno_id AND " . postitSqlAberto('p') . " AND " . postitSqlVisivel('p') . ") AS postits,
+                " . ($comFinanceiro
+                    ? "(SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr
+                        WHERE cr.matricula_id = m.id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < " . sqlCorteAtraso() . ")"
+                    : '0') . " AS valor_vencido
+         FROM matriculas m
+         JOIN alunos a ON a.id = m.aluno_id
+         JOIN turmas t ON t.id = m.turma_id
+         JOIN cursos c ON c.id = t.curso_id
+         LEFT JOIN usuarios u ON u.id = m.usuario_id
+         WHERE {$where}
+         " . ($having ? 'HAVING ' . implode(' AND ', $having) : '') . "
+         ORDER BY m.data_matricula DESC, m.id DESC"
+    );
+    $stmt->execute($params);
+    return $stmt->fetchAll();
+}
+
+function colunasListaMatriculas(): array
+{
+    return [
+        'aluno' => 'aluno_nome',
+        'ra' => 'ra',
+        'cpf' => 'cpf',
+        'telefone' => 'telefone',
+        'curso' => 'curso_nome',
+        'turma' => 'turma_nome',
+        'data' => 'data_matricula',
+        'status' => 'status',
+        'origem' => 'origem',
+        'mensalidade' => fn ($m) => valorMensalidadeComDesconto((float) $m['valor_mensalidade'], (float) $m['desconto_percentual']),
+        'parcelas' => 'num_parcelas',
+        'financeiro' => 'valor_vencido',
+        'postits' => 'postits',
+        'matriculado_por' => 'usuario_nome',
+    ];
+}

@@ -102,6 +102,7 @@ require_once __DIR__ . '/materiais.php';
 require_once __DIR__ . '/videoaulas.php';
 require_once __DIR__ . '/cobranca_alunos.php';
 require_once __DIR__ . '/trancamento.php';
+require_once __DIR__ . '/postits.php';
 
 // Garante que toda página (logada ou não — login e recuperação de senha
 // também enviam formulário) já tem um token de CSRF disponível pra colocar

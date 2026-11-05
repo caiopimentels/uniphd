@@ -51,6 +51,7 @@ $menus = [
         'rotulo' => 'Acadêmico',
         'itens' => [
             ['Alunos', '/alunos/listar.php', usuarioPodeVerAlunos(), 'alunos'],
+            ['Matrículas', '/matriculas/listar.php', usuarioPodeVerAlunos() || usuarioPodeVerCursos(), 'matriculas'],
             ['Turmas', '/turmas/listar.php', usuarioPodeVerCursos(), 'turmas'],
             ['Cursos', '/cursos/listar.php', usuarioPodeVerCursos(), 'cursos'],
             ['Professores', '/professores/listar.php', usuarioPodeVerCursos(), 'professores'],
@@ -218,8 +219,11 @@ $menus = [
                 <div class="dropdown-menu dropdown-menu-end topnav-dropdown painel-alertas">
                     <div class="alertas-cabecalho">
                         <span>Alertas</span>
-                        <?php if ($naoLidas > 0): ?>
-                            <button type="button" class="btn btn-link btn-sm p-0" onclick="marcarTodosAlertas()">Marcar todos como lidos</button>
+                        <?php if ($notificacoes): ?>
+                            <span class="d-flex gap-2">
+                                <button type="button" class="btn btn-link btn-sm p-0" onclick="marcarTodosAlertas(true)" title="Marcar todos como lidos">Todos lidos</button>
+                                <button type="button" class="btn btn-link btn-sm p-0" onclick="marcarTodosAlertas(false)" title="Marcar todos como não lidos">Todos não lidos</button>
+                            </span>
                         <?php endif; ?>
                     </div>
 
@@ -245,7 +249,8 @@ $menus = [
                                 <?php endif; ?>
                                 <span class="alerta-tempo"><?= e(tempoRelativo($n['criado_em'])) ?></span>
                             </span>
-                            <?php if (!$n['lida']): ?><span class="alerta-ponto"></span><?php endif; ?>
+                            <span class="alerta-marcar" role="button" tabindex="0" onclick="alternarAlertaLido(event, this)"
+                                  title="<?= $n['lida'] ? 'Marcar como não lida' : 'Marcar como lida' ?>"><span class="alerta-ponto"></span></span>
                         </a>
                     <?php endforeach; ?>
                 </div>

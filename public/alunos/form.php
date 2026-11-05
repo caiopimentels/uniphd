@@ -257,7 +257,7 @@ $activeMenu = 'alunos';
 // clica em "Editar" para destravar. Aluno novo, ?editar=1 ou envio com erro
 // já abrem editando.
 $abrirTravado = $id && $podeEditarAluno && !$erros && !isset($_GET['editar']);
-$pageAction = ($id ? '<a href="/alunos/ficha.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Ficha</a>' : '');
+$pageAction = ($id ? postitBotaoNovo() . '<a href="/alunos/ficha.php?id=' . (int) $id . '" target="_blank" class="btn btn-outline-secondary"><i class="bi bi-printer"></i> Ficha</a>' : '');
 if ($abrirTravado) {
     $pageAction .= '<a href="/alunos/listar.php" class="btn btn-outline-secondary modo-ver">Voltar</a>'
         . '<button type="button" class="btn btn-brand modo-ver" onclick="destravarAluno()"><i class="bi bi-pencil"></i> Editar</button>'
@@ -273,6 +273,8 @@ require __DIR__ . '/../../includes/layout_header.php';
 <?php if ($erros): ?>
     <div class="alert alert-danger"><ul class="mb-0"><?php foreach ($erros as $erro): ?><li><?= e($erro) ?></li><?php endforeach; ?></ul></div>
 <?php endif; ?>
+
+<?php if ($id) { $postitAlunoId = (int) $id; $postitMatriculaId = null; require __DIR__ . '/../../includes/postits_quadro.php'; } ?>
 
 <ul class="nav nav-tabs mb-3">
     <li class="nav-item"><a class="nav-link <?= $tabAtiva === 'dados' ? 'active' : '' ?>" href="#" data-tab="dados">Dados gerais</a></li>
@@ -911,5 +913,6 @@ document.querySelectorAll('[data-tab]').forEach(function (link) {
 </script>
 
 <?php require __DIR__ . '/../../includes/modal_pix.php'; ?>
+<?php require __DIR__ . '/../../includes/modal_confirmar.php'; ?>
 <?php $voltarParcela = 'aluno'; require __DIR__ . '/../../includes/modal_parcela.php'; ?>
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>
