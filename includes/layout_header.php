@@ -87,6 +87,7 @@ $menus = [
             ['Categorias financeiras', '/financeiro/categorias/listar.php', usuarioPodeGerenciarCategorias(), 'categorias-financeiras'],
             ['Formas de pagamento', '/formas_pagamento/listar.php', usuarioPodeVerFormasPagamento(), 'formas-pagamento'],
             ['Cupons de desconto', '/cupons/listar.php', usuarioPodeGerenciarCupons(), 'cupons'],
+            ['Avisos automáticos', '/financeiro/avisos/listar.php', usuarioTemPermissao('configurar_avisos_cobranca'), 'avisos-cobranca'],
         ],
     ],
     'relatorios' => [

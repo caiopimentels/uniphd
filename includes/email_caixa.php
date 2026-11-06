@@ -510,7 +510,9 @@ function destinatariosDisparo(PDO $pdo, string $publico, array $ids): array
 /** Enviados na última hora (todos os disparos): para respeitar o limite do provedor. */
 function enviadosUltimaHora(PDO $pdo): int
 {
-    return (int) $pdo->query("SELECT COUNT(*) FROM email_disparo_destinos WHERE status = 'enviado' AND enviado_em >= NOW() - INTERVAL 1 HOUR")->fetchColumn();
+    // Os avisos automáticos de cobrança saem do mesmo provedor: contam junto.
+    return (int) $pdo->query("SELECT COUNT(*) FROM email_disparo_destinos WHERE status = 'enviado' AND enviado_em >= NOW() - INTERVAL 1 HOUR")->fetchColumn()
+        + avisosEmailUltimaHora($pdo);
 }
 
 /**

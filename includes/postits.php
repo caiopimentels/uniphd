@@ -5,15 +5,14 @@
  * que foram feitos). O quadro fica em postits_quadro.php; o aviso que abre
  * sozinho fica no layout_footer.php; a lista de matrículas conta os abertos.
  *
- * Cada post-it tem três escolhas independentes:
+ * O post-it fica no quadro até alguém marcar como resolvido. Escolhas:
  *  - Quem vê: todos que abrem o aluno, só quem escreveu, ou quem escreveu +
  *    pessoas escolhidas (usuários e/ou perfis). O administrador vê todos.
- *  - Período (opcional): de uma data e hora até uma data. Antes fica em
- *    "Agendados", depois em "Encerrados"; só fica no quadro dentro dele.
  *  - Aviso (opcional): abre sozinho quando as pessoas escolhidas entram no
- *    sistema (sem ninguém escolhido, avisa quem escreveu — um lembrete),
- *    dentro do período: toda vez que abrir o sistema, uma vez só ou N vezes
- *    seguidas. "Abrir o sistema" é cada login.
+ *    sistema (sem ninguém escolhido, avisa quem escreveu — um lembrete):
+ *    toda vez que abrir o sistema, uma vez só ou N vezes seguidas ("abrir o
+ *    sistema" é cada login), e só no período do aviso (inicio/fim, opcional:
+ *    "avisar a partir de" e "até").
  */
 
 /** Cores do post-it: chave => [nome, fundo, borda]. */
@@ -55,17 +54,22 @@ function postitSqlVisivel(string $p = 'p'): string
         . "SELECT 1 FROM aluno_postit_destinos dv WHERE dv.postit_id = $p.id AND (dv.usuario_id = $u OR dv.perfil_id = $pf))))";
 }
 
-/** Condição SQL "post-it em aberto agora" (não resolvido e dentro do período). */
+/** Condição SQL "post-it em aberto" (não resolvido). */
 function postitSqlAberto(string $p = 'p'): string
 {
-    return "($p.resolvido_em IS NULL AND ($p.inicio IS NULL OR $p.inicio <= NOW()) AND ($p.fim IS NULL OR $p.fim >= CURDATE()))";
+    return "($p.resolvido_em IS NULL)";
+}
+
+/** Condição SQL "dentro do período do aviso" (avisar a partir de / até). */
+function postitSqlNoPeriodoAviso(string $p = 'p'): string
+{
+    return "(($p.inicio IS NULL OR $p.inicio <= NOW()) AND ($p.fim IS NULL OR $p.fim >= CURDATE()))";
 }
 
 /**
  * Post-its do aluno que o usuário pode ver, cada um com 'destinos' (lista de
  * ['tipo' => 'usuario'|'perfil', 'id', 'nome']), 'vistos' (quem já viu o
- * aviso e quantas vezes), 'matricula_nome' e 'situacao' (aberto, agendado,
- * encerrado ou resolvido).
+ * aviso e quantas vezes), 'matricula_nome' e 'situacao' (aberto ou resolvido).
  */
 function buscarPostitsAluno(PDO $pdo, int $alunoId): array
 {
@@ -76,20 +80,14 @@ function buscarPostitsAluno(PDO $pdo, int $alunoId): array
            LEFT JOIN turmas t ON t.id = m.turma_id
            LEFT JOIN cursos c ON c.id = t.curso_id
           WHERE p.aluno_id = ? AND " . postitSqlVisivel('p') . "
-          ORDER BY COALESCE(p.resolvido_em, p.inicio, p.criado_em) DESC, p.id DESC"
+          ORDER BY COALESCE(p.resolvido_em, p.criado_em) DESC, p.id DESC"
     );
     $stmt->execute([$alunoId]);
     $postits = [];
-    $agora = date('Y-m-d H:i:s');
     foreach ($stmt->fetchAll() as $p) {
         $p['destinos'] = [];
         $p['vistos'] = [];
-        $p['situacao'] = match (true) {
-            (bool) $p['resolvido_em'] => 'resolvido',
-            $p['inicio'] && $p['inicio'] > $agora => 'agendado',
-            $p['fim'] && $p['fim'] < date('Y-m-d') => 'encerrado',
-            default => 'aberto',
-        };
+        $p['situacao'] = $p['resolvido_em'] ? 'resolvido' : 'aberto';
         $postits[(int) $p['id']] = $p;
     }
     if (!$postits) {
@@ -141,20 +139,20 @@ function descreverVisibilidadePostit(array $p): string
     };
 }
 
-/** Período do post-it (vazio quando não tem). */
+/** Período do aviso ("a partir de 10/11 09:00 até 15/11"; vazio quando não tem). */
 function descreverPeriodoPostit(array $p): string
 {
     $inicio = $p['inicio'] ? strtotime($p['inicio']) : null;
     $fim = $p['fim'];
     if ($inicio && $fim && date('Y-m-d', $inicio) === $fim) {
-        return 'Só no dia ' . formatDate($fim) . (date('H:i', $inicio) !== '00:00' ? ', a partir das ' . date('H:i', $inicio) : '');
+        return 'só no dia ' . formatDate($fim) . (date('H:i', $inicio) !== '00:00' ? ', a partir das ' . date('H:i', $inicio) : '');
     }
     $partes = [];
     if ($inicio) {
-        $partes[] = 'De ' . date('d/m/Y', $inicio) . (date('H:i', $inicio) !== '00:00' ? ' ' . date('H:i', $inicio) : '');
+        $partes[] = 'a partir de ' . date('d/m/Y', $inicio) . (date('H:i', $inicio) !== '00:00' ? ' ' . date('H:i', $inicio) : '');
     }
     if ($fim) {
-        $partes[] = ($inicio ? 'até ' : 'Até ') . formatDate($fim);
+        $partes[] = 'até ' . formatDate($fim);
     }
     return implode(' ', $partes);
 }
@@ -171,7 +169,7 @@ function descreverAvisoPostit(array $p): string
         'uma_vez' => 'uma vez',
         'vezes' => (int) $p['repeticao_vezes'] . ' vezes seguidas',
     ][$p['repeticao']] ?? '';
-    return 'Avisa ' . $quem . ' · ' . $vezes;
+    return implode(' · ', array_filter(['Avisa ' . $quem, descreverPeriodoPostit($p), $vezes]));
 }
 
 /**
@@ -247,22 +245,23 @@ function salvarPostit(PDO $pdo, int $alunoId, ?int $matriculaId, array $dados, ?
         throw new InvalidArgumentException('Marque quem pode ver o post-it (ou escolha "Todos" ou "Só eu").');
     }
 
+    // Período do aviso: só conta com o aviso ligado.
     $inicio = null;
     $fim = null;
-    $valor = str_replace('T', ' ', trim((string) ($dados['inicio'] ?? '')));
+    $valor = !$avisar ? '' : str_replace('T', ' ', trim((string) ($dados['inicio'] ?? '')));
     if ($valor !== '') {
         if (!preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/', $valor) || !strtotime($valor)) {
-            throw new InvalidArgumentException('A data de início está errada.');
+            throw new InvalidArgumentException('A data de "avisar a partir de" está errada.');
         }
         $inicio = $valor . ':00';
     }
-    $valor = trim((string) ($dados['fim'] ?? ''));
+    $valor = !$avisar ? '' : trim((string) ($dados['fim'] ?? ''));
     if ($valor !== '') {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $valor) || !strtotime($valor)) {
-            throw new InvalidArgumentException('A data de fim está errada.');
+            throw new InvalidArgumentException('A data de "avisar até" está errada.');
         }
         if ($inicio && $valor < substr($inicio, 0, 10)) {
-            throw new InvalidArgumentException('O fim não pode ser antes do início.');
+            throw new InvalidArgumentException('O "avisar até" não pode ser antes do "avisar a partir de".');
         }
         $fim = $valor;
     }
@@ -330,7 +329,7 @@ function postitsParaAvisarAgora(PDO $pdo, int $usuarioId, int $perfilId): array
            LEFT JOIN turmas t ON t.id = m.turma_id
            LEFT JOIN cursos c ON c.id = t.curso_id
            LEFT JOIN aluno_postit_vistos v ON v.postit_id = p.id AND v.usuario_id = ?
-          WHERE p.avisar = 1 AND " . postitSqlAberto('p') . "
+          WHERE p.avisar = 1 AND " . postitSqlAberto('p') . " AND " . postitSqlNoPeriodoAviso('p') . "
             AND (EXISTS (SELECT 1 FROM aluno_postit_destinos d WHERE d.postit_id = p.id AND (d.usuario_id = ? OR d.perfil_id = ?))
                  OR (p.usuario_id = ? AND NOT EXISTS (SELECT 1 FROM aluno_postit_destinos d2 WHERE d2.postit_id = p.id)))
             AND v.dispensado_em IS NULL

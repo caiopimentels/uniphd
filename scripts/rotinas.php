@@ -9,6 +9,8 @@
 //   php scripts/rotinas.php emails         → a cada 5 minutos: manda a
 //                                            próxima leva dos disparos de
 //                                            e-mail (dentro do limite por hora)
+//                                            e os avisos automáticos de
+//                                            cobrança (e-mail e WhatsApp)
 //
 // Rodam como o usuário do Apache (www-data), para gravar em storage/ com
 // as mesmas permissões do site.
@@ -39,6 +41,11 @@ switch ($rotina) {
         $enviados = processarDisparosEmail($pdo, $leva);
         if ($enviados > 0) {
             echo date('Y-m-d H:i:s') . " e-mails: $enviados enviado(s)\n";
+        }
+        // Avisos automáticos de cobrança (Financeiro › Avisos automáticos).
+        $avisos = processarAvisosCobranca($pdo, $leva);
+        if ($avisos['enviados'] || $avisos['erros']) {
+            echo date('Y-m-d H:i:s') . " avisos de cobrança: {$avisos['enviados']} enviado(s), {$avisos['erros']} com erro\n";
         }
         break;
 

@@ -4,12 +4,12 @@
 // Espera $pdo, $postitAlunoId e $postitMatriculaId (null fora da matrícula).
 // O botão "Post-it" do topo da tela vem de postitBotaoNovo(). Excluir pede
 // confirmação pelo modal_confirmar.php, que a tela precisa incluir.
-// Mostra os em aberto; agendados e resolvidos/encerrados ficam recolhidos.
+// Mostra os em aberto; os resolvidos ficam recolhidos.
 
 $postitsDoAluno = buscarPostitsAluno($pdo, (int) $postitAlunoId);
-$postitsPorSituacao = ['aberto' => [], 'agendado' => [], 'fechado' => []];
+$postitsPorSituacao = ['aberto' => [], 'fechado' => []];
 foreach ($postitsDoAluno as $p) {
-    $postitsPorSituacao[in_array($p['situacao'], ['resolvido', 'encerrado'], true) ? 'fechado' : $p['situacao']][] = $p;
+    $postitsPorSituacao[$p['situacao'] === 'resolvido' ? 'fechado' : 'aberto'][] = $p;
 }
 $podeCriarPostit = usuarioTemPermissao('usar_postits');
 $postitVoltar = $_SERVER['REQUEST_URI'] ?? '/alunos/form.php?id=' . (int) $postitAlunoId;
@@ -31,20 +31,16 @@ $postitParaForm = fn (array $p): array => [
 
 $postitCartao = function (array $p) use ($postitParaForm, $postitVoltar, $postitMatriculaId): void {
     $pdo = getDB();
-    $fechado = in_array($p['situacao'], ['resolvido', 'encerrado'], true);
     $podeAlterar = usuarioPodeAlterarPostit($p);
     $podeResolver = usuarioTemPermissao('usar_postits')
         || postitAvisaUsuario($pdo, (int) $p['id'], (int) usuarioAtualId(), (int) ($_SESSION['user_perfil_id'] ?? 0));
     $linhas = array_filter([
         'bi-lock' => descreverVisibilidadePostit($p),
-        'bi-calendar-event' => descreverPeriodoPostit($p),
         'bi-bell' => descreverAvisoPostit($p),
     ]);
     $vistos = array_map(fn ($v) => $v['nome'] . ' (' . (int) $v['vezes'] . 'x' . ($v['dispensado_em'] ? ', pediu para não ver mais' : '') . ')', $p['vistos']);
     ?>
     <div class="postit postit-<?= e($p['situacao']) ?>" style="<?= e(postitEstilo($p['cor'])) ?>">
-        <?php if ($p['situacao'] === 'agendado'): ?><div class="postit-selo"><i class="bi bi-clock"></i> Agendado</div><?php endif; ?>
-        <?php if ($p['situacao'] === 'encerrado'): ?><div class="postit-selo">Período encerrado</div><?php endif; ?>
         <div class="postit-texto"><?= nl2br(e($p['texto'])) ?></div>
         <?php if ($linhas || $vistos): ?>
             <div class="postit-info">
@@ -67,7 +63,7 @@ $postitCartao = function (array $p) use ($postitParaForm, $postitVoltar, $postit
                 <?php endif; ?>
             </span>
             <span class="postit-acoes">
-                <?php if ($podeResolver && $p['situacao'] !== 'encerrado'): $resolvido = $p['situacao'] === 'resolvido'; ?>
+                <?php if ($podeResolver): $resolvido = $p['situacao'] === 'resolvido'; ?>
                     <form method="post" action="/alunos/postit_acao.php" class="d-inline">
                         <input type="hidden" name="id" value="<?= (int) $p['id'] ?>">
                         <input type="hidden" name="acao" value="<?= $resolvido ? 'reabrir' : 'resolver' ?>">
@@ -101,21 +97,11 @@ $postitCartao = function (array $p) use ($postitParaForm, $postitVoltar, $postit
 <?php if ($postitsDoAluno): ?>
 <div class="postits-quadro mb-3">
     <?php foreach ($postitsPorSituacao['aberto'] as $p) { $postitCartao($p); } ?>
-    <?php if ($postitsPorSituacao['agendado'] || $postitsPorSituacao['fechado']): ?>
-        <div class="w-100 d-flex gap-3">
-            <?php if ($postitsPorSituacao['agendado']): ?>
-                <button type="button" class="btn btn-sm btn-link text-muted p-0" onclick="document.getElementById('postits-agendados').classList.toggle('d-none')">
-                    <i class="bi bi-clock"></i> Agendados (<?= count($postitsPorSituacao['agendado']) ?>)
-                </button>
-            <?php endif; ?>
-            <?php if ($postitsPorSituacao['fechado']): ?>
-                <button type="button" class="btn btn-sm btn-link text-muted p-0" onclick="document.getElementById('postits-fechados').classList.toggle('d-none')">
-                    <i class="bi bi-sticky"></i> Resolvidos e encerrados (<?= count($postitsPorSituacao['fechado']) ?>)
-                </button>
-            <?php endif; ?>
-        </div>
-        <div id="postits-agendados" class="postits-quadro w-100 d-none">
-            <?php foreach ($postitsPorSituacao['agendado'] as $p) { $postitCartao($p); } ?>
+    <?php if ($postitsPorSituacao['fechado']): ?>
+        <div class="w-100">
+            <button type="button" class="btn btn-sm btn-link text-muted p-0" onclick="document.getElementById('postits-fechados').classList.toggle('d-none')">
+                <i class="bi bi-sticky"></i> Resolvidos (<?= count($postitsPorSituacao['fechado']) ?>)
+            </button>
         </div>
         <div id="postits-fechados" class="postits-quadro w-100 d-none">
             <?php foreach ($postitsPorSituacao['fechado'] as $p) { $postitCartao($p); } ?>
@@ -150,19 +136,12 @@ $postitCartao = function (array $p) use ($postitParaForm, $postitVoltar, $postit
                     <?php endforeach; ?>
                 </div>
 
-                <div class="row g-3 mt-1">
-                    <div class="col-md-6">
+                <div class="mt-3">
+                    <div>
                         <div class="postit-bloco-titulo"><i class="bi bi-eye"></i> Quem pode ver</div>
                         <label class="form-check"><input type="radio" class="form-check-input" name="visibilidade" value="todos" checked> Todos que abrem este aluno</label>
                         <label class="form-check"><input type="radio" class="form-check-input" name="visibilidade" value="eu"> Só eu</label>
                         <label class="form-check"><input type="radio" class="form-check-input" name="visibilidade" value="escolhidos"> Só eu e as pessoas que eu escolher</label>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="postit-bloco-titulo"><i class="bi bi-calendar-event"></i> Período <span class="fw-normal text-muted small">(opcional)</span></div>
-                        <div class="row g-2">
-                            <div class="col-7"><label class="form-label small mb-1">De</label><input type="datetime-local" name="inicio" class="form-control form-control-sm"></div>
-                            <div class="col-5"><label class="form-label small mb-1">Até</label><input type="date" name="fim" class="form-control form-control-sm"></div>
-                        </div>
                     </div>
                 </div>
 
@@ -173,12 +152,18 @@ $postitCartao = function (array $p) use ($postitParaForm, $postitVoltar, $postit
                     <span class="small text-muted">(opcional)</span>
                 </label>
                 <div id="postit-repeticao" class="ms-4 mt-1">
+                    <div class="small text-muted mb-1">Quantas vezes</div>
                     <label class="form-check form-check-inline"><input type="radio" class="form-check-input" name="repeticao" value="sempre"> Toda vez que abrir o sistema</label>
                     <label class="form-check form-check-inline"><input type="radio" class="form-check-input" name="repeticao" value="uma_vez" checked> Uma vez</label>
                     <label class="form-check form-check-inline d-inline-flex align-items-center gap-2">
                         <input type="radio" class="form-check-input" name="repeticao" value="vezes">
                         <input type="number" name="repeticao_vezes" class="form-control form-control-sm" style="width:64px" min="2" max="50" value="3"> vezes seguidas
                     </label>
+                    <div class="small text-muted mt-2 mb-1">Quando <span class="fst-italic">(opcional — em branco, avisa já e até alguém marcar o post-it como resolvido)</span></div>
+                    <div class="row g-2" style="max-width: 460px">
+                        <div class="col-7"><label class="form-label small mb-1">Avisar a partir de</label><input type="datetime-local" name="inicio" class="form-control form-control-sm"></div>
+                        <div class="col-5"><label class="form-label small mb-1">Avisar até</label><input type="date" name="fim" class="form-control form-control-sm"></div>
+                    </div>
                 </div>
 
                 <div id="postit-pessoas" class="mt-3">
@@ -226,8 +211,7 @@ $postitCartao = function (array $p) use ($postitParaForm, $postitVoltar, $postit
 .postit-rodape { display: flex; justify-content: space-between; align-items: flex-end; gap: .5rem; font-size: .72rem; opacity: .8; }
 .postit-acoes { display: flex; gap: .45rem; flex: none; }
 .postit-acoes .btn { font-size: .95rem; line-height: 1; }
-.postit-agendado { opacity: .75; border-style: dashed !important; }
-.postit-resolvido, .postit-encerrado { opacity: .6; }
+.postit-resolvido { opacity: .6; }
 .postit-resolvido .postit-texto { text-decoration: line-through; }
 .postit-lista { max-height: 160px; overflow-y: auto; }
 .postit-bloco-titulo { font-weight: 600; margin-bottom: .35rem; }
@@ -253,7 +237,7 @@ textarea.postit-campo { background: #fffbe0; color: #2b2b2b; }
             ? (avisar ? '— quem pode ver e vai ser avisado' : '— quem pode ver (além de você)')
             : '— quem vai ser avisado (sem ninguém marcado, avisa só você)';
         const repeticao = document.getElementById('postit-repeticao');
-        repeticao.style.opacity = avisar ? '' : '.45';
+        repeticao.style.display = avisar ? '' : 'none';
         repeticao.querySelectorAll('input').forEach((el) => { el.disabled = !avisar; });
     }
 
