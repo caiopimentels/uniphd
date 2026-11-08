@@ -366,13 +366,15 @@ function testarFtpMateriais(array $ftp): array
     return ['ok' => true, 'mensagem' => 'FTP funcionando: gravou e apagou um arquivo de teste em ' . $ftp['pasta'] . '.'];
 }
 
-/** Espaço usado pelos arquivos dos materiais: ['local' => bytes, 'ftp' => bytes, 'quantos' => n]. */
+/** Espaço usado pelos arquivos dos materiais e fotos dos álbuns: ['local' => bytes, 'ftp' => bytes, 'quantos' => n]. */
 function espacoMateriais(PDO $pdo): array
 {
-    $linhas = $pdo->query("SELECT armazenamento, SUM(tamanho) AS total, COUNT(*) AS n FROM materiais WHERE tipo = 'arquivo' GROUP BY armazenamento")->fetchAll();
+    $linhas = $pdo->query("SELECT armazenamento, SUM(tamanho) AS total, COUNT(*) AS n FROM (
+                               SELECT armazenamento, tamanho FROM materiais WHERE tipo = 'arquivo'
+                               UNION ALL SELECT armazenamento, tamanho FROM turma_fotos) x GROUP BY armazenamento")->fetchAll();
     $espaco = ['local' => 0, 'ftp' => 0, 'quantos' => 0];
     foreach ($linhas as $l) {
-        $espaco[$l['armazenamento'] ?: 'local'] = (int) $l['total'];
+        $espaco[$l['armazenamento'] ?: 'local'] += (int) $l['total'];
         $espaco['quantos'] += (int) $l['n'];
     }
     return $espaco;
@@ -381,7 +383,9 @@ function espacoMateriais(PDO $pdo): array
 /** Espaço total usado x limite: ['usado' => bytes, 'limite' => bytes, 'livre' => bytes, 'pct' => 0-100]. */
 function cotaMateriais(PDO $pdo): array
 {
-    $usado = (int) $pdo->query("SELECT COALESCE(SUM(tamanho), 0) FROM materiais WHERE tipo = 'arquivo'")->fetchColumn();
+    // Fotos dos álbuns das turmas ficam no mesmo lugar e contam no mesmo limite.
+    $usado = (int) $pdo->query("SELECT COALESCE(SUM(tamanho), 0) FROM materiais WHERE tipo = 'arquivo'")->fetchColumn()
+        + (int) $pdo->query('SELECT COALESCE(SUM(tamanho), 0) FROM turma_fotos')->fetchColumn();
     $limite = ftpMateriais($pdo)['limite_gb'] * 1073741824;
     return ['usado' => $usado, 'limite' => $limite, 'livre' => max(0, $limite - $usado), 'pct' => min(100, (int) round($usado / max(1, $limite) * 100))];
 }

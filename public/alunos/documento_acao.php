@@ -10,6 +10,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $pdo = getDB();
 $alunoId = (int) ($_POST['aluno_id'] ?? 0);
 $voltar = '/alunos/form.php?id=' . $alunoId . '&tab=documentos';
+// Vindo de Secretaria › Documentos para analisar, volta para lá (com os filtros).
+if (str_starts_with((string) ($_POST['voltar'] ?? ''), '/documentos/pendentes.php')) {
+    $voltar = (string) $_POST['voltar'];
+}
 $stmt = $pdo->prepare('SELECT * FROM curso_documentos WHERE id = ?');
 $stmt->execute([(int) ($_POST['curso_documento_id'] ?? 0)]);
 $doc = $stmt->fetch();

@@ -13,7 +13,7 @@ function estruturaPermissoes(): array
     return [
         'Acadêmico' => [
             ['titulo' => 'Alunos', 'ver' => 'ver_alunos', 'incluir' => ['cadastrar_aluno', 'editar_aluno'], 'excluir' => ['excluir_aluno'],
-                'extras' => ['ativar_aluno' => 'Ativar e desativar alunos', 'avaliar_documentos' => 'Aprovar, recusar ou dispensar documentos dos alunos',
+                'extras' => ['ativar_aluno' => 'Ativar e desativar alunos', 'avaliar_documentos' => 'Analisar documentos dos alunos (Secretaria › Documentos para analisar): aprovar, recusar ou dispensar',
                     'ver_cpf_completo' => 'Ver o CPF completo', 'usar_postits' => 'Criar post-its no aluno e avisar usuários e perfis']],
             ['titulo' => 'Cursos', 'ver' => 'ver_cursos', 'dica' => 'Ver cursos, turmas, professores e calendário de aulas',
                 'incluir' => ['criar_curso', 'editar_curso'], 'excluir' => ['excluir_curso']],

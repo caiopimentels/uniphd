@@ -64,6 +64,7 @@ $menus = [
         'rotulo' => 'Secretaria',
         'itens' => [
             ['Protocolos', '/protocolos/listar.php', usuarioPodeVerProtocolos(), 'protocolos', false, false, $protocolosParaResponder],
+            ['Documentos para analisar', '/documentos/pendentes.php', usuarioTemPermissao('avaliar_documentos'), 'documentos-pendentes', false, false, usuarioTemPermissao('avaliar_documentos') ? documentosAguardandoAnalise(getDB()) : 0],
             ['WhatsApp', '/whatsapp/conversas.php', usuarioTemPermissao('atender_whatsapp'), 'whatsapp', false, false, usuarioTemPermissao('atender_whatsapp') ? conversasAguardandoWhatsapp(getDB()) : 0],
             ['Certificados emitidos', '/documentos/emitidos.php', usuarioPodeLiberarCertificado() || usuarioPodeVerAlunos(), 'certificados-emitidos'],
         ],
@@ -165,9 +166,16 @@ $menus = [
                 <?php $itensVisiveis = array_values(array_filter($menu['itens'], fn ($i) => $i[2])); ?>
                 <?php if (!$itensVisiveis) continue; ?>
                 <?php $grupoAtivo = $activeMenu !== '' && in_array($activeMenu, array_column($itensVisiveis, 3), true); ?>
+                <?php
+                // Soma das pendências do grupo (protocolos, documentos, WhatsApp) no
+                // próprio menu, para ver sem abrir.
+                $pendenciasGrupo = array_filter($itensVisiveis, fn ($i) => !empty($i[6]));
+                $totalGrupo = array_sum(array_map(fn ($i) => (int) $i[6], $pendenciasGrupo));
+                ?>
                 <div class="dropdown topnav-grupo">
-                    <button class="topnav-item <?= $grupoAtivo ? 'ativo' : '' ?>" data-bs-toggle="dropdown" type="button">
-                        <?= e($menu['rotulo']) ?> <i class="bi bi-chevron-down topnav-seta"></i>
+                    <button class="topnav-item <?= $grupoAtivo ? 'ativo' : '' ?>" data-bs-toggle="dropdown" type="button"
+                        <?php if ($totalGrupo): ?>title="<?= e(implode(' · ', array_map(fn ($i) => $i[0] . ': ' . (int) $i[6], $pendenciasGrupo))) ?>"<?php endif; ?>>
+                        <?= e($menu['rotulo']) ?><?php if ($totalGrupo): ?> <span class="badge rounded-pill text-bg-warning"><?= $totalGrupo > 99 ? '99+' : $totalGrupo ?></span><?php endif; ?> <i class="bi bi-chevron-down topnav-seta"></i>
                     </button>
                     <div class="dropdown-menu topnav-dropdown">
                         <?php foreach ($itensVisiveis as $i => $item): ?>

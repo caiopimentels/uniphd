@@ -42,3 +42,4 @@ require_once __DIR__ . '/cobranca_alunos.php';
 require_once __DIR__ . '/trancamento.php';
 require_once __DIR__ . '/postits.php';
 require_once __DIR__ . '/avisos_cobranca.php';
+require_once __DIR__ . '/album_turma.php';

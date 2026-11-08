@@ -108,12 +108,17 @@ function colunasTelaTurmas(): array
 {
     $vagasLivres = fn ($t) => max(0, (int) $t['vagas'] - (int) $t['alunos_ativos'] - (int) $t['reservas']);
     return [
+        // Capa da turma (Álbum ou Editar) em miniatura ao lado do nome.
         'turma' => ['rotulo' => 'Turma', 'ordem' => 'turma',
-            'html' => fn ($t) => e($t['nome']) . ($t['horario'] ? '<div class="small text-muted">' . e($t['horario']) . '</div>' : ''),
+            'html' => fn ($t) => '<div class="d-flex align-items-center gap-2">'
+                . ($t['portal_imagem']
+                    ? '<img src="' . e($t['portal_imagem']) . '" alt="" loading="lazy" class="rounded flex-shrink-0" style="width: 64px; aspect-ratio: 16/9; object-fit: cover;">'
+                    : '<span class="rounded flex-shrink-0 d-inline-flex align-items-center justify-content-center text-muted" style="width: 64px; aspect-ratio: 16/9; background: var(--bs-tertiary-bg);"><i class="bi bi-image"></i></span>')
+                . '<div>' . e($t['nome']) . ($t['horario'] ? '<div class="small text-muted">' . e($t['horario']) . '</div>' : '') . '</div></div>',
             'texto' => fn ($t) => $t['nome'] . ($t['horario'] ? ' (' . $t['horario'] . ')' : '')],
         'curso' => ['rotulo' => 'Curso', 'ordem' => 'curso',
             'html' => fn ($t) => e($t['curso_nome']), 'texto' => fn ($t) => $t['curso_nome']],
-        'professor' => ['rotulo' => 'Professor', 'ordem' => 'professor',
+        'professor' => ['rotulo' => 'Professor', 'ordem' => 'professor', 'padrao' => false,
             'html' => fn ($t) => e($t['professor_nome'] ?: '-'), 'texto' => fn ($t) => $t['professor_nome'] ?: '-'],
         'periodo' => ['rotulo' => 'Período', 'ordem' => 'periodo',
             'html' => fn ($t) => e(periodoTurma($t)), 'texto' => fn ($t) => periodoTurma($t)],

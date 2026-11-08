@@ -270,6 +270,13 @@ function avaliarDocumentoAluno(PDO $pdo, int $alunoId, array $doc, string $acao,
     return ['ok' => true, 'mensagem' => $rotulo . ': ' . $doc['nome'] . '.'];
 }
 
+// Envios esperando a secretaria conferir (Secretaria › Documentos para analisar).
+function documentosAguardandoAnalise(PDO $pdo): int
+{
+    return (int) $pdo->query("SELECT COUNT(*) FROM aluno_documentos ad JOIN curso_documentos cd ON cd.id = ad.curso_documento_id AND cd.ativo = 1
+                              WHERE ad.status = 'enviado' AND ad.arquivo IS NOT NULL")->fetchColumn();
+}
+
 function formatarTamanhoArquivo(int $bytes): string
 {
     return $bytes >= 1048576 ? number_format($bytes / 1048576, 1, ',', '.') . ' MB' : max(1, (int) round($bytes / 1024)) . ' KB';

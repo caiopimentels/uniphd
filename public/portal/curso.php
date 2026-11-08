@@ -40,6 +40,8 @@ $stmt = $pdo->prepare('SELECT material_id FROM material_acessos WHERE aluno_id =
 $stmt->execute([$alunoId]);
 $abertos = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 $materiaisNovos = count(array_filter($materiais, fn ($x) => !in_array((int) $x['id'], $abertos, true)));
+// Álbum de fotos da turma (só as não escondidas).
+$fotosAlbum = $veConteudo ? fotosDaTurma($pdo, $turmaId, true) : [];
 
 // Aulas da turma.
 $stmt = $pdo->prepare('SELECT * FROM turma_aulas WHERE turma_id = ? ORDER BY data, hora_inicio');
@@ -148,6 +150,7 @@ require __DIR__ . '/../../includes/portal_header.php';
     <button type="button" data-aba="inicio"><i class="bi bi-house"></i> Início</button>
     <button type="button" data-aba="videos"><i class="bi bi-play-btn"></i> Videoaulas<?php if ($vTotal): ?><span class="qtd"><?= $vFeitas ?>/<?= $vTotal ?></span><?php endif; ?></button>
     <button type="button" data-aba="materiais"><i class="bi bi-folder2-open"></i> Materiais<?php if ($materiais): ?><span class="qtd"><?= count($materiais) ?></span><?php endif; ?></button>
+    <?php if ($fotosAlbum): ?><button type="button" data-aba="album"><i class="bi bi-images"></i> Álbum<span class="qtd"><?= count($fotosAlbum) ?></span></button><?php endif; ?>
     <button type="button" data-aba="aulas"><i class="bi bi-calendar-week"></i> Aulas</button>
     <button type="button" data-aba="pagamentos"><i class="bi bi-wallet2"></i> Pagamentos<?php if ($emAtraso): ?><span class="qtd text-bg-danger">!</span><?php endif; ?></button>
     <button type="button" data-aba="documentos"><i class="bi bi-award"></i> Certificados</button>
@@ -247,6 +250,79 @@ require __DIR__ . '/../../includes/portal_header.php';
         </div>
     <?php endforeach; ?>
 </section>
+
+<?php if ($fotosAlbum): ?>
+<!-- Álbum -->
+<section class="curso-painel" data-painel="album">
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        <div class="flex-grow-1 small text-muted"><?= count($fotosAlbum) ?> foto(s) da turma. Toque numa foto para ver grande e baixar.</div>
+        <a href="/portal/album_zip.php?m=<?= (int) $m['id'] ?>" class="btn btn-brand btn-sm"><i class="bi bi-download"></i> Baixar todas</a>
+    </div>
+    <div class="album-grade">
+        <?php foreach ($fotosAlbum as $i => $f): ?>
+            <button type="button" class="album-item" onclick="verFoto(<?= $i ?>)">
+                <img src="/portal/album_foto.php?c=<?= e($f['codigo']) ?>&amp;tam=mini" alt="<?= e($f['legenda'] ?: 'Foto ' . ($i + 1)) ?>" loading="lazy">
+                <?php if ($f['legenda']): ?><span class="legenda"><?= e($f['legenda']) ?></span><?php endif; ?>
+            </button>
+        <?php endforeach; ?>
+    </div>
+</section>
+<div class="album-tela" id="album-tela" hidden onclick="if (event.target === this) fecharFoto()">
+    <button type="button" class="fechar" onclick="fecharFoto()" title="Fechar"><i class="bi bi-x-lg"></i></button>
+    <button type="button" class="seta esq" onclick="passarFoto(-1)" title="Anterior"><i class="bi bi-chevron-left"></i></button>
+    <img id="album-img" alt="">
+    <button type="button" class="seta dir" onclick="passarFoto(1)" title="Próxima"><i class="bi bi-chevron-right"></i></button>
+    <div class="rodape"><span id="album-legenda"></span><a id="album-baixar" class="btn btn-light btn-sm"><i class="bi bi-download"></i> Baixar</a></div>
+</div>
+<style>
+    .album-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .album-item { position: relative; border: 0; padding: 0; border-radius: 12px; overflow: hidden; background: var(--border); cursor: zoom-in; }
+    .album-item img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; transition: transform .2s; }
+    .album-item:hover img { transform: scale(1.04); }
+    .album-item .legenda { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 8px 6px; font-size: 12px; color: #fff; text-align: left;
+        background: linear-gradient(transparent, rgba(0,0,0,.7)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .album-tela { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.92); display: flex; align-items: center; justify-content: center; padding: 50px 12px 64px; }
+    .album-tela[hidden] { display: none; }
+    .album-tela img { max-width: 100%; max-height: 100%; object-fit: contain; }
+    .album-tela button { position: absolute; border: 0; color: #fff; background: rgba(255,255,255,.12); border-radius: 50%; width: 46px; height: 46px; font-size: 1.4rem; }
+    .album-tela .fechar { top: 10px; right: 12px; }
+    .album-tela .seta { top: 50%; transform: translateY(-50%); }
+    .album-tela .esq { left: 12px; }
+    .album-tela .dir { right: 12px; }
+    .album-tela .rodape { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 16px; display: flex; align-items: center; gap: 12px; color: #fff; }
+    .album-tela .rodape span { flex-grow: 1; font-size: 14px; }
+</style>
+<script>
+const fotosAlbum = <?= json_encode(array_map(fn ($f) => ['c' => $f['codigo'], 'legenda' => (string) $f['legenda']], $fotosAlbum), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+let fotoAtual = 0;
+function verFoto(i) {
+    fotoAtual = (i + fotosAlbum.length) % fotosAlbum.length;
+    const f = fotosAlbum[fotoAtual];
+    document.getElementById('album-img').src = '/portal/album_foto.php?c=' + f.c;
+    document.getElementById('album-legenda').textContent = (fotoAtual + 1) + ' de ' + fotosAlbum.length + (f.legenda ? ' · ' + f.legenda : '');
+    document.getElementById('album-baixar').href = '/portal/album_foto.php?c=' + f.c + '&baixar=1';
+    document.getElementById('album-tela').hidden = false;
+    document.body.style.overflow = 'hidden';
+}
+function passarFoto(d) { verFoto(fotoAtual + d); }
+function fecharFoto() { document.getElementById('album-tela').hidden = true; document.body.style.overflow = ''; }
+document.addEventListener('keydown', (ev) => {
+    if (document.getElementById('album-tela').hidden) return;
+    if (ev.key === 'Escape') fecharFoto();
+    if (ev.key === 'ArrowLeft') passarFoto(-1);
+    if (ev.key === 'ArrowRight') passarFoto(1);
+});
+// Arrastar o dedo para o lado passa a foto (celular).
+let toqueX = null;
+document.getElementById('album-tela').addEventListener('touchstart', (ev) => { toqueX = ev.touches[0].clientX; }, { passive: true });
+document.getElementById('album-tela').addEventListener('touchend', (ev) => {
+    if (toqueX === null) return;
+    const dx = ev.changedTouches[0].clientX - toqueX;
+    if (Math.abs(dx) > 50) passarFoto(dx < 0 ? 1 : -1);
+    toqueX = null;
+});
+</script>
+<?php endif; ?>
 
 <!-- Aulas -->
 <section class="curso-painel" data-painel="aulas">

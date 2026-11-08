@@ -171,6 +171,10 @@ $stmt = $pdo->prepare(
 $stmt->execute([$id]);
 $temBoletoBanco = (int) $stmt->fetchColumn() > 0;
 
+$stmt = $pdo->prepare('SELECT COUNT(*) FROM turma_fotos WHERE turma_id = ?');
+$stmt->execute([$id]);
+$qtdFotosAlbum = (int) $stmt->fetchColumn();
+
 $pageTitle = e($turma['nome']);
 $pageBreadcrumb = 'Acadêmico · Turmas · ' . $turma['curso_nome'];
 $activeMenu = 'turmas';
@@ -216,6 +220,7 @@ $situacoesPermitidas = array_values(array_filter($situacoes, function ($sit) use
 <a href="/turmas/aulas.php?id=<?= (int) $id ?>" class="btn btn-outline-secondary"><i class="bi bi-calendar-week"></i> Calendário</a>
 <?php if (usuarioPodeGerenciarMateriais()): ?><a href="/materiais/gerenciar.php?turma=<?= (int) $id ?>" class="btn btn-outline-secondary" title="Apostilas, slides e links para os alunos"><i class="bi bi-folder2-open"></i> Materiais</a><?php endif; ?>
 <?php if (usuarioPodeGerenciarMateriais()): ?><a href="/videoaulas/gerenciar.php?turma=<?= (int) $id ?>" class="btn btn-outline-secondary" title="Curso online: vídeos do YouTube para os alunos"><i class="bi bi-play-btn"></i> Videoaulas</a><?php endif; ?>
+<?php if (podeAlbumTurma($pdo, $id)): ?><a href="/turmas/album.php?id=<?= (int) $id ?>" class="btn btn-outline-secondary" title="Fotos da turma: os alunos veem e baixam pelo portal; uma delas pode ser a capa"><i class="bi bi-images"></i> Álbum<?= $qtdFotosAlbum ? ' <span class="badge text-bg-light border">' . $qtdFotosAlbum . '</span>' : '' ?></a><?php endif; ?>
 <?php if (usuarioTemPermissao('gerenciar_avisos')): ?><a href="/avisos/form.php?turma=<?= (int) $id ?>" class="btn btn-outline-secondary" title="Aviso no portal para os alunos desta turma"><i class="bi bi-megaphone"></i> Enviar aviso</a><?php endif; ?>
 <?php if ($turma['portal_publicar'] && $turmaAceitaMatricula): ?>
     <a href="/portal/turma.php?id=<?= (int) $id ?>" target="_blank" class="btn btn-outline-secondary" title="Ver como o aluno vê"><i class="bi bi-globe2"></i> No portal</a>
@@ -300,7 +305,13 @@ require __DIR__ . '/../../includes/layout_header.php';
         <span class="ms-2"><?= badgeSituacaoTurma($turma['situacao_nome'], $turma['situacao_cor']) ?></span>
     </div>
     <div class="card"><div class="card-body">
-        <div class="row g-3">
+        <div class="d-flex flex-column flex-md-row gap-3">
+        <?php if ($turma['portal_imagem']): ?>
+            <a href="<?= podeAlbumTurma($pdo, $id) ? '/turmas/album.php?id=' . (int) $id : e($turma['portal_imagem']) ?>" class="flex-shrink-0" title="Capa da turma<?= podeAlbumTurma($pdo, $id) ? ' — trocar pelo álbum' : '' ?>">
+                <img src="<?= e($turma['portal_imagem']) ?>" alt="Capa da turma" class="rounded" style="width: 220px; max-width: 100%; aspect-ratio: 16/9; object-fit: cover;">
+            </a>
+        <?php endif; ?>
+        <div class="row g-3 flex-grow-1">
             <div class="col-md-3"><div class="kpi-rotulo">Curso</div><div><a href="/cursos/form.php?id=<?= (int) $turma['curso_id'] ?>"><?= e($turma['curso_nome']) ?></a><?= $turma['carga_horaria'] ? ' · ' . (int) $turma['carga_horaria'] . ' h' : '' ?></div></div>
             <div class="col-md-3"><div class="kpi-rotulo">Professor responsável</div><div><?= $turma['professor_id'] ? '<a href="/professores/form.php?id=' . (int) $turma['professor_id'] . '">' . e($turma['professor_nome']) . '</a>' : 'A definir' ?></div></div>
             <div class="col-md-3"><div class="kpi-rotulo">Período</div><div><?= e(periodoTurma($turma)) ?> (<?= e(textoDuracaoTurma($turma)) ?>)<?php if ($turma['data_conclusao']): ?><div class="small text-muted">concluída em <?= formatDate($turma['data_conclusao']) ?></div><?php endif; ?></div></div>
@@ -317,6 +328,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <div class="col-md-3"><div class="kpi-rotulo">Dias e horário</div><div><?= e($turma['horario'] ?: '-') ?></div></div>
             <div class="col-md-3"><div class="kpi-rotulo">Local</div><div><?= e($turma['local'] ?: '-') ?></div></div>
             <div class="col-md-6"><div class="kpi-rotulo">Observação</div><div><?= e($turma['observacao'] ?: '-') ?></div></div>
+        </div>
         </div>
     </div></div>
 </div>
@@ -465,7 +477,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <tr>
                         <th>
                             <?php if ($podeMarcarDocumentos): ?><input type="checkbox" class="form-check-input me-2" id="documentos-todos" title="Marcar / desmarcar todos"><?php endif; ?>Aluno
-                        </th><th>Telefone</th><th>Matrícula</th><th class="text-end">Mensalidade</th>
+                        <th>Matrícula</th><th class="text-end">Mensalidade</th>
                         <?php if ($podeVerFinanceiro): ?><th class="text-end">Pago</th><th>Financeiro</th><?php endif; ?>
                         <th>Situação</th>
                         <?php if ($podeLiberarCertificado): ?>
@@ -484,7 +496,6 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <i class="bi bi-bookmark-fill text-warning"></i> <?= e($r['nome']) ?>
                             <?php if ($r['aluno_id']): ?><div class="small text-muted">aluno cadastrado</div><?php endif; ?>
                         </td>
-                        <td><?= e(telefoneFormatado($r['telefone']) ?: '-') ?></td>
                         <td><?= formatDate(substr((string) $r['criado_em'], 0, 10)) ?></td>
                         <td class="text-end text-muted">-</td>
                         <?php if ($podeVerFinanceiro): ?><td class="text-end text-muted">-</td><td class="text-muted">-</td><?php endif; ?>
@@ -517,7 +528,6 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <?php endif; ?>
                             <?php endif; ?><?= e($m['aluno_nome']) ?>
                         </td>
-                        <td><?= e(telefoneFormatado($m['aluno_telefone']) ?: '-') ?></td>
                         <td><?= formatDate($m['data_matricula']) ?></td>
                         <td class="text-end">
                             <?= formatMoney(valorMensalidadeComDesconto((float) $m['valor_mensalidade'], (float) $m['desconto_percentual'])) ?>
@@ -672,10 +682,6 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <div class="form-text" id="reserva-aluno-aviso"></div>
                 </div>
                 <div class="row g-3">
-                    <div class="col-md-5">
-                        <label class="form-label">Telefone</label>
-                        <input type="tel" name="telefone" class="form-control" maxlength="30" data-mascara="telefone">
-                    </div>
                     <div class="col-md-7">
                         <label class="form-label">Observação</label>
                         <input type="text" name="observacao" class="form-control" maxlength="255" placeholder="Ex.: paga na semana que vem">

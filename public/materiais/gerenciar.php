@@ -63,6 +63,7 @@ $pageBreadcrumb = 'Materiais · ' . ($turma ? $turma['curso_nome'] : 'Curso');
 $activeMenu = 'materiais';
 $pageAction = '<a href="/materiais/index.php" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Voltar</a>'
     . ($turma && $ehEquipe ? '<a href="/turmas/visualizar.php?id=' . $turmaId . '" class="btn btn-outline-secondary">Ver turma</a>' : '')
+    . ($turma ? '<a href="/turmas/album.php?id=' . $turmaId . '" class="btn btn-outline-secondary" title="Fotos da turma para os alunos"><i class="bi bi-images"></i> Álbum</a>' : '')
     . '<button type="button" class="btn btn-brand" onclick="abrirEnvio()"><i class="bi bi-cloud-arrow-up"></i> Enviar material</button>';
 require __DIR__ . '/../../includes/layout_header.php';
 

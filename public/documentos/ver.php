@@ -13,7 +13,7 @@ $stmt->execute([(int) ($ehAnexo ? $_GET['anexo'] : ($_GET['id'] ?? 0))]);
 $envio = $stmt->fetch();
 
 $podeVer = $envio && (
-    (usuarioLogado() && (usuarioEhAdmin() || usuarioTemPermissao('ver_alunos')))
+    (usuarioLogado() && (usuarioEhAdmin() || usuarioTemPermissao('ver_alunos') || (!$ehAnexo && usuarioTemPermissao('avaliar_documentos'))))
     || (alunoLogado() && alunoAtualId() === (int) $envio['aluno_id'] && (!$ehAnexo || $envio['visivel_aluno']))
 );
 $caminho = $envio ? caminhoDocumentoAluno($envio) : null;
