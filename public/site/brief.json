@@ -1,0 +1,173 @@
+{
+  "nome": "UniPHD Cursos",
+  "slug": "uniphd-cursos",
+  "negocio": "Educação profissional presencial em Guanambi, Bahia: pós-graduação, aperfeiçoamento e capacitações práticas em saúde e estética avançada.",
+  "publico": "Público jovem adulto: estudantes e profissionais da saúde interessados em injetáveis, harmonização e estética de pessoas.",
+  "identidade": {
+    "cores": {
+      "fundo": "#031820",
+      "texto": "#F5F3EA",
+      "acento": "#FAE952",
+      "marca": "#003747"
+    },
+    "fontes": {
+      "titulo": "Manrope",
+      "texto": "Figtree"
+    },
+    "clima": [
+      "jovial",
+      "beauty editorial",
+      "preciso"
+    ],
+    "tema": "escuro",
+    "status": "Proposta baseada na logo enviada; cores aproximadas."
+  },
+  "logo": "/Users/caiomartinspimentelsantos/Downloads/Cópia de Cópia de Cópia de date.png",
+  "retrato_fundadora": "/Users/caiomartinspimentelsantos/Downloads/Captura de Tela 2026-11-09 à(s) 22.26.59.png",
+  "copy": {
+    "frase_abertura": "A precisão transforma. O conhecimento também.",
+    "frase_secundaria": "O próximo nível da sua carreira começa aqui.",
+    "diferenciais": [
+      "Material didático incluso. Suporte contínuo durante todo o curso.",
+      "Mais de 70% de prática. Mais de 70% da carga horária é prática, preparando você para o mercado desde o início.",
+      "Vagas limitadas. Turmas com vagas limitadas, porque acreditamos em qualidade, não em quantidade.",
+      "Carga horária alinhada aos conselhos. Carga horária que atende às exigências dos principais conselhos de classe: COREN, CREFITO, CRF e CRB.",
+      "Aulas 100% presenciais. Aprendizado presencial e contato direto com pacientes-modelo.",
+      "Perto de você. Especialização sem precisar se deslocar para outras regiões.",
+      "Até 14x no boleto. Pagamento facilitado, com desconto para pagamento em dia.",
+      "Mulheres que brilham. Turmas formadas por mulheres que brilham na estética e na vida.",
+      "Guanambi e cidades vizinhas. Localização estratégica, próxima de você e de quem vem das cidades vizinhas.",
+      "Didática leve e humanizada. Didática leve, objetiva e humanizada, com ambiente e equipe acolhedora.",
+      "Acompanhamento próximo. Acompanhamento e suporte durante toda a formação.",
+      "Mestres e doutores. Corpo docente formado por mestres e doutores experientes na área.",
+      "Tecnologias atualizadas. Aulas com tecnologias atuais para acompanhar os recursos e as práticas da estética.",
+      "Pós-graduação reconhecida pelo MEC. Certificação válida em todo o território nacional."
+    ],
+    "textos_prontos": "Apresentar pós-graduação, cursos, metodologia e diferenciais.",
+    "depoimentos_reais": [
+      "Oito mensagens originais publicadas no site institucional, incorporadas como imagens."
+    ],
+    "frase_momento_3": "Especialize-se em Estética com Aulas 100% Presenciais, Próximo de Você",
+    "mec": {
+      "texto": "Pós-graduação reconhecida pelo MEC.",
+      "fonte": "https://uniphd.com.br",
+      "escopo": "Texto fornecido pelo usuário e presente no site institucional; aplicado somente à pós-graduação. Não é uma verificação independente no e-MEC."
+    },
+    "percentual_pratica": "Mais de 70% da carga horária prática na pós-graduação"
+  },
+  "referencias": [
+    "https://uniphd.com.br",
+    "Apresentações de produtos Apple",
+    "Campanhas de perfumes de luxo",
+    "Cinema publicitário",
+    "Fotografia editorial de beleza e estética avançada"
+  ],
+  "whatsapp": {
+    "numero": "5577981118760",
+    "mensagem": "Olá! Conheci a UniPHD pelo site e gostaria de saber mais sobre os cursos e as próximas turmas."
+  },
+  "email_contato": "secretaria@uniphd.com.br",
+  "campos_formulario": [
+    "nome",
+    "WhatsApp",
+    "e-mail",
+    "curso de interesse"
+  ],
+  "secoes": [
+    "Abertura cinematográfica",
+    "Apresentação da UniPHD",
+    "Experiência prática",
+    "Pós-Graduação em Estética Avançada",
+    "Cursos de aperfeiçoamento",
+    "Experiência dos alunos (aguardando material real)",
+    "Sobre a instituição e fundadora",
+    "Contato e inscrições"
+  ],
+  "conceito": "Da precisão de uma gota ao cuidado com pessoas: beleza, pele saudável e formação prática.",
+  "roteiro": "Mão de luva rosa com um único gesto de pressão. Gota se forma. A abertura da própria gota cresce e mostra a seção seguinte em tamanho normal, preservando nitidez.",
+  "modelos": {
+    "video": "google/veo-3.1-fast",
+    "imagem": "openai/gpt-image-2",
+    "video_configuracao": "8s, 1080p, sem áudio, 160 frames; desktop1920x1080 e mobile720x1080"
+  },
+  "pendencias": [
+    "Inspeção visual no navegador desktop e celular, bloqueada neste ambiente",
+    "Conferir carregamento externo dos depoimentos; quando o servidor permitir, copiar com scripts/baixar-depoimentos.py",
+    "Ativar FormSubmit e confirmar recebimento real",
+    "Publicação e domínio, quando solicitados",
+    "Receber arquivo, print ou URL direta do selo Reconhecido pelo MEC original para inserção na seção 03"
+  ],
+  "publicacao": "Não publicar sem solicitação",
+  "status": "V8: os 14 diferenciais fornecidos pelo usuário substituem o carrossel antigo, em texto nativo e quatro temas acessíveis. Percentual atualizado para mais de 70%. Testes passaram; sem nova geração.",
+  "orcamento": {
+    "limite_usd": 5,
+    "autorizado": true,
+    "gasto_usd": 3.699991,
+    "observacao": "Limite TOTAL reduzido pelo usuário para US$5; inclui todos os gastos anteriores. Não ultrapassar."
+  },
+  "video_tentativas": [
+    {
+      "resolucao": "1080p",
+      "resultado": "HTTP 402: reserva máxima maior que saldo disponível",
+      "cobrado": false
+    },
+    {
+      "resolucao": "720p",
+      "resultado": "HTTP 400: InputImageSensitiveContentDetected.PrivacyInformation — imagem pode conter pessoa real",
+      "cobrado": false
+    },
+    {
+      "referencia": "modelo-campanha.png, personagem fictícia",
+      "resultado": "HTTP 400: fornecedor detecta possível pessoa real também na imagem fictícia",
+      "cobrado": false
+    }
+  ],
+  "personagem_campanha": "Nenhuma pessoa na abertura: mão com luva e seringa. Imagens das seções são campanhas fictícias de beleza; retrato institucional real da fundadora.",
+  "direcao_rejeitada": "Sem modelos anatômicos, pele removida, tecidos expostos ou personagem segurando a seringa. Usuário rejeitou o visual anterior.",
+  "portal_matricula": "https://portal.uniphd.com.br",
+  "ajustes_v4": [
+    "Uma única seção #sobre: movida para a revelação na rolagem; permanece no fluxo normal sem animação ou em movimento reduzido",
+    "Frase Cada detalhe importa retirada, mantendo a chamada de aulas 100% presenciais",
+    "Fundos sólidos e alto contraste no celular, inclusive formulário e rodapé",
+    "Botões e links sem setas decorativas; flutuante com SVG de WhatsApp",
+    "Sem gerações novas; gasto permanece US$3.699991"
+  ],
+  "depoimentos": {
+    "fonte": "https://uniphd.com.br",
+    "quantidade": 8,
+    "formato": "Prints originais, sem transcrição nem citações inventadas",
+    "posicao": "Antes de A UniPHD",
+    "arquivos": "URLs originais externos; download local recusado pelo servidor",
+    "manifesto": "fonte/depoimentos-originais.json",
+    "layout": "Mosaico: 3 colunas desktop, 2 tablet, 1 celular; sem ampliar, abrir original ou diálogo",
+    "titulo": "Veja o que nossos alunos falam da gente."
+  },
+  "mec_marca": {
+    "status": "Marca governamental anterior retirada",
+    "solicitacao": "Usar o mesmo selo Reconhecido pelo MEC existente no site UniPHD",
+    "pendencia": "Arquivo do selo, print ou URL direta necessário: recursos de imagem e CSS do site recusam conexões neste ambiente. Não foi adivinhado nem fabricado um selo substituto.",
+    "texto_mec": "Permanece na seção 03"
+  },
+  "carrossel": {
+    "titulo": "Por que escolher a UniPHD para sua especialização?",
+    "posicao": "Depois da pós-graduação e antes dos cursos",
+    "quantidade": 14,
+    "fonte": "https://uniphd.com.br",
+    "manifesto": "fonte/carrossel-original.json",
+    "comportamento": "Rolagem contínua com loop, pausa por botão/gesto/foco, 3 imagens desktop e 1 celular; pausa fora da tela e em aba oculta; movimento reduzido respeitado",
+    "arquivos": "URLs originais externos, download local recusado pelo servidor",
+    "status": "Substituído pelos diferenciais em texto nativo na revisão 8; manifesto preservado como histórico"
+  },
+  "diferenciais_nativos": {
+    "quantidade": 14,
+    "fonte": "Texto do usuário no chat em 2026-11-10",
+    "conteudo": "fonte/diferenciais-conteudo.json",
+    "temas": [
+      "Aprendizado",
+      "Pessoas",
+      "Perto de você",
+      "Formação e condições"
+    ],
+    "formato": "Texto HTML selecionável, com navegação por tema e teclado; todos os itens acessíveis sem JavaScript; sem imagens externas ou autoplay nesta seção"
+  }
+}

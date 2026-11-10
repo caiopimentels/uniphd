@@ -135,6 +135,12 @@ function publicosBlocoPortal(): array
     return ['todos' => 'Todo mundo', 'visitantes' => 'Só quem ainda não entrou', 'alunos' => 'Só alunos que entraram'];
 }
 
+// Banner com várias imagens: quanto tempo cada uma fica e como troca.
+function efeitosBannerPortal(): array
+{
+    return ['esmaecer' => 'Esmaecer (uma some e a outra aparece)', 'deslizar' => 'Deslizar para o lado', 'nenhum' => 'Sem efeito (troca direto)'];
+}
+
 function configBloco(array $bloco): array
 {
     $config = json_decode((string) ($bloco['config'] ?? ''), true);

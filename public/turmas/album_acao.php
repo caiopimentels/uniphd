@@ -3,7 +3,7 @@ require_once __DIR__ . '/../../includes/bootstrap.php';
 exigirLogin();
 
 // Ações nas fotos do álbum (JSON): legenda, mostrar/esconder dos alunos,
-// usar como capa da turma, excluir. ids[] = uma ou várias fotos da turma.
+// usar como capa da turma, pôr no banner do portal, excluir. ids[] = uma ou várias fotos da turma.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     responderJson(['sucesso' => false]);
 }
@@ -37,6 +37,30 @@ switch ((string) ($_POST['acao'] ?? '')) {
             registrarAtividade('turmas', 'edicao', 'Capa da turma #' . $turmaId . ' trocada por uma foto do álbum');
         }
         responderJson(['sucesso' => $r['ok'], 'mensagem' => $r['mensagem']]);
+
+    case 'banner':
+        // Copia para o carrossel de um banner do site (Portal › Site do portal).
+        if (!usuarioTemPermissao('gerenciar_portal')) {
+            responderJson(['sucesso' => false, 'mensagem' => 'Seu perfil não pode editar o portal do aluno.']);
+        }
+        $blocoId = (int) ($_POST['bloco_id'] ?? 0);
+        if ($blocoId && !in_array($blocoId, array_map('intval', array_column(bannersPortal($pdo), 'id')), true)) {
+            responderJson(['sucesso' => false, 'mensagem' => 'Banner não encontrado.']);
+        }
+        $blocoId = $blocoId ?: criarBannerPortal($pdo);
+        $link = !empty($_POST['link_turma']) ? '/portal/turma.php?id=' . $turmaId : null;
+        $erros = [];
+        foreach ($fotos as $f) {
+            $r = fotoParaBanner($pdo, $f, $blocoId, $link);
+            if (!$r['ok']) {
+                $erros[] = $r['mensagem'];
+            }
+        }
+        $foram = count($fotos) - count($erros);
+        if ($foram) {
+            registrarAtividade('portal', 'edicao', $foram . ' foto(s) do álbum da turma #' . $turmaId . ' colocadas no banner do portal');
+        }
+        responderJson(['sucesso' => $foram > 0, 'mensagem' => implode(' ', array_unique($erros)), 'bloco_id' => $blocoId, 'foram' => $foram]);
 
     case 'excluir':
         $pdo->exec("DELETE FROM turma_fotos WHERE id IN ($lista)");

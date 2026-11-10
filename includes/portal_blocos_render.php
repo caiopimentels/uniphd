@@ -20,7 +20,9 @@ $abrirLink = fn (array $c, string $chaveLink = 'botao_link') => !empty($c[$chave
         <?php endif; ?>
 
         <?php if ($bloco['tipo'] === 'banner'): ?>
-            <div class="banner banner-<?= e($bloco['altura']) ?>" data-slides="<?= count($bloco['imagens']) ?>">
+            <?php $efeito = array_key_exists($c['efeito'] ?? '', efeitosBannerPortal()) ? $c['efeito'] : 'esmaecer'; ?>
+            <div class="banner banner-<?= e($bloco['altura']) ?> banner-<?= $efeito ?>" data-slides="<?= count($bloco['imagens']) ?>"
+                 data-tempo="<?= max(2, min(60, (int) ($c['tempo'] ?? 6))) ?>" data-pausar="<?= ($c['pausar'] ?? true) ? '1' : '0' ?>">
                 <?php foreach ($bloco['imagens'] as $i => $img): $tag = $img['link'] ? 'a' : 'div'; ?>
                     <<?= $tag ?> class="banner-slide <?= $i === 0 ? 'ativo' : '' ?>"
                         <?php if ($img['link']): ?>href="<?= e($img['link']) ?>"<?= $img['nova_aba'] ? ' target="_blank" rel="noopener"' : '' ?><?php endif; ?>>
@@ -28,6 +30,8 @@ $abrirLink = fn (array $c, string $chaveLink = 'botao_link') => !empty($c[$chave
                     </<?= $tag ?>>
                 <?php endforeach; ?>
                 <?php if (count($bloco['imagens']) > 1): ?>
+                    <button type="button" class="banner-seta anterior" aria-label="Imagem anterior"><i class="bi bi-chevron-left"></i></button>
+                    <button type="button" class="banner-seta proxima" aria-label="Próxima imagem"><i class="bi bi-chevron-right"></i></button>
                     <div class="banner-pontos"><?php foreach ($bloco['imagens'] as $i => $img): ?><button type="button" class="<?= $i === 0 ? 'ativo' : '' ?>" aria-label="Imagem <?= $i + 1 ?>"></button><?php endforeach; ?></div>
                 <?php endif; ?>
             </div>

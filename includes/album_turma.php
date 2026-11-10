@@ -195,6 +195,53 @@ function usarFotoComoCapa(PDO $pdo, array $foto): array
     return ['ok' => true, 'mensagem' => ''];
 }
 
+/** Banners (carrosséis) do site do portal, para escolher onde pôr uma foto. */
+function bannersPortal(PDO $pdo): array
+{
+    return $pdo->query("SELECT b.id, b.titulo, b.ativo, p.titulo AS pagina, (SELECT COUNT(*) FROM portal_banner_imagens i WHERE i.bloco_id = b.id) AS imagens
+                        FROM portal_blocos b JOIN portal_paginas p ON p.id = b.pagina_id
+                        WHERE b.tipo = 'banner' ORDER BY FIELD(p.tipo, 'inicio', 'personalizada', 'sistema'), p.titulo, b.ordem")->fetchAll();
+}
+
+/** Banner novo no fim da página inicial (quando ainda não há nenhum). */
+function criarBannerPortal(PDO $pdo): int
+{
+    $inicio = buscarPaginaPortal($pdo, 'chave', 'inicio');
+    $ordem = ordemParaInserirBloco($pdo, (int) $inicio['id'], 'topo', 0);
+    $pdo->prepare("INSERT INTO portal_blocos (pagina_id, regiao, tipo, titulo, largura, altura, publico, ativo, ordem) VALUES (?, 'topo', 'banner', NULL, 'inteira', 'media', 'todos', 1, ?)")
+        ->execute([$inicio['id'], $ordem]);
+    return (int) $pdo->lastInsertId();
+}
+
+/**
+ * Copia uma foto do álbum para um banner do portal (entra por último no
+ * carrossel). A cópia é própria do banner: apagar a foto do álbum não
+ * tira a imagem do site, e vice-versa. Link opcional ao clicar.
+ */
+function fotoParaBanner(PDO $pdo, array $foto, int $blocoId, ?string $link): array
+{
+    $local = arquivoLocalFotoAlbum($pdo, $foto);
+    if (!$local) {
+        return ['ok' => false, 'mensagem' => 'Não foi possível abrir a foto original agora. Tente de novo.'];
+    }
+    if ($problema = problemaPastaUpload(pastaUploadsPortal())) {
+        return ['ok' => false, 'mensagem' => 'Não foi possível gravar a imagem. ' . $problema];
+    }
+    $nome = 'banner-album-' . $foto['codigo'] . '-' . bin2hex(random_bytes(3)) . '.jpg';
+    $ok = reduzirImagemAlbum($local['caminho'], $foto['arquivo_tipo'], pastaUploadsPortal() . '/' . $nome, 1800, 85);
+    if ($local['temporario']) {
+        @unlink($local['caminho']);
+    }
+    if (!$ok) {
+        return ['ok' => false, 'mensagem' => 'Não foi possível preparar a imagem do banner.'];
+    }
+    $stmt = $pdo->prepare('SELECT COALESCE(MAX(ordem), 0) + 10 FROM portal_banner_imagens WHERE bloco_id = ?');
+    $stmt->execute([$blocoId]);
+    $pdo->prepare('INSERT INTO portal_banner_imagens (bloco_id, imagem, link, nova_aba, texto_alternativo, ordem) VALUES (?, ?, ?, 0, ?, ?)')
+        ->execute([$blocoId, '/uploads/portal/' . $nome, $link ?: null, mb_substr((string) ($foto['legenda'] ?: ''), 0, 150) ?: null, (int) $stmt->fetchColumn()]);
+    return ['ok' => true, 'mensagem' => ''];
+}
+
 /** Baixa várias fotos num .zip (nomes numerados na ordem do álbum). */
 function enviarZipAlbum(PDO $pdo, array $fotos, string $nomeZip): void
 {

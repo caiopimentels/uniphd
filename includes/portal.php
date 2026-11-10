@@ -395,7 +395,9 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codi
             return $falha('Esta turma não está mais com inscrições abertas.');
         }
 
-        $stmt = $pdo->prepare('SELECT * FROM matriculas WHERE turma_id = ? AND aluno_id = ?');
+        // Só conta a que vale; uma cancelada fica no histórico e a inscrição
+        // nova vira outra matrícula.
+        $stmt = $pdo->prepare("SELECT * FROM matriculas WHERE turma_id = ? AND aluno_id = ? AND status <> 'cancelada' ORDER BY id DESC LIMIT 1");
         $stmt->execute([$turmaId, $alunoId]);
         $existente = $stmt->fetch();
         if ($existente && $existente['status'] !== 'cancelada') {
@@ -454,27 +456,15 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codi
             'cupom_desconto' => $cupomDesconto,
         ];
 
-        if ($existente) {
-            // Reinscrição: as cobranças da tentativa anterior já estão canceladas.
-            $stmt = $pdo->prepare(
-                "UPDATE matriculas SET data_matricula = ?, status = ?, origem = 'portal', pagamento_ate = ?, segura_vaga = ?, lista_espera = 0,
-                        valor_mensalidade = ?, valor_total = ?, pagamento_avista = ?, desconto_percentual = 0, desconto_pontualidade_tipo = 'nenhum', desconto_pontualidade_valor = 0,
-                        desconto_pontualidade_dias = 0, num_parcelas = ?, primeiro_vencimento = ?, taxa_matricula = ?, forma_pagamento_id = ?, forma_mensalidade_id = ?,
-                        cupom_id = ?, cupom_desconto = ?, data_cancelamento = NULL, conta_receber_confirmacao_id = NULL, usuario_id = NULL
-                 WHERE id = ?"
-            );
-            $stmt->execute([...array_values($valores), $existente['id']]);
-            $matriculaId = (int) $existente['id'];
-        } else {
-            $stmt = $pdo->prepare(
-                "INSERT INTO matriculas (turma_id, aluno_id, origem, data_matricula, status, pagamento_ate, segura_vaga, valor_mensalidade,
-                                         valor_total, pagamento_avista, num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id,
-                                         cupom_id, cupom_desconto)
-                 VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-            );
-            $stmt->execute([$turmaId, $alunoId, ...array_values($valores)]);
-            $matriculaId = (int) $pdo->lastInsertId();
-        }
+        // Quem tinha cancelado volta numa matrícula nova (a antiga fica no histórico).
+        $stmt = $pdo->prepare(
+            "INSERT INTO matriculas (turma_id, aluno_id, origem, data_matricula, status, pagamento_ate, segura_vaga, valor_mensalidade,
+                                     valor_total, pagamento_avista, num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id,
+                                     cupom_id, cupom_desconto)
+             VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        );
+        $stmt->execute([$turmaId, $alunoId, ...array_values($valores)]);
+        $matriculaId = (int) $pdo->lastInsertId();
 
         // No modo "só após pagar" a inscrição não ocupa vaga: a reserva
         // continua até o pagamento (confirmarMatriculaPorPagamento).
@@ -515,7 +505,8 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codi
 
     $textoCupom = $cupom ? ' — cupom ' . $cupom['codigo'] . ' (' . ($cupom['tipo'] === 'matricula_zero' ? 'matrícula grátis' : formatMoney($cupomDesconto) . ' de desconto') . ')' : '';
     registrarAtividadeUsuario(null, 'Portal: ' . $aluno['nome'], 'matriculas', 'matricula', 'Inscrição pelo portal na turma ' . $turma['nome'] . ($pendente ? ' (aguardando pagamento)' : '') . $textoCupom);
-    registrarHistoricoAluno($pdo, $alunoId, 'inscricao', 'Turma ' . $turma['nome'] . ($pendente ? ' — aguardando pagamento' : '') . $textoCupom, $matriculaId);
+    $voltou = cancelamentoAnteriorNaTurma($pdo, $turmaId, $alunoId, $matriculaId);
+    registrarHistoricoAluno($pdo, $alunoId, 'inscricao', 'Turma ' . $turma['nome'] . ($voltou ? ' — voltou (tinha cancelado em ' . formatDate($voltou) . ')' : '') . ($pendente ? ' — aguardando pagamento' : '') . $textoCupom, $matriculaId);
     criarNotificacao($pdo, 'matricula', 'Nova inscrição pelo portal', $aluno['nome'] . ' · ' . $turma['curso_nome'] . ' — ' . $turma['nome'], '/matriculas/visualizar.php?id=' . $matriculaId, $matriculaId);
 
     return [
@@ -797,6 +788,13 @@ function salvarImagemPortal(array $arquivo, string $prefixo, int $maxMb = 5): ar
         return ['ok' => false, 'mensagem' => 'Não foi possível gravar a imagem no servidor.', 'url' => null];
     }
     return ['ok' => true, 'mensagem' => '', 'url' => '/uploads/portal/' . $nome];
+}
+
+// "16M" (php.ini) -> bytes; 0 = sem limite.
+function iniParaBytesPortal(string|false $valor): int
+{
+    $n = (int) $valor;
+    return match (strtoupper(substr(trim((string) $valor), -1))) { 'G' => $n * 1073741824, 'M' => $n * 1048576, 'K' => $n * 1024, default => $n };
 }
 
 // Apaga do disco uma imagem que saiu de uso (só dentro de uploads/portal).

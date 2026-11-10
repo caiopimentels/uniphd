@@ -39,19 +39,55 @@
         });
     });
 
-    // Carrossel: troca de imagem a cada 6 s; os pontinhos trocam na hora.
+    // Carrossel: tempo e efeito vêm do bloco (data-tempo, classe banner-<efeito>);
+    // setas, pontinhos e arrastar com o dedo trocam na hora; pode parar com o
+    // mouse em cima.
     document.querySelectorAll('.banner[data-slides]').forEach(function (banner) {
         var slides = banner.querySelectorAll('.banner-slide');
         var pontos = banner.querySelectorAll('.banner-pontos button');
         if (slides.length < 2) return;
-        var atual = 0, timer;
-        function mostrar(i) {
-            slides[atual].classList.remove('ativo'); pontos[atual].classList.remove('ativo');
-            atual = (i + slides.length) % slides.length;
+        var atual = 0, timer, parado = false;
+        var tempo = Math.max(2, parseInt(banner.getAttribute('data-tempo'), 10) || 6) * 1000;
+        var deslizar = banner.classList.contains('banner-deslizar');
+        function mostrar(i, voltando) {
+            var novo = (i + slides.length) % slides.length;
+            if (novo === atual) return;
+            var antigo = slides[atual];
+            if (deslizar) {
+                // Põe a nova imagem do lado certo antes de deslizar.
+                banner.classList.toggle('voltando', !!voltando);
+                slides[novo].classList.add('sem-transicao');
+                void slides[novo].offsetWidth;
+                slides[novo].classList.remove('sem-transicao');
+                antigo.classList.add('saindo');
+                setTimeout(function () {
+                    antigo.classList.add('sem-transicao');
+                    antigo.classList.remove('saindo');
+                    void antigo.offsetWidth;
+                    antigo.classList.remove('sem-transicao');
+                }, 750);
+            }
+            antigo.classList.remove('ativo'); pontos[atual].classList.remove('ativo');
+            atual = novo;
             slides[atual].classList.add('ativo'); pontos[atual].classList.add('ativo');
         }
-        function iniciar() { clearInterval(timer); timer = setInterval(function () { mostrar(atual + 1); }, 6000); }
-        pontos.forEach(function (p, i) { p.addEventListener('click', function () { mostrar(i); iniciar(); }); });
+        function iniciar() { clearInterval(timer); timer = setInterval(function () { if (!parado) mostrar(atual + 1); }, tempo); }
+        pontos.forEach(function (p, i) { p.addEventListener('click', function () { mostrar(i, i < atual); iniciar(); }); });
+        var anterior = banner.querySelector('.banner-seta.anterior'), proxima = banner.querySelector('.banner-seta.proxima');
+        if (anterior) anterior.addEventListener('click', function () { mostrar(atual - 1, true); iniciar(); });
+        if (proxima) proxima.addEventListener('click', function () { mostrar(atual + 1); iniciar(); });
+        if (banner.getAttribute('data-pausar') === '1') {
+            banner.addEventListener('mouseenter', function () { parado = true; });
+            banner.addEventListener('mouseleave', function () { parado = false; });
+        }
+        var inicioX = null;
+        banner.addEventListener('touchstart', function (ev) { inicioX = ev.touches[0].clientX; }, { passive: true });
+        banner.addEventListener('touchend', function (ev) {
+            if (inicioX === null) return;
+            var dx = ev.changedTouches[0].clientX - inicioX;
+            inicioX = null;
+            if (Math.abs(dx) > 40) { dx < 0 ? mostrar(atual + 1) : mostrar(atual - 1, true); iniciar(); }
+        });
         iniciar();
     });
 

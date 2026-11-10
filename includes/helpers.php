@@ -482,6 +482,25 @@ function matriculaStatusLabel(string $status): string
     };
 }
 
+/**
+ * Rematrícula: se o aluno já tinha uma matrícula cancelada nesta turma
+ * antes desta, devolve a data do cancelamento (ou da matrícula, se faltar)
+ * — para o histórico mostrar "entrou, cancelou, voltou".
+ */
+function cancelamentoAnteriorNaTurma(PDO $pdo, int $turmaId, int $alunoId, int $antesDaMatriculaId): ?string
+{
+    $stmt = $pdo->prepare("SELECT COALESCE(data_cancelamento, data_matricula) FROM matriculas
+                           WHERE turma_id = ? AND aluno_id = ? AND status = 'cancelada' AND id < ? ORDER BY id DESC LIMIT 1");
+    $stmt->execute([$turmaId, $alunoId, $antesDaMatriculaId]);
+    return $stmt->fetchColumn() ?: null;
+}
+
+// Número da matrícula para mostrar: 57 -> "000057".
+function numeroMatricula(int $id): string
+{
+    return str_pad((string) $id, 6, '0', STR_PAD_LEFT);
+}
+
 function matriculaStatusBadgeClass(string $status): string
 {
     return match ($status) {

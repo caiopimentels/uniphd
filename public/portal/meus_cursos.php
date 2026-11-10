@@ -18,6 +18,8 @@ $stmt = $pdo->prepare(
      JOIN cursos c ON c.id = t.curso_id
      LEFT JOIN contas_receber cr ON cr.id = m.conta_receber_confirmacao_id
      WHERE m.aluno_id = ? AND (m.status <> 'cancelada' OR m.data_cancelamento >= DATE_SUB(CURDATE(), INTERVAL 30 DAY))
+       -- Voltou para a turma: a matrícula cancelada antiga não aparece de novo.
+       AND NOT (m.status = 'cancelada' AND EXISTS (SELECT 1 FROM matriculas m2 WHERE m2.turma_id = m.turma_id AND m2.aluno_id = m.aluno_id AND m2.status <> 'cancelada'))
      ORDER BY FIELD(m.status, 'pendente', 'ativa', 'trancada', 'concluida', 'cancelada'), t.data_inicio DESC"
 );
 $stmt->execute([alunoAtualId()]);

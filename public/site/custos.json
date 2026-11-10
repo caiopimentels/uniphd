@@ -1,0 +1,90 @@
+{
+  "limite_autorizado_usd": 5,
+  "total_confirmado_usd": 3.699991,
+  "restante_autorizado_usd": 1.300009,
+  "geracoes": [
+    {
+      "arquivo": "modelo-campanha",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.13069
+    },
+    {
+      "arquivo": "contato",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.130075
+    },
+    {
+      "arquivo": "sobre",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.130105
+    },
+    {
+      "arquivo": "cursos",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.130055
+    },
+    {
+      "arquivo": "pratica",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.130225
+    },
+    {
+      "arquivo": "pos",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.130075
+    },
+    {
+      "arquivo": "quadro-chave",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.142268
+    },
+    {
+      "arquivo": "v2/abertura-final",
+      "modelo": "google/veo-3.1-fast",
+      "custo_usd": 0.64
+    },
+    {
+      "arquivo": "v2/abertura",
+      "modelo": "google/veo-3.1-fast",
+      "custo_usd": 0.64
+    },
+    {
+      "arquivo": "v2/sobre",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.13054
+    },
+    {
+      "arquivo": "v2/cursos",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.13052
+    },
+    {
+      "arquivo": "v2/pratica",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.13066
+    },
+    {
+      "arquivo": "v2/pos",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.130525
+    },
+    {
+      "arquivo": "v2/quadro-chave",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.130885
+    },
+    {
+      "arquivo": "v3/abertura",
+      "modelo": "google/veo-3.1-fast",
+      "custo_usd": 0.8
+    },
+    {
+      "arquivo": "v3/quadro-chave",
+      "modelo": "openai/gpt-image-2",
+      "custo_usd": 0.043368
+    }
+  ],
+  "videos_cobrados": 3,
+  "video_utilizado": "fonte/v3/abertura.mp4",
+  "resolucao_video": "1920x1080"
+}

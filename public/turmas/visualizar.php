@@ -37,14 +37,14 @@ $stmt = $pdo->prepare(
               WHERE cr.matricula_id = m.id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < " . sqlCorteAtraso() . ") AS valor_vencido,
             (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr
               WHERE cr.aluno_id = m.aluno_id AND cr.status = 'pendente' AND cr.excluido_em IS NULL AND cr.data_vencimento < " . sqlCorteAtraso() . ") AS valor_vencido_aluno,
-            (SELECT COALESCE(SUM(COALESCE(cr.valor_recebido, cr.valor)), 0) FROM contas_receber cr
-              WHERE cr.matricula_id = m.id AND cr.status = 'pago') AS valor_pago,
             EXISTS (SELECT 1 FROM contas_receber cr WHERE cr.matricula_id = m.id AND cr.status = 'pago') AS tem_pago,
-            EXISTS (SELECT 1 FROM cobrancas_bancarias cb JOIN contas_receber cr ON cr.id = cb.conta_receber_id WHERE cr.matricula_id = m.id) AS tem_boleto
+            EXISTS (SELECT 1 FROM cobrancas_bancarias cb JOIN contas_receber cr ON cr.id = cb.conta_receber_id WHERE cr.matricula_id = m.id) AS tem_boleto,
+            (SELECT COALESCE(mc.data_cancelamento, mc.data_matricula) FROM matriculas mc WHERE mc.turma_id = m.turma_id AND mc.aluno_id = m.aluno_id
+              AND mc.status = 'cancelada' AND mc.id < m.id ORDER BY mc.id DESC LIMIT 1) AS voltou_de
      FROM matriculas m
      JOIN alunos a ON a.id = m.aluno_id
      WHERE m.turma_id = ?
-     ORDER BY FIELD(m.status, 'ativa', 'pendente', 'trancada', 'concluida', 'cancelada'), a.nome"
+     ORDER BY FIELD(m.status, 'ativa', 'pendente', 'trancada', 'concluida', 'cancelada'), a.nome, m.id"
 );
 $stmt->execute([$id]);
 $matriculas = $stmt->fetchAll();
@@ -89,7 +89,7 @@ $turmaAceitaMatricula = in_array($turma['comportamento'], COMPORTAMENTOS_TURMA_A
 $turmaConcluida = $turma['comportamento'] === 'concluida';
 // Turma encerrada não recebe nem tira aluno: na lista sobram os documentos.
 $mostrarAcoes = ($podeGerenciar || $podeCancelar) && $turmaAceitaMatricula;
-$totalColunas = 5 + ($podeVerFinanceiro ? 2 : 0) + ($podeLiberarCertificado ? 1 : 0) + ($mostrarAcoes ? 1 : 0);
+$totalColunas = 4 + ($podeVerFinanceiro ? 1 : 0) + ($podeLiberarCertificado ? 1 : 0) + ($mostrarAcoes ? 1 : 0);
 // Documentos que o curso emite (certificado, declarações de módulo): a
 // liberação automática roda ao abrir a turma (pega quem resolveu pendência).
 sincronizarDocumentosTurma($pdo, $id);
@@ -477,8 +477,9 @@ require __DIR__ . '/../../includes/layout_header.php';
                     <tr>
                         <th>
                             <?php if ($podeMarcarDocumentos): ?><input type="checkbox" class="form-check-input me-2" id="documentos-todos" title="Marcar / desmarcar todos"><?php endif; ?>Aluno
+                        </th>
                         <th>Matrícula</th><th class="text-end">Mensalidade</th>
-                        <?php if ($podeVerFinanceiro): ?><th class="text-end">Pago</th><th>Financeiro</th><?php endif; ?>
+                        <?php if ($podeVerFinanceiro): ?><th>Financeiro</th><?php endif; ?>
                         <th>Situação</th>
                         <?php if ($podeLiberarCertificado): ?>
                             <th>Documentos</th>
@@ -498,12 +499,12 @@ require __DIR__ . '/../../includes/layout_header.php';
                         </td>
                         <td><?= formatDate(substr((string) $r['criado_em'], 0, 10)) ?></td>
                         <td class="text-end text-muted">-</td>
-                        <?php if ($podeVerFinanceiro): ?><td class="text-end text-muted">-</td><td class="text-muted">-</td><?php endif; ?>
+                        <?php if ($podeVerFinanceiro): ?><td class="text-muted">-</td><?php endif; ?>
                         <td>
                             <span class="badge text-bg-warning">Vaga reservada</span>
                             <div class="small text-muted"><?= e($r['observacao'] ?: ($r['usuario_nome'] ? 'por ' . $r['usuario_nome'] : '')) ?></div>
                         </td>
-                        <?php if ($podeLiberarCertificado): ?><td class="text-center text-muted">—</td><?php endif; ?>
+                        <?php if ($podeLiberarCertificado): ?><td class="text-muted">—</td><?php endif; ?>
                         <?php if ($mostrarAcoes): ?>
                             <td class="text-end text-nowrap">
                                 <?php if ($podeGerenciar): ?>
@@ -520,13 +521,18 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <?php foreach ($matriculas as $m): ?>
                     <tr class="cursor-pointer" onclick="window.location='/matriculas/visualizar.php?id=<?= (int) $m['id'] ?>'">
                         <td<?= $podeMarcarDocumentos ? ' onclick="if (event.target.matches(\'input\')) event.stopPropagation();"' : '' ?>>
+                            <div class="d-flex align-items-baseline">
                             <?php if ($podeMarcarDocumentos): ?>
                                 <?php if (isset($documentosPorMatricula[(int) $m['id']])): ?>
-                                    <input type="checkbox" class="form-check-input documento-aluno me-2" name="ids[]" form="form-documentos" value="<?= (int) $m['id'] ?>" title="Marcar para liberar / bloquear documento">
+                                    <input type="checkbox" class="form-check-input documento-aluno me-2 flex-shrink-0" name="ids[]" form="form-documentos" value="<?= (int) $m['id'] ?>" title="Marcar para liberar / bloquear documento">
                                 <?php else: ?>
-                                    <span class="d-inline-block me-2" style="width: 1em;"></span>
+                                    <span class="d-inline-block me-2 flex-shrink-0" style="width: 1em;"></span>
                                 <?php endif; ?>
-                            <?php endif; ?><?= e($m['aluno_nome']) ?>
+                            <?php endif; ?>
+                                <span class="text-muted small font-monospace me-2 flex-shrink-0" title="Número da matrícula"><?= numeroMatricula((int) $m['id']) ?></span>
+                                <span><?= e($m['aluno_nome']) ?>
+                                <?php if ($m['voltou_de']): ?><span class="badge text-bg-light border fw-normal ms-1" title="Tinha cancelado em <?= formatDate($m['voltou_de']) ?> e voltou — a matrícula cancelada continua na lista"><i class="bi bi-arrow-repeat"></i> voltou</span><?php endif; ?></span>
+                            </div>
                         </td>
                         <td><?= formatDate($m['data_matricula']) ?></td>
                         <td class="text-end">
@@ -534,7 +540,6 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <?php if ((float) $m['desconto_percentual'] > 0): ?><div class="small text-muted"><?= formatPercent($m['desconto_percentual']) ?> desc.</div><?php endif; ?>
                         </td>
                         <?php if ($podeVerFinanceiro): ?>
-                        <td class="text-end"><?= formatMoney($m['valor_pago']) ?></td>
                         <td>
                             <?php if ((float) $m['valor_vencido_aluno'] > 0): ?>
                                 <a href="/alunos/form.php?id=<?= (int) $m['aluno_id'] ?>&tab=financeiro" class="badge text-bg-danger text-decoration-none" onclick="event.stopPropagation();"

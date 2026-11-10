@@ -1,0 +1,32 @@
+const {JSDOM}=require('/private/tmp/uniphd-browser/node_modules/jsdom');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'../site');
+const html=fs.readFileSync(path.join(root,'index.html'),'utf8');
+const dom=new JSDOM(html,{url:'http://localhost:4173',runScripts:'outside-only',pretendToBeVisual:true});
+const w=dom.window,d=w.document;
+const section=d.querySelector('#experiencia');
+assert.equal(section.querySelectorAll('.beneficio-item').length,14);
+assert([...section.querySelectorAll('[role=tabpanel]')].every(x=>!x.hidden));
+assert.equal(section.querySelectorAll('img,.carrossel,.carrossel-pausa').length,0);
+const originalIds=[...section.querySelectorAll('[data-origem-item]')].map(x=>Number(x.dataset.origemItem)).sort((a,b)=>a-b);
+assert.deepEqual(originalIds,Array.from({length:14},(_,i)=>i+1));
+for(const phrase of ['Mais de 70%','14x no boleto','COREN, CREFITO, CRF e CRB','pacientes-modelo','Mulheres que brilham','Mestres e doutores','território nacional'])assert(section.textContent.includes(phrase),phrase);
+w.matchMedia=()=>({matches:false});w.IntersectionObserver=class{observe(){}unobserve(){}};
+w.eval(fs.readFileSync(path.join(root,'config.js'),'utf8'));w.SITE.frames.total=0;w.eval(fs.readFileSync(path.join(root,'app.js'),'utf8'));
+const tabs=[...section.querySelectorAll('[role=tab]')],panels=[...section.querySelectorAll('[role=tabpanel]')];
+assert.equal(tabs.length,4);assert.equal(panels.filter(x=>!x.hidden).length,1);
+let seen=[];
+for(let i=0;i<tabs.length;i++){
+ tabs[i].click();assert.equal(tabs[i].getAttribute('aria-selected'),'true');assert.equal(tabs[i].tabIndex,0);assert(!panels[i].hidden);
+ assert.equal(panels.filter(x=>!x.hidden).length,1);assert.equal(tabs.filter(x=>x.tabIndex===0).length,1);
+ seen.push(...[...panels[i].querySelectorAll('[data-origem-item]')].map(x=>Number(x.dataset.origemItem)));
+}
+assert.equal(new Set(seen).size,14);
+const key=(tab,value)=>tab.dispatchEvent(new w.KeyboardEvent('keydown',{key:value,bubbles:true,cancelable:true}));
+key(tabs[3],'ArrowRight');assert.equal(d.activeElement,tabs[0]);assert(!panels[0].hidden);
+key(tabs[0],'End');assert.equal(d.activeElement,tabs[3]);
+key(tabs[3],'Home');assert.equal(d.activeElement,tabs[0]);
+key(tabs[0],'ArrowLeft');assert.equal(d.activeElement,tabs[3]);
+assert(d.querySelector('#pratica').textContent.includes('Mais de 70%'));
+assert(d.querySelector('#pos').textContent.includes('mais de 70%'));
+console.log('OK: 14 itens completos, texto sem imagens, quatro temas, navegação por clique e teclado, alternativa sem JS, 70% atualizado.');w.close();

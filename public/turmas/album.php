@@ -3,7 +3,8 @@ require_once __DIR__ . '/../../includes/bootstrap.php';
 exigirLogin();
 
 // Álbum de fotos da turma (?id=): enviar várias fotos de uma vez, legenda,
-// esconder dos alunos, usar uma como capa da turma, baixar (uma, as
+// esconder dos alunos, usar uma como capa da turma, pôr no banner
+// (carrossel) do site do portal, baixar (uma, as
 // marcadas ou todas num .zip) e excluir. Os alunos veem em Meus cursos ›
 // Álbum. Equipe (editar turma) e professores da turma (materiais).
 $pdo = getDB();
@@ -24,6 +25,9 @@ $ftp = ftpMateriais($pdo);
 $cota = cotaMateriais($pdo);
 $capa = $turma['portal_imagem'] ?: null;
 $veTurma = usuarioTemPermissao('ver_cursos');
+$podeBanner = usuarioTemPermissao('gerenciar_portal');
+$banners = $podeBanner ? bannersPortal($pdo) : [];
+$turmaNoSite = $podeBanner && turmasAbertasPortal($pdo, $turmaId);
 
 $pageTitle = 'Álbum · ' . e($turma['nome']);
 $pageBreadcrumb = 'Acadêmico · Turmas · ' . $turma['curso_nome'];
@@ -63,7 +67,7 @@ require __DIR__ . '/../../includes/layout_header.php';
             <?php else: ?>
                 <div class="rounded d-flex align-items-center justify-content-center text-muted" style="aspect-ratio: 16/9; background: var(--bs-tertiary-bg)"><i class="bi bi-image fs-2"></i></div>
             <?php endif; ?>
-            <div class="small text-muted mt-2">Aparece no site, em "Meus cursos" do aluno e na tela da turma. Para trocar, clique na <i class="bi bi-star"></i> de uma foto.</div>
+            <div class="small text-muted mt-2">Aparece no site, em "Meus cursos" do aluno e na tela da turma. Para trocar, clique na <i class="bi bi-star"></i> de uma foto.<?php if ($podeBanner): ?> Para propaganda no site, o <i class="bi bi-megaphone"></i> põe a foto no banner (carrossel) do portal.<?php endif; ?></div>
         </div></div>
     </div>
     <div class="col-md-8 col-lg-9">
@@ -89,6 +93,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="acaoMarcadas('mostrar')"><i class="bi bi-eye"></i> Mostrar aos alunos</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="acaoMarcadas('esconder')"><i class="bi bi-eye-slash"></i> Esconder</button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="baixarMarcadas()"><i class="bi bi-download"></i> Baixar</button>
+                <?php if ($podeBanner): ?><button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirBanner(marcadas())"><i class="bi bi-megaphone"></i> Banner do portal</button><?php endif; ?>
                 <button type="button" class="btn btn-sm btn-outline-danger" onclick="acaoMarcadas('excluir')"><i class="bi bi-trash"></i> Excluir</button>
             </span>
         <?php endif; ?>
@@ -110,6 +115,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                     </div>
                     <div class="acoes">
                         <?php if (!$ehCapa): ?><button type="button" class="btn btn-sm btn-link" onclick="acao(this, 'capa')" title="Usar como capa da turma"><i class="bi bi-star"></i></button><?php endif; ?>
+                        <?php if ($podeBanner): ?><button type="button" class="btn btn-sm btn-link" onclick="abrirBanner([JSON.parse(this.closest('.album-foto').dataset.foto).id])" title="Pôr no banner do portal (propaganda)"><i class="bi bi-megaphone"></i></button><?php endif; ?>
                         <button type="button" class="btn btn-sm btn-link" onclick="editarLegenda(this)" title="Legenda"><i class="bi bi-pencil"></i></button>
                         <button type="button" class="btn btn-sm btn-link" onclick="acao(this, '<?= $f['visivel'] ? 'esconder' : 'mostrar' ?>')" title="<?= $f['visivel'] ? 'Esconder dos alunos' : 'Mostrar aos alunos' ?>"><i class="bi <?= $f['visivel'] ? 'bi-eye-slash' : 'bi-eye' ?>"></i></button>
                         <a class="btn btn-sm btn-link" href="/turmas/album_foto.php?id=<?= (int) $f['id'] ?>&amp;baixar=1" title="Baixar"><i class="bi bi-download"></i></a>
@@ -162,6 +168,34 @@ require __DIR__ . '/../../includes/layout_header.php';
         </form>
     </div>
 </div>
+
+<?php if ($podeBanner): ?>
+<!-- Pôr no banner do portal -->
+<div class="modal fade" id="modal-banner" tabindex="-1">
+    <div class="modal-dialog">
+        <form class="modal-content" onsubmit="enviarBanner(event)">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-megaphone"></i> Banner do portal</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <p class="small text-muted" id="banner-qtd"></p>
+                <label class="form-label">Em qual banner?</label>
+                <select id="banner-bloco" class="form-select">
+                    <?php foreach ($banners as $b): ?>
+                        <option value="<?= (int) $b['id'] ?>"><?= e(($b['titulo'] ?: 'Banner') . ' — página ' . $b['pagina'] . ' (' . $b['imagens'] . ' imagem' . ((int) $b['imagens'] === 1 ? '' : 's') . ')' . ($b['ativo'] ? '' : ' · desligado')) ?></option>
+                    <?php endforeach; ?>
+                    <option value="0"><?= $banners ? 'Um banner novo' : 'Criar um banner' ?> no topo da página Início</option>
+                </select>
+                <div class="form-check mt-3">
+                    <input type="checkbox" class="form-check-input" id="banner-link" <?= $turmaNoSite ? 'checked' : '' ?>>
+                    <label class="form-check-label" for="banner-link">Ao clicar, abrir a página de inscrição desta turma</label>
+                    <?php if (!$turmaNoSite): ?><div class="form-text">Esta turma não está com inscrições abertas no site agora.</div><?php endif; ?>
+                </div>
+                <div class="form-text mt-3"><i class="bi bi-lightbulb"></i> O banner é largo (3 por 1): fotos deitadas ficam melhores; as bordas de cima e de baixo podem ser cortadas. A foto entra por último no carrossel — a ordem, o link e o tamanho se ajustam em Portal › Site do portal.</div>
+            </div>
+            <div class="modal-footer"><button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-brand" id="banner-enviar">Pôr no banner</button></div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
 
 <!-- Ver foto -->
 <div class="modal fade" id="modal-ver" tabindex="-1">
@@ -251,6 +285,35 @@ function editarLegenda(botao) {
 function salvarLegenda(ev) {
     ev.preventDefault();
     postar('legenda', [document.getElementById('legenda-id').value], { legenda: document.getElementById('legenda-texto').value });
+}
+
+// Banner do portal: copia as fotos para o carrossel escolhido.
+let idsBanner = [];
+function abrirBanner(ids) {
+    idsBanner = ids;
+    document.getElementById('banner-qtd').textContent = ids.length > 1 ? ids.length + ' fotos vão para o banner (uma imagem cada no carrossel).' : 'A foto vai para o banner do site, como propaganda.';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-banner')).show();
+}
+async function enviarBanner(ev) {
+    ev.preventDefault();
+    const botao = document.getElementById('banner-enviar');
+    botao.disabled = true;
+    const dados = new FormData();
+    dados.append('turma_id', TURMA);
+    dados.append('acao', 'banner');
+    dados.append('bloco_id', document.getElementById('banner-bloco').value);
+    if (document.getElementById('banner-link').checked) dados.append('link_turma', '1');
+    idsBanner.forEach((id) => dados.append('ids[]', id));
+    const r = await (await fetch('/turmas/album_acao.php', { method: 'POST', body: dados, headers: { 'X-Requested-With': 'XMLHttpRequest' } })).json().catch(() => ({}));
+    botao.disabled = false;
+    const modal = document.getElementById('modal-banner');
+    await new Promise((pronto) => { modal.addEventListener('hidden.bs.modal', pronto, { once: true }); bootstrap.Modal.getInstance(modal).hide(); });
+    if (!r.sucesso) {
+        confirmarNoModal({ titulo: 'Não foi possível', html: escapeHtml(r.mensagem || 'Tente de novo.'), botao: 'Ok' });
+        return;
+    }
+    const abrir = await confirmarNoModal({ titulo: 'Pronto, já está no site', html: (r.foram > 1 ? r.foram + ' fotos entraram' : 'A foto entrou') + ' no banner do portal.' + (r.mensagem ? '<br><span class="text-danger small">' + escapeHtml(r.mensagem) + '</span>' : ''), botao: 'Ver o banner', classeBotao: 'btn-brand' });
+    if (abrir) location.href = '/configuracoes/portal_bloco.php?id=' + r.bloco_id;
 }
 
 // Enviar: uma foto por vez (barra "3 de 20"); as que falharem ficam listadas.

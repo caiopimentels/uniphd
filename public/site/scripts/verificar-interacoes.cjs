@@ -1,0 +1,52 @@
+const {JSDOM}=require('/private/tmp/uniphd-browser/node_modules/jsdom');
+const fs=require('node:fs');const path=require('node:path');const assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'../site');
+const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{url:'http://localhost:4173',runScripts:'outside-only',pretendToBeVisual:true});
+const w=dom.window;w.matchMedia=()=>({matches:false});
+w.IntersectionObserver=class{constructor(cb){this.cb=cb}observe(el){this.cb([{target:el,isIntersecting:true}])}unobserve(){}};
+w.console.warn=()=>{};
+w.eval(fs.readFileSync(path.join(root,'config.js'),'utf8'));
+w.SITE.frames.total=0; // Form tests run independently of the canvas renderer.
+w.eval(fs.readFileSync(path.join(root,'app.js'),'utf8'));
+const d=w.document;
+for(const e of d.querySelectorAll('[src],link[href]')){const value=e.getAttribute('src')||e.getAttribute('href');if(!value.startsWith('http'))assert(fs.existsSync(path.join(root,value)),`Missing ${value}`);}
+for(const a of d.querySelectorAll('a[href^="#"]'))assert(d.getElementById(a.hash.slice(1)),`Broken anchor ${a.hash}`);
+assert.equal(d.querySelectorAll('h1').length,1);
+assert.equal(d.querySelectorAll('#sobre').length,1);
+assert(d.querySelector('#pratica h2').textContent.includes('70%'));
+assert(d.querySelector('#pos').textContent.includes('70%'));
+assert(!d.body.textContent.includes('Cada detalhe importa'));
+assert(!d.body.textContent.includes('↗'));
+assert(!d.body.textContent.includes('↓'));
+assert(d.querySelector('.whats svg path'));
+assert.equal(d.querySelectorAll('.momento').length,2);
+assert(d.querySelector('#pos .mec').textContent.includes('MEC'));
+assert(d.querySelector('.momento--centro .destaque').textContent.includes('Especialize-se em Estética com Aulas 100% Presenciais, Próximo de Você'));
+assert(!d.body.textContent.includes('Da precisão de uma gota'));
+for (const link of d.querySelectorAll('a[href="https://portal.uniphd.com.br"]')) {assert.equal(link.target,'_blank');assert(link.rel.includes('noopener'));}
+assert(d.querySelectorAll('a[href="https://portal.uniphd.com.br"]').length>=5);
+assert.equal(new URL(d.querySelector('.whats').href).pathname,'/5577981118760');
+assert(new URL(d.querySelector('.whats').href).searchParams.get('text').includes('próximas turmas'));
+assert.equal(d.querySelectorAll('#depoimentos .mensagem-original').length,8);
+assert(d.querySelector('#depoimentos').compareDocumentPosition(d.querySelector('#instituicao')) & w.Node.DOCUMENT_POSITION_FOLLOWING);
+assert.equal(d.querySelector('#pos .mec-marca'),null);
+assert(d.querySelector('#pos .mec').textContent.includes('reconhecida pelo MEC'));
+assert(d.querySelector('#depoimentos h2').textContent.includes('Veja o que nossos alunos falam da gente.'));
+assert.equal(d.querySelectorAll('#depoimentos button, #depoimentos a, .depo-dialog').length,0);
+assert.equal(d.querySelectorAll('.depoimentos-mosaico .depoimento').length,8);
+assert(!d.body.textContent.includes('Mensagens originais já publicadas'));
+assert(!d.body.textContent.includes('Ampliar mensagem'));
+assert(!d.body.textContent.includes('Abrir original'));
+const original=d.querySelector('.mensagem-original');original.dispatchEvent(new w.Event('error'));
+assert(original.hidden);assert(!original.closest('.depoimento').querySelector('.depo-falha').hidden);
+const form=d.querySelector('form');let calls=[];
+w.fetch=async(url,opts)=>{calls.push({url,data:JSON.parse(opts.body)});return{ok:true,json:async()=>({success:'true'})}};
+const submit=()=>form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+(async()=>{
+ submit();assert.equal(calls.length,0);assert(d.querySelector('.form-status').textContent.includes('Confira'));
+ const fill=()=>{d.querySelector('#nome').value='Pessoa Teste';d.querySelector('#email').value='teste@example.com';d.querySelector('#telefone').value='77999999999';d.querySelector('#curso').value='Pós-Graduação em Estética Avançada'};
+ fill();submit();await new Promise(r=>setTimeout(r,10));assert.equal(calls.length,1);assert(calls[0].url.includes('secretaria%40uniphd.com.br'));assert.equal(calls[0].data.curso,'Pós-Graduação em Estética Avançada');assert(!('_honey' in calls[0].data));assert(d.querySelector('.form-status').textContent.includes('enviada'));
+ fill();w.fetch=async()=>{throw new Error('Offline')};submit();await new Promise(r=>setTimeout(r,10));assert(d.querySelector('.form-status').textContent.includes('WhatsApp'));assert.equal(form.querySelector('button').disabled,false);
+ fill();let attempted=false;w.fetch=async()=>{attempted=true};form.elements._honey.value='bot';submit();assert.equal(attempted,false);
+ console.log('OK: arquivos, âncoras, WhatsApp, validação, envio simulado, falha de rede e proteção do formulário. Nenhum contato real enviado.');w.close();
+})().catch(e=>{console.error(e);w.close();process.exitCode=1});

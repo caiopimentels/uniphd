@@ -674,7 +674,8 @@ CREATE TABLE matriculas (
     observacao VARCHAR(255) DEFAULT NULL,
     usuario_id INT DEFAULT NULL,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_matricula_turma_aluno (turma_id, aluno_id),
+    -- Sem chave única: quem cancelou pode voltar (a cancelada fica no histórico).
+    KEY idx_matriculas_turma_aluno (turma_id, aluno_id),
     KEY idx_matriculas_aluno (aluno_id),
     CONSTRAINT fk_matricula_turma FOREIGN KEY (turma_id) REFERENCES turmas(id),
     CONSTRAINT fk_matricula_aluno FOREIGN KEY (aluno_id) REFERENCES alunos(id),

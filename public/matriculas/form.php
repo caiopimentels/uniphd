@@ -161,7 +161,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $reservaUsada = (int) $stmt->fetchColumn();
             $ocupadas = vagasOcupadasTurma($pdo, $dados['turma_id'], 0, $reservaUsada);
 
-            $stmt = $pdo->prepare('SELECT status FROM matriculas WHERE turma_id = ? AND aluno_id = ?');
+            // Matrícula cancelada não impede: o aluno volta numa matrícula nova
+            // e a cancelada fica no histórico.
+            $stmt = $pdo->prepare("SELECT status FROM matriculas WHERE turma_id = ? AND aluno_id = ? AND status <> 'cancelada' ORDER BY id DESC LIMIT 1");
             $stmt->execute([$dados['turma_id'], $dados['aluno_id']]);
             $matriculaExistente = $stmt->fetchColumn();
 
@@ -259,7 +261,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->commit();
                 avisarMinimoTurma($pdo, (int) $turma['id']);
 
-                registrarHistoricoAluno($pdo, (int) $aluno['id'], 'matricula', 'Turma ' . $turma['nome'] . ($autorizacaoInadimplente ? ' (inadimplente, autorizado por ' . $autorizacaoInadimplente . ')' : ''), isset($matriculaId) ? (int) $matriculaId : null);
+                $voltou = isset($matriculaId) ? cancelamentoAnteriorNaTurma($pdo, (int) $turma['id'], (int) $aluno['id'], (int) $matriculaId) : null;
+                registrarHistoricoAluno($pdo, (int) $aluno['id'], 'matricula', 'Turma ' . $turma['nome'] . ($voltou ? ' — voltou (tinha cancelado em ' . formatDate($voltou) . ')' : '') . ($autorizacaoInadimplente ? ' (inadimplente, autorizado por ' . $autorizacaoInadimplente . ')' : ''), isset($matriculaId) ? (int) $matriculaId : null);
                 registrarAtividade('matriculas', 'matricula', 'Aluno ' . $aluno['nome'] . ' matriculado na turma ' . $turma['nome']
                     . ($cupomUsado ? ' — cupom ' . $cupomUsado['codigo'] . ' (' . ($cupomUsado['tipo'] === 'matricula_zero' ? 'matrícula grátis' : formatMoney($cupomDesconto) . ' de desconto') . ')' : '')
                     . ($autorizacaoInadimplente ? ' (inadimplente: ' . formatMoney($atrasoAluno) . ' em atraso — autorizado por ' . $autorizacaoInadimplente . ')' : ''));

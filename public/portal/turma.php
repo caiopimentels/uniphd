@@ -15,12 +15,9 @@ $modulos = modulosDoCurso($pdo, (int) $turma['curso_id']);
 $parcelas = numParcelasPortal($turma);
 $minhaMatricula = null;
 if (alunoLogado()) {
-    $stmt = $pdo->prepare('SELECT * FROM matriculas WHERE turma_id = ? AND aluno_id = ?');
+    $stmt = $pdo->prepare("SELECT * FROM matriculas WHERE turma_id = ? AND aluno_id = ? AND status <> 'cancelada' ORDER BY id DESC LIMIT 1");
     $stmt->execute([$turma['id'], alunoAtualId()]);
     $minhaMatricula = $stmt->fetch() ?: null;
-    if ($minhaMatricula && $minhaMatricula['status'] === 'cancelada') {
-        $minhaMatricula = null;
-    }
 }
 $taxa = (float) $turma['portal_taxa_matricula'];
 $valorTotal = valorTotalTurma($turma);

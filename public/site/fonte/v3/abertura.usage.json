@@ -1,0 +1,7 @@
+{
+  "model": "google/veo-3.1-fast",
+  "usage": {
+    "cost": 0.8,
+    "is_byok": false
+  }
+}

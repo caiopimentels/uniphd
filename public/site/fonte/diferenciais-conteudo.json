@@ -1,0 +1,102 @@
+{
+  "fonte": "Texto fornecido pelo usuário no chat em 2026-11-10",
+  "observacoes": "14 itens; numeração 11 repetida na mensagem original. Ajustados acentos, ortografia e pontuação sem acrescentar condições de pagamento, promessas ou requisitos. CRB mantido como fornecido. Afirmações MEC e conselhos reproduzem o conteúdo institucional fornecido, sem verificação regulatória independente.",
+  "itens": [
+    {
+      "titulo": "Material didático incluso.",
+      "texto": "Suporte contínuo durante todo o curso."
+    },
+    {
+      "titulo": "Mais de 70% de prática.",
+      "texto": "Mais de 70% da carga horária é prática, preparando você para o mercado desde o início."
+    },
+    {
+      "titulo": "Vagas limitadas.",
+      "texto": "Turmas com vagas limitadas, porque acreditamos em qualidade, não em quantidade."
+    },
+    {
+      "titulo": "Carga horária alinhada aos conselhos.",
+      "texto": "Carga horária que atende às exigências dos principais conselhos de classe: COREN, CREFITO, CRF e CRB."
+    },
+    {
+      "titulo": "Aulas 100% presenciais.",
+      "texto": "Aprendizado presencial e contato direto com pacientes-modelo."
+    },
+    {
+      "titulo": "Perto de você.",
+      "texto": "Especialização sem precisar se deslocar para outras regiões."
+    },
+    {
+      "titulo": "Até 14x no boleto.",
+      "texto": "Pagamento facilitado, com desconto para pagamento em dia."
+    },
+    {
+      "titulo": "Mulheres que brilham.",
+      "texto": "Turmas formadas por mulheres que brilham na estética e na vida."
+    },
+    {
+      "titulo": "Guanambi e cidades vizinhas.",
+      "texto": "Localização estratégica, próxima de você e de quem vem das cidades vizinhas."
+    },
+    {
+      "titulo": "Didática leve e humanizada.",
+      "texto": "Didática leve, objetiva e humanizada, com ambiente e equipe acolhedora."
+    },
+    {
+      "titulo": "Acompanhamento próximo.",
+      "texto": "Acompanhamento e suporte durante toda a formação."
+    },
+    {
+      "titulo": "Mestres e doutores.",
+      "texto": "Corpo docente formado por mestres e doutores experientes na área."
+    },
+    {
+      "titulo": "Tecnologias atualizadas.",
+      "texto": "Aulas com tecnologias atuais para acompanhar os recursos e as práticas da estética."
+    },
+    {
+      "titulo": "Pós-graduação reconhecida pelo MEC.",
+      "texto": "Certificação válida em todo o território nacional."
+    }
+  ],
+  "grupos": [
+    {
+      "id": "aprendizado",
+      "titulo": "Aprendizado",
+      "itens": [
+        0,
+        1,
+        4,
+        9,
+        10,
+        12
+      ]
+    },
+    {
+      "id": "pessoas",
+      "titulo": "Pessoas",
+      "itens": [
+        2,
+        7,
+        11
+      ]
+    },
+    {
+      "id": "localizacao",
+      "titulo": "Perto de você",
+      "itens": [
+        5,
+        8
+      ]
+    },
+    {
+      "id": "formacao",
+      "titulo": "Formação e condições",
+      "itens": [
+        3,
+        6,
+        13
+      ]
+    }
+  ]
+}
