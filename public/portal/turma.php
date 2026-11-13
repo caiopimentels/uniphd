@@ -92,6 +92,9 @@ require __DIR__ . '/../../includes/portal_header.php';
             <?php elseif ($mensalidade > 0): ?>
                 <div class="fs-3 fw-bold" style="color: var(--accent-dark);"><?= $parcelas ?>x de <?= formatMoney($mensalidade) ?></div>
                 <?php if ($parcelas > 1): ?><div class="small text-muted">total do curso <?= formatMoney($valorTotal) ?></div><?php endif; ?>
+                <?php if ($turma['desconto_pontualidade_tipo'] !== 'nenhum' && (float) $turma['desconto_pontualidade_valor'] > 0 && $temPrazo): ?>
+                    <div class="small text-success"><i class="bi bi-alarm"></i> Pagando em dia: <?= $turma['desconto_pontualidade_tipo'] === 'valor' ? formatMoney($turma['desconto_pontualidade_valor']) : formatPercent($turma['desconto_pontualidade_valor']) ?> de desconto em cada mensalidade<?= (int) $turma['desconto_pontualidade_dias'] > 0 ? ' (até ' . (int) $turma['desconto_pontualidade_dias'] . ' dia' . ((int) $turma['desconto_pontualidade_dias'] === 1 ? '' : 's') . ' antes do vencimento)' : '' ?></div>
+                <?php endif; ?>
                 <?php if ($valorAvista !== null): ?><div class="fw-semibold mt-1">ou <?= formatMoney($valorAvista) ?> à vista</div><?php endif; ?>
                 <?php if ($formaMensalidadeSecretaria): ?><div class="small"><i class="bi bi-credit-card"></i> Mensalidades: <?= e(mb_strtolower($formaMensalidadeSecretaria)) ?>, pago na secretaria</div><?php endif; ?>
             <?php else: ?>
@@ -174,7 +177,11 @@ require __DIR__ . '/../../includes/portal_header.php';
                         <div class="d-flex justify-content-between mt-1"><span>Curso <span class="text-muted small" id="parcelas-curso" data-original="<?= e($textoParcelas) ?>"
                             data-prazo="<?= e('(' . $parcelas . 'x de ' . formatMoney($mensalidade) . ')') ?>" data-avista="(à vista)"><?= e($textoParcelas) ?></span></span><strong id="valor-curso" data-original="<?= e(formatMoney($valorTotal)) ?>"
                             data-prazo="<?= e(formatMoney($valorTotal)) ?>" data-avista="<?= e(formatMoney((float) $valorAvista)) ?>"><?= formatMoney($valorTotal) ?></strong></div>
+                        <?php if (!$turma['data_inicio']): ?>
+                            <div class="small text-muted"><i class="bi bi-hourglass-split"></i> Início a definir: agora você paga só a matrícula. As mensalidades são lançadas quando a turma tiver data de início.</div>
+                        <?php else: ?>
                         <div class="small text-muted"><span id="texto-vencimento" data-prazo="1ª mensalidade em" data-avista="Pagamento do curso em"><?= $temPrazo ? '1ª mensalidade em' : 'Pagamento do curso em' ?></span> <?= formatDate($primeiroVencimento) ?><?= $formaMensalidadeSecretaria ? ' · ' . e(mb_strtolower($formaMensalidadeSecretaria)) . ', pago na secretaria' : '' ?></div>
+                        <?php endif; ?>
                     <?php endif; ?>
                     <?php if ($taxa <= 0 && $mensalidade <= 0): ?><div class="fw-semibold">Curso gratuito</div><?php endif; ?>
                 </div>

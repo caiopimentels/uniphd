@@ -22,6 +22,7 @@ $_SESSION['filtro_turmas'] = array_merge(
     ['busca' => '', 'situacoes' => array_values($situacoesPadrao), 'cursos' => []],
     $_SESSION['filtro_turmas'] ?? []
 );
+esquecerBuscaAoChegar($_SESSION['filtro_turmas']);
 if (isset($_GET['f'])) {
     $_SESSION['filtro_turmas'] = [
         'busca' => trim((string) ($_GET['busca'] ?? '')),

@@ -9,6 +9,7 @@ $_SESSION['filtro_recebimentos'] = array_merge(
     ['data_inicio' => date('Y-m-01'), 'data_fim' => date('Y-m-t'), 'forma_pagamento_id' => '', 'busca' => ''],
     $_SESSION['filtro_recebimentos'] ?? []
 );
+esquecerBuscaAoChegar($_SESSION['filtro_recebimentos']);
 if (isset($_GET['data_inicio']) || isset($_GET['data_fim']) || isset($_GET['forma_pagamento_id']) || isset($_GET['busca'])) {
     $_SESSION['filtro_recebimentos'] = [
         'data_inicio' => $_GET['data_inicio'] ?? '',

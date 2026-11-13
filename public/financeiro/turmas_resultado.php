@@ -6,6 +6,7 @@ $pdo = getDB();
 
 // Filtros lembrados entre visitas, como nas outras listas do financeiro.
 $_SESSION['filtro_resultado_turmas'] = array_merge(['situacao' => '', 'curso_id' => '', 'busca' => ''], $_SESSION['filtro_resultado_turmas'] ?? []);
+esquecerBuscaAoChegar($_SESSION['filtro_resultado_turmas']);
 if (isset($_GET['situacao']) || isset($_GET['curso_id']) || isset($_GET['busca'])) {
     $_SESSION['filtro_resultado_turmas'] = [
         'situacao' => (string) ($_GET['situacao'] ?? ''),

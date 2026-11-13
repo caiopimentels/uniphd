@@ -25,33 +25,7 @@ $valor = $tipo === 'nenhum' ? 0 : decimalInput('desconto_pontualidade_valor', 0)
 $dias = $tipo === 'nenhum' ? 0 : (int) ($_POST['desconto_pontualidade_dias'] ?? 0);
 
 // Mesmas regras (e mesma alçada do perfil) do formulário de matrícula.
-$erros = [];
-$mensalidadeFinal = valorMensalidadeComDesconto((float) $matricula['valor_mensalidade'], (float) $matricula['desconto_percentual']);
-if ($tipo !== 'nenhum') {
-    if ($valor <= 0) {
-        $erros[] = 'Informe o valor do desconto (ou escolha "Sem desconto").';
-    } elseif ($tipo === 'percentual' && $valor > 100) {
-        $erros[] = 'O desconto não pode passar de 100%.';
-    } elseif ($tipo === 'valor' && $valor > $mensalidadeFinal) {
-        $erros[] = 'O desconto (' . formatMoney($valor) . ') é maior que a mensalidade (' . formatMoney($mensalidadeFinal) . ').';
-    }
-    if ($dias < 0 || $dias > 31) {
-        $erros[] = 'O prazo vai de 0 (até o vencimento) a 31 dias antes.';
-    }
-    // Cupom que não acumula: a matrícula não ganha outro desconto depois.
-    if ($matricula['cupom_id']) {
-        $stmt = $pdo->prepare('SELECT codigo, acumula FROM cupons WHERE id = ?');
-        $stmt->execute([$matricula['cupom_id']]);
-        $cupom = $stmt->fetch();
-        if ($cupom && !$cupom['acumula']) {
-            $erros[] = 'Esta matrícula usou o cupom ' . $cupom['codigo'] . ', que não acumula com o desconto por pontualidade.';
-        }
-    }
-    $percentual = $tipo === 'percentual' ? $valor : ($mensalidadeFinal > 0 ? $valor / $mensalidadeFinal * 100 : 100);
-    if (!$erros && $percentual > usuarioDescontoMax()) {
-        $erros[] = 'Este desconto equivale a ' . formatPercent($percentual) . ' da mensalidade; seu perfil pode conceder até ' . formatPercent(usuarioDescontoMax()) . '.';
-    }
-}
+$erros = errosDescontoPontualidade($pdo, $matricula, $tipo, $valor, $dias);
 
 if ($erros) {
     foreach ($erros as $erro) {

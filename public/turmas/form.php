@@ -102,7 +102,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'portal_dia_vencimento' => (int) ($_POST['portal_dia_vencimento'] ?? 10),
         'portal_forma_pagamento_id' => (int) ($_POST['portal_forma_pagamento_id'] ?? 0) ?: null,
         'forma_mensalidade_id' => (int) ($_POST['forma_mensalidade_id'] ?? 0) ?: null,
+        // Desconto por pontualidade padrão (toda matrícula nova nasce com ele).
+        'desconto_pontualidade_tipo' => in_array(input('desconto_pontualidade_tipo'), ['valor', 'percentual'], true) ? input('desconto_pontualidade_tipo') : 'nenhum',
+        'desconto_pontualidade_valor' => decimalInput('desconto_pontualidade_valor', 0),
+        'desconto_pontualidade_dias' => (int) ($_POST['desconto_pontualidade_dias'] ?? 0),
     ];
+    if ($portal['desconto_pontualidade_tipo'] === 'nenhum') {
+        [$portal['desconto_pontualidade_valor'], $portal['desconto_pontualidade_dias']] = [0, 0];
+    }
     $parcelasTurma = $portal['portal_num_parcelas'] ?: parcelasPadraoTurma(['duracao_meses' => $duracaoMeses, 'duracao_unidade' => $duracaoUnidade]);
     $valorMensalidade = mensalidadeDoTotal($valorTotal, max(1, $parcelasTurma));
     if ($diasSemana) {
@@ -156,6 +163,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($portal['portal_dia_vencimento'] < 1 || $portal['portal_dia_vencimento'] > 28) {
         $erros[] = 'O dia de vencimento das mensalidades vai de 1 a 28.';
+    }
+    if ($portal['desconto_pontualidade_tipo'] !== 'nenhum') {
+        if ($portal['desconto_pontualidade_valor'] <= 0) {
+            $erros[] = 'Informe o valor do desconto por pontualidade (ou escolha "Sem desconto").';
+        } elseif ($portal['desconto_pontualidade_tipo'] === 'percentual' && $portal['desconto_pontualidade_valor'] >= 100) {
+            $erros[] = 'O desconto por pontualidade precisa ser menor que 100%.';
+        } elseif ($portal['desconto_pontualidade_tipo'] === 'valor' && $portal['desconto_pontualidade_valor'] >= $valorMensalidade) {
+            $erros[] = 'O desconto por pontualidade (' . formatMoney($portal['desconto_pontualidade_valor']) . ') precisa ser menor que a mensalidade (' . formatMoney($valorMensalidade) . ').';
+        }
+        if ($portal['desconto_pontualidade_dias'] < 0 || $portal['desconto_pontualidade_dias'] > 31) {
+            $erros[] = 'O prazo do desconto por pontualidade vai de 0 (até o vencimento) a 31 dias antes.';
+        }
     }
     if ($portal['portal_taxa_matricula'] < 0) {
         $erros[] = 'O valor da matrícula não pode ser negativo.';
@@ -244,7 +263,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'UPDATE turmas SET valor_avista = ?, portal_exibir_prazo = ?, portal_exibir_avista = ?,
                 dias_semana = ?, hora_inicio = ?, hora_fim = ?, agenda = ?, minimo_alunos = ?, portal_publicar = ?, contrato_portal = ?, portal_descricao = ?, portal_imagem = ?,
                 portal_inscricoes_ate = ?, portal_modo_vaga = ?, portal_prazo_pagamento_dias = ?, portal_taxa_matricula = ?,
-                portal_num_parcelas = ?, portal_dia_vencimento = ?, portal_forma_pagamento_id = ?, forma_mensalidade_id = ?, data_conclusao = ? WHERE id = ?'
+                portal_num_parcelas = ?, portal_dia_vencimento = ?, portal_forma_pagamento_id = ?, forma_mensalidade_id = ?,
+                desconto_pontualidade_tipo = ?, desconto_pontualidade_valor = ?, desconto_pontualidade_dias = ?, data_conclusao = ? WHERE id = ?'
         );
         $stmt->execute([
             $valorAvista, $portal['portal_exibir_prazo'], $portal['portal_exibir_avista'],
@@ -252,6 +272,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $portal['portal_publicar'], $portal['contrato_portal'], $portal['portal_descricao'] ?: null, $imagem, $portal['portal_inscricoes_ate'] ?: null,
             $portal['portal_modo_vaga'], $portal['portal_prazo_pagamento_dias'], $portal['portal_taxa_matricula'],
             $portal['portal_num_parcelas'], $portal['portal_dia_vencimento'], $portal['portal_forma_pagamento_id'], $portal['forma_mensalidade_id'],
+            $portal['desconto_pontualidade_tipo'], $portal['desconto_pontualidade_valor'], $portal['desconto_pontualidade_dias'],
             $situacao['comportamento'] === 'concluida' ? $dataConclusao : null, $id,
         ]);
         $pdo->commit();
@@ -474,6 +495,35 @@ require __DIR__ . '/../../includes/layout_header.php';
             <label class="form-label">Dia de vencimento</label>
             <input type="number" name="portal_dia_vencimento" class="form-control" min="1" max="28" value="<?= (int) ($turma['portal_dia_vencimento'] ?? 10) ?>">
         </div>
+        <?php $tipoPontualidade = $turma['desconto_pontualidade_tipo'] ?? 'nenhum'; ?>
+        <div class="col-md-3">
+            <label class="form-label">Desconto por pontualidade</label>
+            <select name="desconto_pontualidade_tipo" id="desconto_pontualidade_tipo" class="form-select" onchange="mostrarPontualidadeTurma()">
+                <option value="nenhum" <?= $tipoPontualidade === 'nenhum' ? 'selected' : '' ?>>Sem desconto</option>
+                <option value="valor" <?= $tipoPontualidade === 'valor' ? 'selected' : '' ?>>Em R$</option>
+                <option value="percentual" <?= $tipoPontualidade === 'percentual' ? 'selected' : '' ?>>Em %</option>
+            </select>
+        </div>
+        <div class="col-md-6 campo-pontualidade-turma">
+            <label class="form-label">Desconto e prazo</label>
+            <div class="input-group">
+                <span class="input-group-text" id="unidade_pontualidade_turma"><?= $tipoPontualidade === 'percentual' ? '%' : 'R$' ?></span>
+                <input type="text" name="desconto_pontualidade_valor" class="form-control" inputmode="decimal" placeholder="0,00"
+                       value="<?= (float) ($turma['desconto_pontualidade_valor'] ?? 0) > 0 ? e(number_format((float) $turma['desconto_pontualidade_valor'], 2, ',', '.')) : '' ?>">
+                <span class="input-group-text">até</span>
+                <input type="number" name="desconto_pontualidade_dias" class="form-control" min="0" max="31" value="<?= (int) ($turma['desconto_pontualidade_dias'] ?? 0) ?>">
+                <span class="input-group-text">dias antes</span>
+            </div>
+            <div class="form-text">Por mensalidade. 0 dias = até o próprio vencimento. Toda matrícula nova da turma (secretaria ou portal) já vem com ele.</div>
+        </div>
+        <script>
+        function mostrarPontualidadeTurma() {
+            const tipo = document.getElementById('desconto_pontualidade_tipo').value;
+            document.querySelectorAll('.campo-pontualidade-turma').forEach((el) => el.classList.toggle('d-none', tipo === 'nenhum'));
+            document.getElementById('unidade_pontualidade_turma').textContent = tipo === 'percentual' ? '%' : 'R$';
+        }
+        mostrarPontualidadeTurma();
+        </script>
         <div class="col-12">
             <div class="small" id="resumo_valores"></div>
             <?php if (!$temFormaOnline): ?><div class="form-text text-danger">Para cobrar pelo portal, cadastre uma forma de pagamento "Boleto", "Boleto + Pix" ou "Pix" ligada à conta do Itaú.</div><?php endif; ?>

@@ -150,6 +150,19 @@ function problemaPastaUpload(string $pasta): ?string
 
 // Nome do sistema como está em Configurações (o APP_NAME do config.php é
 // só o valor de reserva, se a configuração estiver vazia).
+// Versão do sistema, do arquivo VERSAO ("1.51 · 12/11/2026"), que o gatilho
+// do Git atualiza a cada commit (scripts/git-hooks/pre-commit).
+// ['numero' => '1.51', 'data' => '12/11/2026'], ou null sem o arquivo.
+function versaoSistema(): ?array
+{
+    static $versao = false;
+    if ($versao === false) {
+        $texto = trim((string) @file_get_contents(BASE_PATH . '/VERSAO'));
+        $versao = preg_match('/^(\d+\.\d+)(?:\s*·\s*(.+))?$/u', $texto, $m) ? ['numero' => $m[1], 'data' => $m[2] ?? ''] : null;
+    }
+    return $versao;
+}
+
 function nomeSistema(): string
 {
     $nome = trim((string) (buscarConfiguracoes(getDB())['nome_sistema'] ?? ''));
@@ -493,6 +506,21 @@ function cancelamentoAnteriorNaTurma(PDO $pdo, int $turmaId, int $alunoId, int $
                            WHERE turma_id = ? AND aluno_id = ? AND status = 'cancelada' AND id < ? ORDER BY id DESC LIMIT 1");
     $stmt->execute([$turmaId, $alunoId, $antesDaMatriculaId]);
     return $stmt->fetchColumn() ?: null;
+}
+
+// A busca digitada (nome do aluno etc.) vale enquanto se está na tela:
+// entrando de novo (menu, link de outra página) ela começa limpa. Os outros
+// filtros da tela continuam lembrados. Ordenar, paginar ou voltar de uma
+// ação feita na própria tela mantêm a busca.
+function esquecerBuscaAoChegar(array &$filtro, string $campo = 'busca'): void
+{
+    if (isset($_GET[$campo])) {
+        return;
+    }
+    $origem = parse_url((string) ($_SERVER['HTTP_REFERER'] ?? ''), PHP_URL_PATH);
+    if ($origem !== parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_PATH)) {
+        $filtro[$campo] = '';
+    }
 }
 
 // Número da matrícula para mostrar: 57 -> "000057".

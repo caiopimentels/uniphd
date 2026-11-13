@@ -10,7 +10,9 @@ $modulo = trim($_GET['modulo'] ?? '');
 $usuarioId = (int) ($_GET['usuario_id'] ?? 0);
 $operacao = trim($_GET['operacao'] ?? '');
 $busca = trim($_GET['busca'] ?? '');
-$pagina = max(1, (int) ($_GET['pagina'] ?? 1));
+// Rodapé igual ao das outras listas: "1–50 de 700", páginas e "Por página".
+$lista = estadoListagem('auditoria', []);
+$pagina = $lista['pagina'];
 
 $resultado = buscarLogAtividades($pdo, [
     'data_inicio' => $dataInicio,
@@ -19,7 +21,10 @@ $resultado = buscarLogAtividades($pdo, [
     'usuario_id' => $usuarioId ?: null,
     'operacao' => $operacao,
     'busca' => $busca,
-], $pagina, 50);
+], $pagina, $lista['por_pagina'] ?: 1000000);
+$lista['total'] = (int) $resultado['total'];
+$lista['paginas'] = max(1, (int) $resultado['total_paginas']);
+$lista['pagina'] = min($pagina, $lista['paginas']);
 
 $usuarios = $pdo->query('SELECT id, nome FROM usuarios ORDER BY nome')->fetchAll();
 
@@ -30,15 +35,6 @@ foreach ($pdo->query('SELECT DISTINCT operacao FROM log_atividades')->fetchAll(P
     $operacoes[$op] ??= ucfirst(str_replace('_', ' ', $op));
 }
 asort($operacoes);
-
-$queryBase = [
-    'data_inicio' => $dataInicio,
-    'data_fim' => $dataFim,
-    'modulo' => $modulo,
-    'usuario_id' => $usuarioId ?: '',
-    'operacao' => $operacao,
-    'busca' => $busca,
-];
 
 $pageTitle = 'Auditoria';
 $pageBreadcrumb = 'Administração · Configurações';
@@ -131,19 +127,7 @@ require __DIR__ . '/../../includes/abas_configuracoes.php';
             </tbody>
         </table>
     </div>
-    <?php if ($resultado['total_paginas'] > 1): ?>
-    <div class="card-footer bg-white">
-        <nav>
-            <ul class="pagination pagination-sm mb-0">
-                <?php for ($i = 1; $i <= $resultado['total_paginas']; $i++): ?>
-                    <li class="page-item <?= $i === $resultado['pagina'] ? 'active' : '' ?>">
-                        <a class="page-link" href="?<?= http_build_query(array_merge($queryBase, ['pagina' => $i])) ?>"><?= $i ?></a>
-                    </li>
-                <?php endfor; ?>
-            </ul>
-        </nav>
-    </div>
-    <?php endif; ?>
+    <?= rodapePaginacao($lista) ?>
 </div>
 
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

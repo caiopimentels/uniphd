@@ -116,7 +116,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($dados['num_parcelas'] < 1 || $dados['num_parcelas'] > 120) {
         $erros[] = 'O número de mensalidades deve estar entre 1 e 120.';
     }
-    if (!$dados['primeiro_vencimento']) {
+    // Turma com início a definir: só a taxa é lançada agora; o 1º vencimento
+    // das mensalidades é escolhido depois, em Turma › Financeiro.
+    $stmt = getDB()->prepare('SELECT data_inicio IS NULL FROM turmas WHERE id = ?');
+    $stmt->execute([$dados['turma_id']]);
+    $mensalidadesPendentes = (bool) $stmt->fetchColumn();
+    if ($mensalidadesPendentes) {
+        $dados['primeiro_vencimento'] = $dados['data_matricula'];
+    } elseif (!$dados['primeiro_vencimento']) {
         $erros[] = 'Informe o vencimento da primeira mensalidade.';
     }
     if ($dados['prazo_taxa_dias'] < 0 || $dados['prazo_taxa_dias'] > 60) {
@@ -219,7 +226,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     : ($mensalidadeFinal > 0 ? $dados['desconto_pontualidade_valor'] / $mensalidadeFinal * 100 : 100);
                 if ($dados['desconto_pontualidade_tipo'] === 'valor' && $dados['desconto_pontualidade_valor'] > $mensalidadeFinal) {
                     $erros[] = 'O desconto por pontualidade (' . formatMoney($dados['desconto_pontualidade_valor']) . ') é maior que a mensalidade (' . formatMoney($mensalidadeFinal) . ').';
-                } elseif ($percentualPontualidade > $descontoMax) {
+                } elseif ($percentualPontualidade > $descontoMax && !(
+                    // O desconto padrão da turma vale para qualquer perfil.
+                    $dados['desconto_pontualidade_tipo'] === $turma['desconto_pontualidade_tipo']
+                    && abs($dados['desconto_pontualidade_valor'] - (float) $turma['desconto_pontualidade_valor']) < 0.005
+                    && $dados['desconto_pontualidade_dias'] === (int) $turma['desconto_pontualidade_dias'])) {
                     $erros[] = 'O desconto por pontualidade equivale a ' . formatPercent($percentualPontualidade) . ' da mensalidade; seu perfil pode conceder até ' . formatPercent($descontoMax) . '.';
                 }
             }
@@ -234,14 +245,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     'INSERT INTO matriculas
                         (turma_id, aluno_id, data_matricula, valor_mensalidade, valor_total, pagamento_avista, desconto_percentual,
                          desconto_pontualidade_tipo, desconto_pontualidade_valor, desconto_pontualidade_dias, num_parcelas,
-                         primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id, observacao, usuario_id,
+                         primeiro_vencimento, mensalidades_pendentes, taxa_matricula, forma_pagamento_id, forma_mensalidade_id, observacao, usuario_id,
                          cupom_id, cupom_desconto)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
                 );
                 $stmt->execute([
                     $turma['id'], $aluno['id'], $dados['data_matricula'], $mensalidadeBase, $valorTotalCurso, $dados['pagamento_avista'],
                     $dados['desconto_percentual'], $dados['desconto_pontualidade_tipo'], $dados['desconto_pontualidade_valor'],
-                    $dados['desconto_pontualidade_dias'], $dados['num_parcelas'], $dados['primeiro_vencimento'],
+                    $dados['desconto_pontualidade_dias'], $dados['num_parcelas'], $dados['primeiro_vencimento'], $mensalidadesPendentes ? 1 : 0,
                     $taxaMatriculaFinal, $dados['forma_pagamento_id'] ?: null, $dados['forma_mensalidade_id'] ?: null, $dados['observacao'] ?: null,
                     usuarioAtualId(), $cupomUsado ? (int) $cupomUsado['id'] : null, $cupomDesconto,
                 ]);
@@ -267,7 +278,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     . ($cupomUsado ? ' — cupom ' . $cupomUsado['codigo'] . ' (' . ($cupomUsado['tipo'] === 'matricula_zero' ? 'matrícula grátis' : formatMoney($cupomDesconto) . ' de desconto') . ')' : '')
                     . ($autorizacaoInadimplente ? ' (inadimplente: ' . formatMoney($atrasoAluno) . ' em atraso — autorizado por ' . $autorizacaoInadimplente . ')' : ''));
 
-                flash('success', 'Matrícula realizada. ' . ($dados['pagamento_avista'] ? 'Curso à vista: 1 parcela lançada' : $dados['num_parcelas'] . ' mensalidade(s) lançada(s)') . ' em contas a receber.');
+                flash('success', 'Matrícula realizada. ' . ($mensalidadesPendentes
+                    ? 'Turma com início a definir: só a taxa de matrícula foi lançada; as mensalidades entram em Turma › Financeiro.'
+                    : ($dados['pagamento_avista'] ? 'Curso à vista: 1 parcela lançada' : $dados['num_parcelas'] . ' mensalidade(s) lançada(s)') . ' em contas a receber.'));
                 redirect('/matriculas/visualizar.php?id=' . $matriculaId);
             }
         } catch (Throwable $e) {
@@ -284,6 +297,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stmt = $pdo->prepare(
     "SELECT t.id, t.nome, t.vagas, t.data_inicio, t.data_termino, t.duracao_meses, t.duracao_unidade, t.valor_mensalidade, t.valor_total, t.valor_avista, c.nome AS curso_nome,
             t.portal_taxa_matricula, t.portal_num_parcelas, t.portal_dia_vencimento, t.portal_forma_pagamento_id, t.forma_mensalidade_id,
+            t.desconto_pontualidade_tipo, t.desconto_pontualidade_valor, t.desconto_pontualidade_dias,
             ((SELECT COUNT(*) FROM matriculas m WHERE m.turma_id = t.id AND " . SQL_MATRICULA_OCUPA_VAGA . ") + " . SQL_RESERVAS_TURMA . ") AS ocupadas
      FROM turmas t
      JOIN cursos c ON c.id = t.curso_id
@@ -340,6 +354,8 @@ $turmasJson = array_map(fn ($t) => [
     'taxa' => (float) $t['portal_taxa_matricula'],
     'parcelas' => (int) $t['portal_num_parcelas'],
     'dia' => (int) $t['portal_dia_vencimento'],
+    // Desconto por pontualidade padrão da turma (vem preenchido).
+    'pontualidade' => ['tipo' => $t['desconto_pontualidade_tipo'], 'valor' => (float) $t['desconto_pontualidade_valor'], 'dias' => (int) $t['desconto_pontualidade_dias']],
 ], $turmas);
 
 $podeCriarAluno = usuarioPodeCadastrarAluno();
@@ -485,7 +501,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                        value="<?= e((string) $dados['num_parcelas']) ?>" oninput="atualizarPrevia()">
                 <div class="form-text" id="dica_parcelas"></div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-4" id="campo_primeiro_vencimento">
                 <label class="form-label">1º vencimento *</label>
                 <input type="date" name="primeiro_vencimento" id="primeiro_vencimento" class="form-control" required
                        value="<?= e($dados['primeiro_vencimento']) ?>" oninput="atualizarPrevia()">
@@ -638,6 +654,13 @@ function aoTrocarTurma(inicial) {
         if (!(inicial && PARCELAS_DIGITADAS)) {
             document.getElementById('num_parcelas').value = restantes;
         }
+        // Desconto por pontualidade padrão da turma.
+        if (!(inicial && TAXA_DIGITADA) && turma.pontualidade) {
+            document.getElementById('desconto_pontualidade_tipo').value = turma.pontualidade.tipo;
+            document.getElementById('desconto_pontualidade_valor').value = turma.pontualidade.valor.toFixed(2).replace('.', ',');
+            document.getElementById('desconto_pontualidade_dias').value = turma.pontualidade.dias;
+            atualizarPontualidade();
+        }
         document.getElementById('dica_parcelas').textContent = 'Turma de ' + (turma.duracao || turma.meses + ' meses') + '; sugerido: ' + restantes + '.';
         document.getElementById('num_parcelas').dataset.sugerido = restantes;
     }
@@ -761,7 +784,14 @@ function atualizarPrevia() {
         linhaPontualidade.classList.add('d-none');
     }
 
-    if (primeiro && qtd > 0) {
+    // Turma com início a definir: agora só a taxa; as mensalidades são
+    // lançadas depois, em Turma › Financeiro (com o 1º vencimento).
+    const semInicio = !turma.inicio;
+    document.getElementById('campo_primeiro_vencimento').classList.toggle('d-none', semInicio);
+    document.getElementById('primeiro_vencimento').required = !semInicio;
+    if (semInicio) {
+        document.getElementById('previa_periodo').innerHTML = '<span class="text-warning-emphasis"><i class="bi bi-hourglass-split"></i> Turma com início a definir: agora só a <strong>taxa de matrícula</strong> é lançada. As mensalidades entram quando a secretaria liberar em Turma › Financeiro.</span>';
+    } else if (primeiro && qtd > 0) {
         const ultimo = somarMeses(deISO(primeiro), qtd - 1);
         document.getElementById('previa_periodo').textContent =
             'Vencimentos de ' + deISO(primeiro).toLocaleDateString('pt-BR') + ' a ' + ultimo.toLocaleDateString('pt-BR') + '.';

@@ -449,19 +449,29 @@ function inscreverAlunoPortal(PDO $pdo, int $alunoId, int $turmaId, string $codi
             'pagamento_avista' => $modalidade === 'avista' ? 1 : 0,
             'num_parcelas' => $numParcelas,
             'primeiro_vencimento' => primeiroVencimentoPortal($turma, $hoje),
+            // Início a definir: só a taxa agora; mensalidades em Turma › Financeiro.
+            'mensalidades_pendentes' => $turma['data_inicio'] ? 0 : 1,
             'taxa_matricula' => $taxa,
             'forma_pagamento_id' => $turma['portal_forma_pagamento_id'],
             'forma_mensalidade_id' => $turma['forma_mensalidade_id'] ?: $turma['portal_forma_pagamento_id'],
             'cupom_id' => $cupom ? (int) $cupom['id'] : null,
             'cupom_desconto' => $cupomDesconto,
         ];
+        // Desconto por pontualidade padrão da turma (cupom que não acumula
+        // tira; à vista não tem mensalidade para descontar).
+        $comPontualidade = $turma['desconto_pontualidade_tipo'] !== 'nenhum' && $modalidade !== 'avista' && !($cupom && !$cupom['acumula']);
+        $valores += [
+            'desconto_pontualidade_tipo' => $comPontualidade ? $turma['desconto_pontualidade_tipo'] : 'nenhum',
+            'desconto_pontualidade_valor' => $comPontualidade ? (float) $turma['desconto_pontualidade_valor'] : 0,
+            'desconto_pontualidade_dias' => $comPontualidade ? (int) $turma['desconto_pontualidade_dias'] : 0,
+        ];
 
         // Quem tinha cancelado volta numa matrícula nova (a antiga fica no histórico).
         $stmt = $pdo->prepare(
             "INSERT INTO matriculas (turma_id, aluno_id, origem, data_matricula, status, pagamento_ate, segura_vaga, valor_mensalidade,
-                                     valor_total, pagamento_avista, num_parcelas, primeiro_vencimento, taxa_matricula, forma_pagamento_id, forma_mensalidade_id,
-                                     cupom_id, cupom_desconto)
-             VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                     valor_total, pagamento_avista, num_parcelas, primeiro_vencimento, mensalidades_pendentes, taxa_matricula, forma_pagamento_id, forma_mensalidade_id,
+                                     cupom_id, cupom_desconto, desconto_pontualidade_tipo, desconto_pontualidade_valor, desconto_pontualidade_dias)
+             VALUES (?, ?, 'portal', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $stmt->execute([$turmaId, $alunoId, ...array_values($valores)]);
         $matriculaId = (int) $pdo->lastInsertId();
@@ -868,6 +878,7 @@ function historicoAluno(PDO $pdo, int $alunoId, int $limite = 200): array
         'trancamento' => ['Matrícula trancada', 'bi-pause-circle', 'info'],
         'destrancamento' => ['Matrícula destrancada', 'bi-play-circle', 'success'],
         'exclusao' => ['Matrícula excluída', 'bi-trash', 'danger'],
+        'financeiro' => ['Mensalidades lançadas', 'bi-cash-coin', 'success'],
         'documento' => ['Documento', 'bi-file-earmark-check', 'primary'],
         'protocolo' => ['Protocolo', 'bi-chat-left-text', 'info'],
         'postit' => ['Post-it', 'bi-sticky', 'warning'],

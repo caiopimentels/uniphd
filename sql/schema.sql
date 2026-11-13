@@ -573,6 +573,10 @@ CREATE TABLE turmas (
     portal_taxa_matricula DECIMAL(12,2) NOT NULL DEFAULT 0,
     portal_num_parcelas INT DEFAULT NULL,
     portal_dia_vencimento TINYINT UNSIGNED NOT NULL DEFAULT 10,
+    -- Desconto por pontualidade padrão: toda matrícula nova já nasce com ele.
+    desconto_pontualidade_tipo ENUM('nenhum', 'valor', 'percentual') NOT NULL DEFAULT 'nenhum',
+    desconto_pontualidade_valor DECIMAL(12,2) NOT NULL DEFAULT 0,
+    desconto_pontualidade_dias INT NOT NULL DEFAULT 0,
     -- Forma da matrícula (taxa) e das mensalidades (pode ser cartão).
     portal_forma_pagamento_id INT DEFAULT NULL,
     forma_mensalidade_id INT DEFAULT NULL,
@@ -659,6 +663,9 @@ CREATE TABLE matriculas (
     cupom_desconto DECIMAL(12,2) NOT NULL DEFAULT 0,
     num_parcelas INT NOT NULL,
     primeiro_vencimento DATE NOT NULL,
+    -- Turma com início a definir: só a taxa foi lançada; as mensalidades
+    -- entram quando a secretaria liberar (Turma › Financeiro).
+    mensalidades_pendentes TINYINT(1) NOT NULL DEFAULT 0,
     taxa_matricula DECIMAL(12,2) NOT NULL DEFAULT 0,
     -- forma_pagamento_id = da taxa de matrícula; forma_mensalidade_id = das mensalidades.
     forma_pagamento_id INT DEFAULT NULL,

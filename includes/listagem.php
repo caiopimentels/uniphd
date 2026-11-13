@@ -112,6 +112,31 @@ function thOrdenavel(string $rotulo, string $coluna, array $lista, string $class
         . e($rotulo) . ' <i class="bi ' . $icone . '"></i></a></th>';
 }
 
+// Botões de página: ‹ 1 … 4 5 [6] 7 8 … 29 › — a primeira, a última e as
+// vizinhas da atual; o resto vira "…". $url(página) dá o endereço.
+function linksPaginas(int $atual, int $total, callable $url): string
+{
+    if ($total <= 1) {
+        return '';
+    }
+    $item = fn (int $p, string $texto, bool $desabilitado = false) => '<li class="page-item' . ($p === $atual && !$desabilitado ? ' active' : '') . ($desabilitado ? ' disabled' : '') . '">'
+        . '<a class="page-link" href="' . e($url($p)) . '">' . $texto . '</a></li>';
+    $html = $item(max(1, $atual - 1), '<i class="bi bi-chevron-left"></i>', $atual === 1);
+    $anterior = 0;
+    for ($p = 1; $p <= $total; $p++) {
+        if ($p !== 1 && $p !== $total && abs($p - $atual) > 2) {
+            continue;
+        }
+        if ($anterior && $p - $anterior > 1) {
+            $html .= '<li class="page-item disabled"><span class="page-link">…</span></li>';
+        }
+        $html .= $item($p, (string) $p);
+        $anterior = $p;
+    }
+    $html .= $item(min($total, $atual + 1), '<i class="bi bi-chevron-right"></i>', $atual === $total);
+    return '<ul class="pagination pagination-sm mb-0">' . $html . '</ul>';
+}
+
 // Rodapé: "1–25 de 120", páginas e quantos por página.
 function rodapePaginacao(array $lista): string
 {
@@ -121,26 +146,7 @@ function rodapePaginacao(array $lista): string
     $inicio = $lista['por_pagina'] === 0 ? 1 : ($lista['pagina'] - 1) * $lista['por_pagina'] + 1;
     $fim = $lista['por_pagina'] === 0 ? $lista['total'] : min($lista['total'], $lista['pagina'] * $lista['por_pagina']);
 
-    $paginas = '';
-    if ($lista['paginas'] > 1) {
-        $item = fn (int $p, string $texto, bool $desabilitado = false) => '<li class="page-item' . ($p === $lista['pagina'] && !$desabilitado ? ' active' : '') . ($desabilitado ? ' disabled' : '') . '">'
-            . '<a class="page-link" href="' . e(urlListagem(['pagina' => $p])) . '">' . $texto . '</a></li>';
-        $paginas .= $item(max(1, $lista['pagina'] - 1), '<i class="bi bi-chevron-left"></i>', $lista['pagina'] === 1);
-        $anterior = 0;
-        for ($p = 1; $p <= $lista['paginas']; $p++) {
-            // Primeira, última e as vizinhas da atual; o resto vira "…".
-            if ($p !== 1 && $p !== $lista['paginas'] && abs($p - $lista['pagina']) > 2) {
-                continue;
-            }
-            if ($anterior && $p - $anterior > 1) {
-                $paginas .= '<li class="page-item disabled"><span class="page-link">…</span></li>';
-            }
-            $paginas .= $item($p, (string) $p);
-            $anterior = $p;
-        }
-        $paginas .= $item(min($lista['paginas'], $lista['pagina'] + 1), '<i class="bi bi-chevron-right"></i>', $lista['pagina'] === $lista['paginas']);
-        $paginas = '<ul class="pagination pagination-sm mb-0">' . $paginas . '</ul>';
-    }
+    $paginas = linksPaginas($lista['pagina'], $lista['paginas'], fn (int $p) => urlListagem(['pagina' => $p]));
 
     $opcoes = '';
     foreach (OPCOES_POR_PAGINA as $n) {

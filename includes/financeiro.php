@@ -136,6 +136,16 @@ function gerarCobrancasMatricula(PDO $pdo, array $matricula, string $turmaNome, 
         ]);
     }
 
+    // Turma com início a definir: as mensalidades esperam a liberação.
+    if (!empty($matricula['mensalidades_pendentes'])) {
+        return;
+    }
+    gerarMensalidadesMatricula($pdo, $matricula, $turmaNome, $usuarioId);
+}
+
+/** Valor de cada mensalidade da matrícula (total menos a bolsa, dividido). */
+function valoresMensalidadesMatricula(array $matricula): array
+{
     $numParcelas = max(1, (int) $matricula['num_parcelas']);
     if (isset($matricula['valor_total']) && $matricula['valor_total'] !== null) {
         $totalComBolsa = round((float) $matricula['valor_total'] * (1 - (float) $matricula['desconto_percentual'] / 100), 2);
@@ -143,23 +153,117 @@ function gerarCobrancasMatricula(PDO $pdo, array $matricula, string $turmaNome, 
     } else {
         $valores = array_fill(0, $numParcelas, valorMensalidadeComDesconto((float) $matricula['valor_mensalidade'], (float) $matricula['desconto_percentual']));
     }
+    return $valores;
+}
+
+/** Lança as mensalidades (a partir de primeiro_vencimento, mês a mês). */
+function gerarMensalidadesMatricula(PDO $pdo, array $matricula, string $turmaNome, ?int $usuarioId): void
+{
+    $valores = valoresMensalidadesMatricula($matricula);
+    $numParcelas = count($valores);
     if ($valores[0] <= 0) {
         return;
     }
-
+    $stmt = $pdo->prepare(
+        "INSERT INTO contas_receber
+            (aluno_id, matricula_id, categoria_id, descricao, valor, data_emissao, data_vencimento, forma_pagamento_id, status, usuario_id)
+         VALUES (?,?,?,?,?,?,?,?,'pendente',?)"
+    );
     $formaMensalidade = ($matricula['forma_mensalidade_id'] ?? null) ?: ($matricula['forma_pagamento_id'] ?: null);
     foreach ($valores as $i => $valor) {
         $stmt->execute([
             $matricula['aluno_id'], $matricula['id'], categoriaSistemaId($pdo, 'mensalidade'),
             "Mensalidade " . ($i + 1) . "/{$numParcelas} - {$turmaNome}", $valor,
-            $matricula['data_matricula'], somarMeses($matricula['primeiro_vencimento'], $i),
+            $matricula['data_emissao_mensalidades'] ?? $matricula['data_matricula'], somarMeses($matricula['primeiro_vencimento'], $i),
             $formaMensalidade, $usuarioId,
         ]);
     }
 }
 
+/**
+ * Turma › Financeiro: lança as mensalidades que ficaram pendentes (turma
+ * com início a definir). 1º vencimento escolhido; as demais no mesmo dia dos
+ * meses seguintes. Só matrículas que valem (não canceladas) e ainda pendentes.
+ * $pontualidade (opcional) = ['tipo', 'valor', 'dias']: troca o desconto por
+ * pontualidade antes de lançar (null = mantém o da matrícula).
+ * Retorna ['ok' => bool, 'mensagem' => string, 'parcelas' => int].
+ */
+function liberarMensalidadesMatricula(PDO $pdo, int $matriculaId, string $primeiroVencimento, ?int $usuarioId, ?array $pontualidade = null): array
+{
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare('SELECT m.*, t.nome AS turma_nome, a.nome AS aluno_nome FROM matriculas m JOIN turmas t ON t.id = m.turma_id JOIN alunos a ON a.id = m.aluno_id WHERE m.id = ? FOR UPDATE');
+        $stmt->execute([$matriculaId]);
+        $m = $stmt->fetch();
+        if (!$m || !$m['mensalidades_pendentes'] || in_array($m['status'], ['cancelada', 'concluida'], true)) {
+            $pdo->rollBack();
+            return ['ok' => false, 'mensagem' => ($m['aluno_nome'] ?? 'Matrícula') . ': não tem mensalidades pendentes.', 'parcelas' => 0];
+        }
+        if ($pontualidade !== null) {
+            $erros = errosDescontoPontualidade($pdo, $m, $pontualidade['tipo'], (float) $pontualidade['valor'], (int) $pontualidade['dias']);
+            if ($erros) {
+                $pdo->rollBack();
+                return ['ok' => false, 'mensagem' => $m['aluno_nome'] . ': ' . implode(' ', $erros), 'parcelas' => 0];
+            }
+            $pdo->prepare('UPDATE matriculas SET desconto_pontualidade_tipo = ?, desconto_pontualidade_valor = ?, desconto_pontualidade_dias = ? WHERE id = ?')
+                ->execute([$pontualidade['tipo'], $pontualidade['valor'], $pontualidade['dias'], $matriculaId]);
+        }
+        $pdo->prepare('UPDATE matriculas SET primeiro_vencimento = ?, mensalidades_pendentes = 0 WHERE id = ?')->execute([$primeiroVencimento, $matriculaId]);
+        $m['primeiro_vencimento'] = $primeiroVencimento;
+        $m['data_emissao_mensalidades'] = date('Y-m-d');
+        gerarMensalidadesMatricula($pdo, $m, $m['turma_nome'], $usuarioId);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+    $parcelas = count(valoresMensalidadesMatricula($m));
+    registrarHistoricoAluno($pdo, (int) $m['aluno_id'], 'financeiro', 'Turma ' . $m['turma_nome'] . ' — mensalidades lançadas (' . $parcelas . 'x, 1º vencimento ' . formatDate($primeiroVencimento) . ')'
+        . ($pontualidade !== null ? ' · ' . textoDescontoPontualidade(['desconto_pontualidade_tipo' => $pontualidade['tipo'], 'desconto_pontualidade_valor' => $pontualidade['valor'], 'desconto_pontualidade_dias' => $pontualidade['dias']]) : ''), $matriculaId);
+    return ['ok' => true, 'mensagem' => '', 'parcelas' => $parcelas];
+}
+
 // Texto curto da regra de pontualidade de uma matrícula, para telas e
 // mensagens ("R$ 50,00 por mensalidade, pagando até o vencimento").
+/**
+ * Confere um desconto por pontualidade para a matrícula: valor, prazo,
+ * cupom que não acumula e a alçada de desconto do perfil. [] = pode.
+ */
+function errosDescontoPontualidade(PDO $pdo, array $matricula, string $tipo, float $valor, int $dias): array
+{
+    if ($tipo === 'nenhum') {
+        return [];
+    }
+    $erros = [];
+    $mensalidadeFinal = valorMensalidadeComDesconto((float) $matricula['valor_mensalidade'], (float) $matricula['desconto_percentual']);
+    if ($valor <= 0) {
+        $erros[] = 'Informe o valor do desconto (ou escolha "Sem desconto").';
+    } elseif ($tipo === 'percentual' && $valor > 100) {
+        $erros[] = 'O desconto não pode passar de 100%.';
+    } elseif ($tipo === 'valor' && $valor > $mensalidadeFinal) {
+        $erros[] = 'O desconto (' . formatMoney($valor) . ') é maior que a mensalidade (' . formatMoney($mensalidadeFinal) . ').';
+    }
+    if ($dias < 0 || $dias > 31) {
+        $erros[] = 'O prazo vai de 0 (até o vencimento) a 31 dias antes.';
+    }
+    // Cupom que não acumula: a matrícula não ganha outro desconto depois.
+    if ($matricula['cupom_id']) {
+        $stmt = $pdo->prepare('SELECT codigo, acumula FROM cupons WHERE id = ?');
+        $stmt->execute([$matricula['cupom_id']]);
+        $cupom = $stmt->fetch();
+        if ($cupom && !$cupom['acumula']) {
+            $erros[] = 'Esta matrícula usou o cupom ' . $cupom['codigo'] . ', que não acumula com o desconto por pontualidade.';
+        }
+    }
+    $percentual = $tipo === 'percentual' ? $valor : ($mensalidadeFinal > 0 ? $valor / $mensalidadeFinal * 100 : 100);
+    if (!$erros && $percentual > usuarioDescontoMax()) {
+        $erros[] = 'Este desconto equivale a ' . formatPercent($percentual) . ' da mensalidade; seu perfil pode conceder até ' . formatPercent(usuarioDescontoMax()) . '.';
+    }
+    return $erros;
+}
+
 function textoDescontoPontualidade(array $matricula): string
 {
     if (($matricula['desconto_pontualidade_tipo'] ?? 'nenhum') === 'nenhum' || (float) $matricula['desconto_pontualidade_valor'] <= 0) {
@@ -282,6 +386,8 @@ function dadosEdicaoParcela(PDO $pdo, array $parcela): array
         'observacao' => (string) $parcela['observacao'],
         'forma' => $parcela['forma_pagamento_id'] ? (int) $parcela['forma_pagamento_id'] : null,
         'regra' => $regra ? $regra['texto'] : null,
+        'regra_valor' => $regra ? (float) $regra['desconto'] : null,
+        'regra_ate' => $regra ? $regra['data_limite'] : null,
         'no_banco' => !empty($parcela['boleto_no_banco']),
     ];
 }

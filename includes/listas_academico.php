@@ -84,6 +84,7 @@ function buscarListaTurmas(PDO $pdo, array $filtro): array
         "SELECT t.*, c.nome AS curso_nome, p.nome AS professor_nome,
                 s.nome AS situacao_nome, s.cor AS situacao_cor, s.comportamento,
                 (SELECT COUNT(*) FROM matriculas m WHERE m.turma_id = t.id AND m.status = 'ativa') AS alunos_ativos,
+                (SELECT COUNT(*) FROM matriculas m WHERE m.turma_id = t.id AND m.mensalidades_pendentes = 1 AND m.status NOT IN ('cancelada', 'concluida')) AS mensalidades_pendentes,
                 " . SQL_RESERVAS_TURMA . " AS reservas,
                 (SELECT COALESCE(SUM(cr.valor), 0) FROM contas_receber cr JOIN matriculas m ON m.id = cr.matricula_id
                   WHERE m.turma_id = t.id AND cr.status = 'pendente' AND cr.data_vencimento < " . sqlCorteAtraso() . ") AS valor_vencido

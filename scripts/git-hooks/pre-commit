@@ -1,0 +1,18 @@
+#!/bin/sh
+# Versão do sistema (rodapé, canto direito): "1.<nº de commits> · data".
+# Roda antes de cada commit: conta os commits (contando este), grava o
+# arquivo VERSAO e o coloca no mesmo commit. O "1" (geração) fica no
+# próprio arquivo — para virar 2.x, troque o número antes do ponto lá.
+# Instalar: sh scripts/instalar_hooks.sh
+raiz=$(git rev-parse --show-toplevel) || exit 0
+arquivo="$raiz/VERSAO"
+geracao=1
+if [ -f "$arquivo" ]; then
+    lido=$(sed -n 's/^\([0-9][0-9]*\)\..*/\1/p' "$arquivo" | head -n 1)
+    [ -n "$lido" ] && geracao=$lido
+fi
+commits=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+numero=$((commits + 1))
+printf '%s.%s · %s\n' "$geracao" "$numero" "$(date +%d/%m/%Y)" > "$arquivo"
+git add "$arquivo"
+exit 0

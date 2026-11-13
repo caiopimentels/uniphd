@@ -9,6 +9,7 @@ $podeVerFinanceiro = usuarioPodeVerInadimplencia();
 // Lembra o último filtro usado entre uma visita e outra.
 $filtroPadrao = ['busca' => '', 'situacao' => '', 'financeiro' => ''];
 $_SESSION['filtro_alunos'] = array_merge($filtroPadrao, $_SESSION['filtro_alunos'] ?? []);
+esquecerBuscaAoChegar($_SESSION['filtro_alunos']);
 if (array_intersect(array_keys($filtroPadrao), array_keys($_GET))) {
     foreach ($filtroPadrao as $campo => $vazio) {
         $_SESSION['filtro_alunos'][$campo] = $_GET[$campo] ?? '';

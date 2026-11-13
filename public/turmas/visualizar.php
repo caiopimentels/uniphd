@@ -89,7 +89,7 @@ $turmaAceitaMatricula = in_array($turma['comportamento'], COMPORTAMENTOS_TURMA_A
 $turmaConcluida = $turma['comportamento'] === 'concluida';
 // Turma encerrada não recebe nem tira aluno: na lista sobram os documentos.
 $mostrarAcoes = ($podeGerenciar || $podeCancelar) && $turmaAceitaMatricula;
-$totalColunas = 4 + ($podeVerFinanceiro ? 1 : 0) + ($podeLiberarCertificado ? 1 : 0) + ($mostrarAcoes ? 1 : 0);
+$totalColunas = 3 + ($podeVerFinanceiro ? 1 : 0) + ($podeLiberarCertificado ? 1 : 0) + ($mostrarAcoes ? 1 : 0);
 // Documentos que o curso emite (certificado, declarações de módulo): a
 // liberação automática roda ao abrir a turma (pega quem resolveu pendência).
 sincronizarDocumentosTurma($pdo, $id);
@@ -127,6 +127,18 @@ foreach ($modelosPorId as $modeloDoc) {
         "detalhe" => "Documento avulso (só para os marcados) · " . (($modeloDoc["orientacao"] ?? "horizontal") === "vertical" ? "vertical" : "horizontal")];
 }
 $podeMarcarDocumentos = $podeLiberarCertificado && $documentosPorMatricula;
+// Financeiro pendente (turma com início a definir): na matrícula só entrou a
+// taxa; as mensalidades são lançadas pelo botão Financeiro (1º vencimento).
+$financeiroPendente = [];
+foreach ($matriculas as $m) {
+    if ($m['mensalidades_pendentes'] && !in_array($m['status'], ['cancelada', 'concluida'], true)) {
+        $valoresM = valoresMensalidadesMatricula($m);
+        $financeiroPendente[(int) $m['id']] = ['nome' => $m['aluno_nome'], 'parcela' => $valoresM[0], 'qtd' => count($valoresM), 'pontualidade' => textoDescontoPontualidade($m)];
+    }
+}
+$podeLiberarFinanceiro = $podeGerenciar && $financeiroPendente;
+$podeMudarPontualidade = usuarioTemPermissao('editar_financeiro_aluno');
+$podeMarcarAlunos = $podeMarcarDocumentos || $podeLiberarFinanceiro;
 // Para o modal "documentos do aluno".
 $documentosModal = [];
 foreach ($matriculas as $m) {
@@ -303,6 +315,11 @@ require __DIR__ . '/../../includes/layout_header.php';
     <div class="secao-titulo">
         <i class="bi bi-info-circle"></i> Dados da turma
         <span class="ms-2"><?= badgeSituacaoTurma($turma['situacao_nome'], $turma['situacao_cor']) ?></span>
+        <?php if ($financeiroPendente): ?>
+            <span class="badge text-bg-warning ms-1 fw-normal" title="Turma com início a definir: na matrícula só entrou a taxa. Marque os alunos e use o botão Financeiro para lançar as mensalidades.">
+                <i class="bi bi-hourglass-split"></i> Financeiro pendente · <?= count($financeiroPendente) ?> aluno<?= count($financeiroPendente) === 1 ? '' : 's' ?>
+            </span>
+        <?php endif; ?>
     </div>
     <div class="card"><div class="card-body">
         <div class="d-flex flex-column flex-md-row gap-3">
@@ -418,8 +435,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                                 <input type="hidden" name="reabrir" value="1">
                                 <button type="submit" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-counterclockwise"></i> Reabrir</button>
                             <?php else: ?>
-                                <input type="date" name="data" class="form-control form-control-sm" style="width: 150px;" value="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d') ?>" required>
-                                <button type="submit" class="btn btn-sm btn-outline-success text-nowrap"><i class="bi bi-check-lg"></i> Concluir</button>
+                                <button type="button" class="btn btn-sm btn-outline-success text-nowrap" onclick="concluirModulo(<?= (int) $mod['id'] ?>, <?= e(json_encode($mod['nome'], JSON_UNESCAPED_UNICODE)) ?>)"><i class="bi bi-check-lg"></i> Concluir</button>
                             <?php endif; ?>
                         </form>
                     </td>
@@ -431,6 +447,35 @@ require __DIR__ . '/../../includes/layout_header.php';
     </div></div>
     <div class="form-text">Ao concluir um módulo, o documento ligado a ele fica disponível para os alunos (liberado sozinho se o curso usa liberação automática).</div>
 </div>
+<?php if ($podeConcluirModulo): ?>
+<!-- Concluir módulo: pergunta a data -->
+<div class="modal fade" id="modal-concluir-modulo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" action="/turmas/modulo_concluir.php" method="post">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-check2-circle"></i> Concluir módulo</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" name="turma_id" value="<?= (int) $id ?>">
+                <input type="hidden" name="modulo_id" id="concluir-modulo-id">
+                <p class="fw-semibold mb-3" id="concluir-modulo-nome"></p>
+                <label class="form-label">Data de conclusão</label>
+                <input type="date" name="data" id="concluir-modulo-data" class="form-control" style="max-width: 200px;" max="<?= date('Y-m-d') ?>" required>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Concluir</button>
+            </div>
+        </form>
+    </div>
+</div>
+<script>
+function concluirModulo(id, nome) {
+    document.getElementById('concluir-modulo-id').value = id;
+    document.getElementById('concluir-modulo-nome').textContent = nome;
+    document.getElementById('concluir-modulo-data').value = '<?= date('Y-m-d') ?>';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-concluir-modulo')).show();
+}
+</script>
+<?php endif; ?>
 <?php endif; ?>
 
 <div class="secao">
@@ -449,26 +494,18 @@ require __DIR__ . '/../../includes/layout_header.php';
         <strong>Concluída</strong> = terminou o curso; <i class="bi bi-arrow-counterclockwise"></i> volta para ativo.
     </p>
     <?php endif; ?>
-    <?php if ($podeMarcarDocumentos): ?>
-    <form id="form-documentos" action="/matriculas/documentos_liberar.php" method="post" class="d-flex flex-wrap gap-2 align-items-center mb-2" onsubmit="return conferirDocumentos(event);">
-        <input type="hidden" name="voltar" value="/turmas/visualizar.php?id=<?= (int) $id ?>">
-        <span class="small text-muted"><i class="bi bi-award"></i> Documentos: <strong id="qtd-marcados">0</strong> aluno(s) marcado(s)</span>
-        <div class="typeahead" style="min-width: 280px; max-width: 360px; flex: 1;">
-            <input type="text" class="form-control form-control-sm" id="documento-busca" autocomplete="off" placeholder="Pesquise o documento pelo nome...">
-            <div class="typeahead-lista d-none" id="documento-lista"></div>
-        </div>
-        <input type="hidden" name="documento" id="documento-escolhido">
-        <label class="small text-muted d-none align-items-center gap-1" id="campo-data-evento" title="Preenche o marcador {data_evento} do documento (ex.: o dia da aula)">
-            Data do evento <input type="date" name="data_evento" class="form-control form-control-sm" style="width: 150px;">
-        </label>
-        <button type="submit" name="liberado" value="1" class="btn btn-sm btn-success"><i class="bi bi-unlock"></i> Liberar</button>
-        <button type="submit" name="liberado" value="0" class="btn btn-sm btn-outline-secondary"><i class="bi bi-lock"></i> Bloquear</button>
-        <?php if ($podeForcarDocumento): ?>
-            <label class="form-check small mb-0 ms-1" title="Só administrador: libera mesmo com pendência de documentação/financeira ou módulo não concluído">
-                <input type="checkbox" name="forcar" value="1" class="form-check-input"> Liberar mesmo com pendência
-            </label>
+    <?php if ($podeMarcarAlunos): ?>
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+        <span class="small text-muted"><strong id="qtd-marcados">0</strong> aluno(s) marcado(s)</span>
+        <?php if ($podeMarcarDocumentos): ?>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirCertificados()"><i class="bi bi-award"></i> Certificados</button>
         <?php endif; ?>
-    </form>
+        <?php if ($podeLiberarFinanceiro): ?>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="abrirFinanceiro()" title="Lançar as mensalidades de quem está com o financeiro pendente">
+                <i class="bi bi-cash-coin"></i> Financeiro <span class="badge text-bg-warning fw-normal"><?= count($financeiroPendente) ?> pendente<?= count($financeiroPendente) === 1 ? '' : 's' ?></span>
+            </button>
+        <?php endif; ?>
+    </div>
     <?php endif; ?>
     <div class="card">
         <div class="table-responsive">
@@ -476,9 +513,9 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <thead>
                     <tr>
                         <th>
-                            <?php if ($podeMarcarDocumentos): ?><input type="checkbox" class="form-check-input me-2" id="documentos-todos" title="Marcar / desmarcar todos"><?php endif; ?>Aluno
+                            <?php if ($podeMarcarAlunos): ?><input type="checkbox" class="form-check-input me-2" id="documentos-todos" title="Marcar / desmarcar todos"><?php endif; ?>Aluno
                         </th>
-                        <th>Matrícula</th><th class="text-end">Mensalidade</th>
+                        <th>Matrícula</th>
                         <?php if ($podeVerFinanceiro): ?><th>Financeiro</th><?php endif; ?>
                         <th>Situação</th>
                         <?php if ($podeLiberarCertificado): ?>
@@ -498,7 +535,6 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <?php if ($r['aluno_id']): ?><div class="small text-muted">aluno cadastrado</div><?php endif; ?>
                         </td>
                         <td><?= formatDate(substr((string) $r['criado_em'], 0, 10)) ?></td>
-                        <td class="text-end text-muted">-</td>
                         <?php if ($podeVerFinanceiro): ?><td class="text-muted">-</td><?php endif; ?>
                         <td>
                             <span class="badge text-bg-warning">Vaga reservada</span>
@@ -520,11 +556,11 @@ require __DIR__ . '/../../includes/layout_header.php';
                 <?php endforeach; ?>
                 <?php foreach ($matriculas as $m): ?>
                     <tr class="cursor-pointer" onclick="window.location='/matriculas/visualizar.php?id=<?= (int) $m['id'] ?>'">
-                        <td<?= $podeMarcarDocumentos ? ' onclick="if (event.target.matches(\'input\')) event.stopPropagation();"' : '' ?>>
+                        <td<?= $podeMarcarAlunos ? ' onclick="if (event.target.matches(\'input\')) event.stopPropagation();"' : '' ?>>
                             <div class="d-flex align-items-baseline">
-                            <?php if ($podeMarcarDocumentos): ?>
-                                <?php if (isset($documentosPorMatricula[(int) $m['id']])): ?>
-                                    <input type="checkbox" class="form-check-input documento-aluno me-2 flex-shrink-0" name="ids[]" form="form-documentos" value="<?= (int) $m['id'] ?>" title="Marcar para liberar / bloquear documento">
+                            <?php if ($podeMarcarAlunos): $temDocs = $podeMarcarDocumentos && isset($documentosPorMatricula[(int) $m['id']]); $temFin = $podeLiberarFinanceiro && isset($financeiroPendente[(int) $m['id']]); ?>
+                                <?php if ($temDocs || $temFin): ?>
+                                    <input type="checkbox" class="form-check-input aluno-marcado me-2 flex-shrink-0" value="<?= (int) $m['id'] ?>" data-docs="<?= $temDocs ? 1 : 0 ?>" data-fin="<?= $temFin ? 1 : 0 ?>" title="Marcar (certificados / financeiro)">
                                 <?php else: ?>
                                     <span class="d-inline-block me-2 flex-shrink-0" style="width: 1em;"></span>
                                 <?php endif; ?>
@@ -535,10 +571,6 @@ require __DIR__ . '/../../includes/layout_header.php';
                             </div>
                         </td>
                         <td><?= formatDate($m['data_matricula']) ?></td>
-                        <td class="text-end">
-                            <?= formatMoney(valorMensalidadeComDesconto((float) $m['valor_mensalidade'], (float) $m['desconto_percentual'])) ?>
-                            <?php if ((float) $m['desconto_percentual'] > 0): ?><div class="small text-muted"><?= formatPercent($m['desconto_percentual']) ?> desc.</div><?php endif; ?>
-                        </td>
                         <?php if ($podeVerFinanceiro): ?>
                         <td>
                             <?php if ((float) $m['valor_vencido_aluno'] > 0): ?>
@@ -554,6 +586,7 @@ require __DIR__ . '/../../includes/layout_header.php';
                             <span class="badge <?= matriculaStatusBadgeClass($m['status']) ?>"><?= $m['lista_espera'] ? 'Pagou — lista de espera' : matriculaStatusLabel($m['status']) ?></span>
                             <?php if ($m['status'] === 'pendente' && !$m['lista_espera']): ?><div class="small text-muted">até <?= formatDateTime($m['pagamento_ate']) ?></div><?php endif; ?>
                             <?php if ($m['origem'] === 'portal'): ?><div class="small text-muted"><i class="bi bi-globe2"></i> portal</div><?php endif; ?>
+                            <?php if (isset($financeiroPendente[(int) $m['id']])): ?><div class="small text-warning-emphasis" title="Só a taxa de matrícula foi lançada. As mensalidades entram pelo botão Financeiro."><i class="bi bi-hourglass-split"></i> financeiro pendente</div><?php endif; ?>
                         </td>
                         <?php if ($podeLiberarCertificado): ?>
                             <td onclick="event.stopPropagation()">
@@ -645,6 +678,87 @@ require __DIR__ . '/../../includes/layout_header.php';
             </tbody>
         </table>
     </div></div>
+</div>
+<?php endif; ?>
+
+<?php if ($podeMarcarDocumentos): ?>
+<!-- Certificados: escolhe o documento e libera ou bloqueia para os marcados -->
+<div class="modal fade" id="modal-certificados" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form class="modal-content" id="form-documentos" action="/matriculas/documentos_liberar.php" method="post" onsubmit="return conferirDocumentos(event);">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-award"></i> Certificados</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" name="voltar" value="/turmas/visualizar.php?id=<?= (int) $id ?>">
+                <div id="certificados-ids"></div>
+                <p class="small text-muted mb-2" id="certificados-quem"></p>
+                <label class="form-label">Documento</label>
+                <div class="typeahead">
+                    <input type="text" class="form-control" id="documento-busca" autocomplete="off" placeholder="Pesquise o documento pelo nome...">
+                    <div class="typeahead-lista d-none" id="documento-lista"></div>
+                </div>
+                <input type="hidden" name="documento" id="documento-escolhido">
+                <label class="small text-muted d-none align-items-center gap-2 mt-2" id="campo-data-evento" title="Preenche o marcador {data_evento} do documento (ex.: o dia da aula)">
+                    Data do evento <input type="date" name="data_evento" class="form-control form-control-sm" style="width: 160px;">
+                </label>
+                <?php if ($podeForcarDocumento): ?>
+                    <label class="form-check small mt-3 mb-0" title="Só administrador: libera mesmo com pendência de documentação/financeira ou módulo não concluído">
+                        <input type="checkbox" name="forcar" value="1" class="form-check-input"> Liberar mesmo com pendência
+                    </label>
+                <?php endif; ?>
+                <div class="alert alert-warning small py-2 mt-3 mb-0 d-none" id="certificados-aviso"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" name="liberado" value="0" class="btn btn-outline-secondary"><i class="bi bi-lock"></i> Bloquear</button>
+                <button type="submit" name="liberado" value="1" class="btn btn-success"><i class="bi bi-unlock"></i> Liberar</button>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
+<?php if ($podeLiberarFinanceiro): ?>
+<!-- Financeiro: lança as mensalidades pendentes dos marcados -->
+<div class="modal fade" id="modal-financeiro" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <form class="modal-content" action="/matriculas/mensalidades_liberar.php" method="post" onsubmit="return conferirFinanceiro();">
+            <div class="modal-header"><h5 class="modal-title"><i class="bi bi-cash-coin"></i> Lançar mensalidades</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" name="turma_id" value="<?= (int) $id ?>">
+                <div id="financeiro-ids"></div>
+                <label class="form-label">Vencimento da 1ª parcela</label>
+                <input type="date" name="primeiro_vencimento" id="financeiro-data" class="form-control" style="max-width: 200px;" value="<?= $turma['data_inicio'] && $turma['data_inicio'] >= date('Y-m-d') ? e($turma['data_inicio']) : '' ?>">
+                <div class="form-text mb-3">As próximas vencem no mesmo dia dos meses seguintes.</div>
+                <?php if ($podeMudarPontualidade): ?>
+                <label class="form-label">Desconto por pontualidade</label>
+                <select name="pontualidade" id="fin-pontualidade" class="form-select" onchange="mostrarPontualidade()">
+                    <option value="manter">Manter como está em cada matrícula</option>
+                    <option value="nenhum">Sem desconto</option>
+                    <option value="valor">Com desconto em R$</option>
+                    <option value="percentual">Com desconto em %</option>
+                </select>
+                <div class="row g-2 mt-1 d-none" id="fin-pontualidade-campos">
+                    <div class="col-6"><div class="input-group"><span class="input-group-text" id="fin-pontualidade-unidade">R$</span>
+                        <input type="text" name="pontualidade_valor" id="fin-pontualidade-valor" class="form-control" inputmode="decimal" placeholder="0,00"></div></div>
+                    <div class="col-6"><div class="input-group"><span class="input-group-text">até</span>
+                        <input type="number" name="pontualidade_dias" class="form-control" min="0" max="31" value="0"><span class="input-group-text">dias antes</span></div></div>
+                    <div class="col-12 form-text mt-0">Pagando até o prazo, o aluno paga a parcela com o desconto. 0 dias = até o próprio vencimento.</div>
+                </div>
+                <div class="mb-3"></div>
+                <?php endif; ?>
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Aluno</th><th class="text-end">1ª parcela</th></tr></thead>
+                    <tbody id="financeiro-lista"></tbody>
+                </table>
+                <div class="small text-muted mt-2" id="financeiro-ignorados"></div>
+                <div class="alert alert-warning small py-2 mt-3 mb-0 d-none" id="financeiro-aviso"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-brand"><i class="bi bi-check-lg"></i> Lançar mensalidades</button>
+            </div>
+        </form>
+    </div>
 </div>
 <?php endif; ?>
 
@@ -778,37 +892,86 @@ function abrirDocumentosAluno(matriculaId) {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-docs-aluno')).show();
 }
 
-// Documentos: marca os alunos (ou todos) e libera/bloqueia o documento escolhido.
-const caixasDocumento = [...document.querySelectorAll('.documento-aluno')];
+// Alunos marcados: valem para os dois botões (Certificados e Financeiro).
+const caixasAlunos = [...document.querySelectorAll('.aluno-marcado')];
+const marcadosCom = (campo) => caixasAlunos.filter((c) => c.checked && c.dataset[campo] === '1');
 function atualizarMarcados() {
-    const marcados = caixasDocumento.filter((c) => c.checked).length;
+    const marcados = caixasAlunos.filter((c) => c.checked).length;
     const todos = document.getElementById('documentos-todos');
     if (todos) {
-        todos.checked = marcados > 0 && marcados === caixasDocumento.length;
-        todos.indeterminate = marcados > 0 && marcados < caixasDocumento.length;
+        todos.checked = marcados > 0 && marcados === caixasAlunos.length;
+        todos.indeterminate = marcados > 0 && marcados < caixasAlunos.length;
     }
     const qtd = document.getElementById('qtd-marcados');
     if (qtd) qtd.textContent = marcados;
 }
-caixasDocumento.forEach((c) => c.addEventListener('change', atualizarMarcados));
+caixasAlunos.forEach((c) => c.addEventListener('change', atualizarMarcados));
 document.getElementById('documentos-todos')?.addEventListener('change', (e) => {
-    caixasDocumento.forEach((c) => { c.checked = e.target.checked; });
+    caixasAlunos.forEach((c) => { c.checked = e.target.checked; });
     atualizarMarcados();
 });
-function conferirDocumentos(evento) {
-    if (!caixasDocumento.some((c) => c.checked)) {
-        alert('Marque pelo menos um aluno na coluna Documentos.');
+const avisar = (id, texto) => { const el = document.getElementById(id); el.textContent = texto; el.classList.toggle('d-none', !texto); };
+const preencherIds = (id, caixas) => { document.getElementById(id).innerHTML = caixas.map((c) => `<input type="hidden" name="ids[]" value="${parseInt(c.value, 10)}">`).join(''); };
+
+// Certificados: o documento e liberar/bloquear para os marcados.
+function abrirCertificados() {
+    const caixas = marcadosCom('docs');
+    document.getElementById('certificados-quem').textContent = caixas.length
+        ? caixas.length + ' aluno(s) marcado(s).'
+        : 'Nenhum aluno marcado — marque na lista (só os ativos e concluídos recebem documentos).';
+    avisar('certificados-aviso', '');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-certificados')).show();
+}
+function conferirDocumentos() {
+    const caixas = marcadosCom('docs');
+    if (!caixas.length) { avisar('certificados-aviso', 'Feche esta janela e marque pelo menos um aluno na lista.'); return false; }
+    if (!OPCOES_DOCUMENTO.find((o) => o.id === document.getElementById('documento-escolhido').value)) {
+        avisar('certificados-aviso', 'Pesquise e escolha o documento na lista.');
         return false;
     }
-    const liberar = evento.submitter && evento.submitter.value === '1';
-    const opcao = OPCOES_DOCUMENTO.find((o) => o.id === document.getElementById('documento-escolhido').value);
-    if (!opcao) {
-        alert('Pesquise e escolha o documento na lista.');
+    preencherIds('certificados-ids', caixas);
+    return true;
+}
+
+// Financeiro: mostra o aluno e a 1ª parcela; pede o 1º vencimento.
+const FINANCEIRO_PENDENTE = <?= json_encode($financeiroPendente ?? [], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG) ?>;
+const moeda = (v) => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+function abrirFinanceiro() {
+    let caixas = marcadosCom('fin');
+    // Nada marcado: já traz todos os pendentes.
+    if (!caixas.length && !caixasAlunos.some((c) => c.checked)) {
+        caixas = caixasAlunos.filter((c) => c.dataset.fin === '1');
+        caixas.forEach((c) => { c.checked = true; });
+        atualizarMarcados();
+    }
+    document.getElementById('financeiro-lista').innerHTML = caixas.map((c) => {
+        const p = FINANCEIRO_PENDENTE[c.value];
+        return `<tr><td>${escapeHtml(p.nome)}<div class="small text-muted">${escapeHtml(p.pontualidade)}</div></td><td class="text-end text-nowrap">${moeda(p.parcela)} <span class="text-muted small">(1 de ${p.qtd})</span></td></tr>`;
+    }).join('') || '<tr><td colspan="2" class="text-muted">Nenhum aluno marcado está com o financeiro pendente.</td></tr>';
+    const outros = caixasAlunos.filter((c) => c.checked && c.dataset.fin !== '1').length;
+    document.getElementById('financeiro-ignorados').textContent = outros ? outros + ' aluno(s) marcado(s) já têm as mensalidades lançadas e ficam de fora.' : '';
+    avisar('financeiro-aviso', '');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-financeiro')).show();
+}
+document.getElementById('modal-financeiro')?.addEventListener('input', () => avisar('financeiro-aviso', ''));
+document.getElementById('modal-certificados')?.addEventListener('input', () => avisar('certificados-aviso', ''));
+function mostrarPontualidade() {
+    const modo = document.getElementById('fin-pontualidade')?.value || 'manter';
+    document.getElementById('fin-pontualidade-campos')?.classList.toggle('d-none', modo !== 'valor' && modo !== 'percentual');
+    const unidade = document.getElementById('fin-pontualidade-unidade');
+    if (unidade) unidade.textContent = modo === 'percentual' ? '%' : 'R$';
+}
+function conferirFinanceiro() {
+    const caixas = marcadosCom('fin');
+    if (!caixas.length) { avisar('financeiro-aviso', 'Feche esta janela e marque os alunos com financeiro pendente.'); return false; }
+    if (!document.getElementById('financeiro-data').value) { avisar('financeiro-aviso', 'Escolha o vencimento da 1ª parcela.'); return false; }
+    const modo = document.getElementById('fin-pontualidade')?.value || 'manter';
+    if ((modo === 'valor' || modo === 'percentual') && !(parseFloat((document.getElementById('fin-pontualidade-valor').value || '').replace(/\./g, '').replace(',', '.')) > 0)) {
+        avisar('financeiro-aviso', 'Informe o valor do desconto por pontualidade (ou escolha "Sem desconto").');
         return false;
     }
-    const doc = opcao.nome + (opcao.id.startsWith('m:') ? ' (avulso)' : '');
-    const qtd = caixasDocumento.filter((c) => c.checked).length;
-    return confirm((liberar ? 'Liberar' : 'Bloquear') + ' "' + doc + '" para ' + qtd + ' aluno(s)?');
+    preencherIds('financeiro-ids', caixas);
+    return true;
 }
 atualizarMarcados();
 

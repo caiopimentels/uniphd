@@ -16,6 +16,7 @@ $podeVerFinanceiro = usuarioPodeVerInadimplencia();
 // matrículas em andamento (ativas, aguardando pagamento e trancadas).
 $filtroPadrao = ['busca' => '', 'status' => ['ativa', 'pendente', 'trancada'], 'cursos' => [], 'turmas' => [], 'postit' => '', 'financeiro' => ''];
 $_SESSION['filtro_matriculas'] = array_merge($filtroPadrao, $_SESSION['filtro_matriculas'] ?? []);
+esquecerBuscaAoChegar($_SESSION['filtro_matriculas']);
 if (array_intersect(array_keys($filtroPadrao), array_keys($_GET)) || isset($_GET['filtrar'])) {
     foreach ($filtroPadrao as $campo => $padrao) {
         $_SESSION['filtro_matriculas'][$campo] = is_array($padrao) ? array_values((array) ($_GET[$campo] ?? [])) : (string) ($_GET[$campo] ?? '');

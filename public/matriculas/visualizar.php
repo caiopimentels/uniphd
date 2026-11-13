@@ -145,6 +145,14 @@ require __DIR__ . '/../../includes/layout_header.php';
     <?php if ($podeVerFinanceiro): ?>
     <div class="secao">
         <div class="secao-titulo"><i class="bi bi-cash-coin"></i> Parcelas</div>
+        <?php if ($matricula['mensalidades_pendentes'] && !in_array($matricula['status'], ['cancelada', 'concluida'], true)): ?>
+            <div class="alert alert-warning d-flex gap-2 align-items-start">
+                <i class="bi bi-hourglass-split"></i>
+                <div><strong>Financeiro pendente:</strong> a turma estava com início a definir, então só a taxa de matrícula foi lançada.
+                    As <?= (int) $matricula['num_parcelas'] ?> mensalidades entram quando forem liberadas em
+                    <a href="/turmas/visualizar.php?id=<?= (int) $matricula['turma_id'] ?>">Turma › Financeiro</a>.</div>
+            </div>
+        <?php endif; ?>
         <div class="card">
             <div class="table-responsive">
                 <table class="table table-hover mb-0 align-middle">

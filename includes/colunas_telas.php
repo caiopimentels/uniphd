@@ -135,7 +135,10 @@ function colunasTelaTurmas(): array
         'vagas_livres' => ['rotulo' => 'Vagas livres', 'ordem' => 'vagas_livres', 'classe' => 'text-center', 'padrao' => false,
             'html' => fn ($t) => (string) $vagasLivres($t), 'texto' => fn ($t) => (string) $vagasLivres($t)],
         'situacao' => ['rotulo' => 'Situação', 'ordem' => 'situacao',
-            'html' => fn ($t) => badgeSituacaoTurma($t['situacao_nome'], $t['situacao_cor']), 'texto' => fn ($t) => $t['situacao_nome']],
+            // Turma com início a definir: alunos só com a taxa lançada.
+            'html' => fn ($t) => badgeSituacaoTurma($t['situacao_nome'], $t['situacao_cor'])
+                . (!empty($t['mensalidades_pendentes']) ? '<div class="small text-warning-emphasis mt-1 text-nowrap" title="Só a taxa de matrícula foi lançada. Abra a turma e use o botão Financeiro."><i class="bi bi-hourglass-split"></i> ' . ' financeiro pendente</div>' : ''),
+            'texto' => fn ($t) => $t['situacao_nome'] . (!empty($t['mensalidades_pendentes']) ? ' (' .  ' financeiro pendentes)' : '')],
     ];
 }
 

@@ -10,6 +10,7 @@ agendarBaixaBoletosCancelados();
 // isso, todo acesso pelo menu resetava pra "Pendentes" e perdia o período
 // escolhido, obrigando a escolher tudo de novo só pra ajustar a data.
 $_SESSION['filtro_contas_receber'] = array_merge(['status' => 'pendente,vencido', 'data_tipo' => 'vencimento', 'data_inicio' => '', 'data_fim' => '', 'agrupar' => '', 'busca' => '', 'boleto' => ''], $_SESSION['filtro_contas_receber'] ?? []);
+esquecerBuscaAoChegar($_SESSION['filtro_contas_receber']);
 if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim']) || isset($_GET['agrupar']) || isset($_GET['busca']) || isset($_GET['boleto']) || isset($_GET['data_tipo'])) {
     $_SESSION['filtro_contas_receber'] = [
         'status' => implode(',', listaStatusReceber($_GET['status'] ?? [])),

@@ -3,8 +3,9 @@
     <aside class="pagina-acoes-lateral"><div class="titulo">Ações</div><?= $pageAction ?></aside>
     </div>
     <?php endif; ?>
-    <div class="pagina-rodape">
-        <?= e(nomeSistema()) ?> · <?= date('Y') ?>
+    <div class="pagina-rodape d-flex justify-content-between">
+        <span><?= e(nomeSistema()) ?> · <?= date('Y') ?></span>
+        <?php if ($versao = versaoSistema()): ?><span title="Versão do sistema<?= $versao['data'] ? ' · ' . e($versao['data']) : '' ?>">v<?= e($versao['numero']) ?></span><?php endif; ?>
     </div>
 </main>
 <style>

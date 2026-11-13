@@ -52,20 +52,22 @@
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Desconto</label>
-                                <select name="desconto_modo" id="ep-modo" class="form-select" onchange="resumoParcela()">
+                                <select name="desconto_modo" id="ep-modo" class="form-select" onchange="trocouModoDesconto()">
                                     <option value="padrao" id="ep-opcao-padrao">Regra da matrícula</option>
                                     <option value="personalizado">Desconto só nesta parcela</option>
                                     <option value="nenhum">Sem desconto</option>
                                 </select>
                             </div>
                             <div class="col-6 ep-personalizado">
-                                <label class="form-label">Desconto (R$)</label>
-                                <input type="text" name="desconto_valor" id="ep-desconto" class="form-control" placeholder="0,00" oninput="resumoParcela()">
+                                <label class="form-label">Desconto (R$) <span class="text-muted small fw-normal ep-da-regra">— da regra</span></label>
+                                <input type="text" name="desconto_valor" id="ep-desconto" class="form-control" placeholder="0,00" oninput="mexeuDesconto()">
                             </div>
                             <div class="col-6 ep-personalizado">
                                 <label class="form-label">Pagando até</label>
-                                <input type="date" name="desconto_ate" id="ep-desconto-ate" class="form-control" oninput="resumoParcela()">
+                                <input type="date" name="desconto_ate" id="ep-desconto-ate" class="form-control" oninput="mexeuDesconto()">
                                 <div class="form-text">Em branco: até o vencimento.</div>
+                            </div>
+                            <div class="col-12 form-text mt-0 ep-da-regra">Valores da regra de pontualidade da matrícula. Mudando aqui, vira um desconto só desta parcela.
                             </div>
                             <div class="col-12">
                                 <label class="form-label">Forma de pagamento</label>
@@ -174,8 +176,11 @@ function preencherEdicaoParcela(p) {
     document.getElementById('ep-aviso-banco').classList.toggle('d-none', !p.no_banco);
     document.getElementById('ep-opcao-padrao').textContent = p.regra ? 'Regra da matrícula' : 'Sem desconto (padrão)';
     document.getElementById('ep-modo').value = p.desconto_valor === null ? 'padrao' : (p.desconto_valor > 0 ? 'personalizado' : 'nenhum');
-    document.getElementById('ep-desconto').value = p.desconto_valor > 0 ? p.desconto_valor.toFixed(2).replace('.', ',') : '';
-    document.getElementById('ep-desconto-ate').value = p.desconto_ate || '';
+    // Seguindo a regra da matrícula, os campos mostram o desconto dela.
+    const daRegra = p.desconto_valor === null && p.regra_valor > 0;
+    const valorDesc = daRegra ? p.regra_valor : p.desconto_valor;
+    document.getElementById('ep-desconto').value = valorDesc > 0 ? valorDesc.toFixed(2).replace('.', ',') : '';
+    document.getElementById('ep-desconto-ate').value = daRegra ? p.regra_ate : (p.desconto_ate || '');
     resumoParcela();
 }
 
@@ -228,11 +233,30 @@ document.getElementById('pa-form').addEventListener('submit', (ev) => {
     document.getElementById('pa-confirmar-banco').classList.remove('d-none');
 });
 
+// Voltou para "Regra da matrícula": os campos voltam a mostrar o desconto dela.
+function trocouModoDesconto() {
+    const p = parcelaEmEdicao;
+    if (p && document.getElementById('ep-modo').value === 'padrao') {
+        document.getElementById('ep-desconto').value = p.regra_valor > 0 ? p.regra_valor.toFixed(2).replace('.', ',') : '';
+        document.getElementById('ep-desconto-ate').value = p.regra_valor > 0 ? p.regra_ate : '';
+    }
+    resumoParcela();
+}
+
+// Mexeu no desconto mostrado da regra: passa a ser desconto só desta parcela.
+function mexeuDesconto() {
+    const modo = document.getElementById('ep-modo');
+    if (modo.value === 'padrao') modo.value = 'personalizado';
+    resumoParcela();
+}
+
 // Mostra como o aluno vai ver a cobrança com o que está digitado.
 function resumoParcela() {
     if (!parcelaEmEdicao) return;
     const modo = document.getElementById('ep-modo').value;
-    document.querySelectorAll('.ep-personalizado').forEach((el) => { el.style.display = modo === 'personalizado' ? '' : 'none'; });
+    const regraVisivel = modo === 'padrao' && parcelaEmEdicao.regra_valor > 0;
+    document.querySelectorAll('.ep-personalizado').forEach((el) => { el.style.display = modo === 'personalizado' || regraVisivel ? '' : 'none'; });
+    document.querySelectorAll('.ep-da-regra').forEach((el) => { el.style.display = regraVisivel ? '' : 'none'; });
     const valor = numeroParcela(document.getElementById('ep-valor').value);
     const venc = document.getElementById('ep-vencimento').value;
     let texto = 'Cobrança de <strong>' + moedaParcela(valor) + '</strong> com vencimento em <strong>' + dataParcela(venc) + '</strong>.';
