@@ -556,8 +556,10 @@ function processarNotificacaoBoletoItau(PDO $pdo, array $conta, array $aviso, in
     $stmt->execute([$conta['id'], $nossoNumero]);
     $cobranca = $stmt->fetch();
     if (!$cobranca) {
+        $pagador = trim((string) (campoNotificacao($aviso, ['nome_pagador']) ?? ''));
         criarNotificacao($pdo, 'pagamento', 'Pagamento de boleto não identificado',
-            'Nosso número ' . formatarNossoNumeroItau($nossoNumero) . ($valorPago ? ' · ' . formatMoney($valorPago) : '') . ' — nenhuma cobrança no sistema.');
+            'Nosso número ' . formatarNossoNumeroItau($nossoNumero) . ($valorPago ? ' · ' . formatMoney($valorPago) : '')
+            . ($pagador !== '' ? ' · pago por ' . $pagador : '') . ' — nenhuma cobrança no sistema.');
         return $resultado('nao_encontrado', 'Nenhuma cobrança com o nosso número ' . formatarNossoNumeroItau($nossoNumero) . '.');
     }
 
