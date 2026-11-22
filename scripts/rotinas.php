@@ -11,6 +11,11 @@
 //                                            e-mail (dentro do limite por hora)
 //                                            e os avisos automáticos de
 //                                            cobrança (e-mail e WhatsApp)
+//                                            e, no horário marcado em cada
+//                                            conta, a conferência automática
+//                                            de boletos no banco
+//   php scripts/rotinas.php boletos        → a conferência de boletos sozinha
+//                                            (a mesma da rotina emails)
 //
 // Rodam como o usuário do Apache (www-data), para gravar em storage/ com
 // as mesmas permissões do site.
@@ -47,9 +52,23 @@ switch ($rotina) {
         if ($avisos['enviados'] || $avisos['erros']) {
             echo date('Y-m-d H:i:s') . " avisos de cobrança: {$avisos['enviados']} enviado(s), {$avisos['erros']} com erro\n";
         }
+        conferirBoletosAgendados($pdo);
+        break;
+
+    case 'boletos':
+        conferirBoletosAgendados($pdo);
         break;
 
     default:
-        fwrite(STDERR, "Uso: php scripts/rotinas.php certificados|documentos|emails\n");
+        fwrite(STDERR, "Uso: php scripts/rotinas.php certificados|documentos|emails|boletos\n");
         exit(1);
+}
+
+// Contas do banco com horário marcado em Conferir boletos (1x por dia).
+function conferirBoletosAgendados(PDO $pdo): void
+{
+    $contas = conferenciaAutomaticaBoletos($pdo);
+    if ($contas > 0) {
+        echo date('Y-m-d H:i:s') . " conferência de boletos: $contas conta(s)\n";
+    }
 }

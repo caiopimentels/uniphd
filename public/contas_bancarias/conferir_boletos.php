@@ -44,55 +44,38 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' && !empty($_GET['lista'])) {
     ], $linhas)]);
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-$stmt = $pdo->prepare(
-    "SELECT cb.*, cr.status AS parcela_status FROM cobrancas_bancarias cb JOIN contas_receber cr ON cr.id = cb.conta_receber_id WHERE cb.id = ? AND cb.conta_bancaria_id = ?"
-);
-$stmt->execute([(int) ($_POST['cobranca'] ?? 0), $id]);
-$cobranca = $stmt->fetch();
-if (!$cobranca) {
-    responderJson(['resultado' => 'erro', 'mensagem' => 'Boleto não encontrado.']);
-}
-if ($cobranca['status'] !== 'registrada' || $cobranca['parcela_status'] !== 'pendente') {
-    responderJson(['resultado' => 'ok', 'mensagem' => 'Já estava resolvido no sistema.']);
-}
-$stmt = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
-$stmt->execute([$cobranca['conta_bancaria_id']]);
-$conta = $stmt->fetch();
-if (!$conta) {
-    responderJson(['resultado' => 'erro', 'mensagem' => 'Conta bancária do boleto não encontrada.']);
-}
-
-$r = consultarBoletoItau($pdo, $conta, (int) $cobranca['nosso_numero'], (int) $cobranca['conta_receber_id']);
-if (!$r['ok']) {
-    responderJson(['resultado' => 'erro', 'mensagem' => $r['mensagem']]);
-}
-if (!$r['boleto']) {
-    responderJson(['resultado' => 'atencao', 'mensagem' => 'O Itaú não encontrou este boleto.']);
-}
-
-$dados = $r['boleto']['dado_boleto'] ?? [];
-$situacao = (string) ($dados['dados_individuais_boleto'][0]['situacao_geral_boleto'] ?? '');
-$pagamentos = array_values(array_filter((array) ($dados['pagamentos_cobranca'] ?? []), 'is_array'));
-
-if ($pagamentos || mb_stripos($situacao, 'pag') !== false) {
-    $valorPago = null;
-    $dataPagamento = null;
-    foreach ($pagamentos as $pg) {
-        $valor = valorNotificacao($pg['valor_pago_total_cobranca'] ?? null);
-        $valorPago = $valor !== null ? ($valorPago ?? 0) + $valor : $valorPago;
-        $dataPagamento = dataNotificacao($pg['data_inclusao_pagamento'] ?? null) ?? $dataPagamento;
+// Conferência automática: horário (vazio = desligada) e quais boletos.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['acao'] ?? '') === 'agendar') {
+    $voltar = '/contas_bancarias/conferir_boletos.php?id=' . $id;
+    $horario = trim((string) ($_POST['conferencia_horario'] ?? ''));
+    $ligada = !empty($_POST['conferencia_ligada']);
+    if ($ligada && !preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $horario)) {
+        flash('warning', 'Escolha o horário da conferência automática.');
+        redirect($voltar);
     }
-    $baixa = baixarCobrancaPeloBanco($pdo, $cobranca, $valorPago, $dataPagamento, 'consulta', 'Itaú (conferência manual)');
-    registrarAtividade('contas_receber', 'baixa', 'Conferência de boletos no Itaú: nosso nº ' . formatarNossoNumeroItau((int) $cobranca['nosso_numero']) . ' estava pago — ' . $baixa['mensagem']);
-    responderJson(['resultado' => 'baixado', 'mensagem' => $baixa['mensagem']]);
+    $periodo = ($_POST['conferencia_periodo'] ?? '') === 'todos' ? 'todos' : 'vencidos';
+    $pdo->prepare('UPDATE contas_bancarias SET conferencia_horario = ?, conferencia_periodo = ? WHERE id = ?')
+        ->execute([$ligada ? $horario . ':00' : null, $periodo, $id]);
+    registrarAtividade('configuracoes', 'edicao', "Conferência automática de boletos ({$contaTela['apelido']}): "
+        . ($ligada ? "todos os dias às {$horario}, " . ($periodo === 'todos' ? 'todos em aberto' : 'só vencidos') : 'desligada'));
+    flash('success', $ligada ? "Conferência automática ligada: todos os dias às {$horario}." : 'Conferência automática desligada.');
+    redirect($voltar);
 }
 
-if (mb_stripos($situacao, 'baixad') !== false) {
-    responderJson(['resultado' => 'atencao', 'mensagem' => 'Baixado no Itaú sem pagamento (' . $situacao . '). Confira a parcela.']);
-}
-
-responderJson(['resultado' => 'aberto', 'mensagem' => $situacao ?: 'Em aberto']);
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $stmt = $pdo->prepare(
+        "SELECT cb.*, cr.status AS parcela_status FROM cobrancas_bancarias cb JOIN contas_receber cr ON cr.id = cb.conta_receber_id WHERE cb.id = ? AND cb.conta_bancaria_id = ?"
+    );
+    $stmt->execute([(int) ($_POST['cobranca'] ?? 0), $id]);
+    $cobranca = $stmt->fetch();
+    if (!$cobranca) {
+        responderJson(['resultado' => 'erro', 'mensagem' => 'Boleto não encontrado.']);
+    }
+    $r = conferirCobrancaItau($pdo, $contaTela, $cobranca, 'Itaú (conferência manual)');
+    if ($r['resultado'] === 'baixado') {
+        registrarAtividade('contas_receber', 'baixa', 'Conferência de boletos no Itaú: nosso nº ' . formatarNossoNumeroItau((int) $cobranca['nosso_numero']) . ' estava pago — ' . $r['mensagem']);
+    }
+    responderJson($r);
 }
 
 $stmt = $pdo->prepare('SELECT COUNT(*) AS qtd, COALESCE(SUM(cb.valor), 0) AS total ' . $sqlAbertos);
@@ -137,6 +120,32 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
         </div>
         <button type="button" class="btn btn-brand" id="btn-conferir" onclick="conferirBoletos()" <?= (int) $abertos['qtd'] ? '' : 'disabled' ?>><i class="bi bi-arrow-repeat"></i> Conferir agora</button>
     </div></div>
+    <?php $agendada = $contaTela['conferencia_horario'] !== null; ?>
+    <form method="post" class="card mb-3"><div class="card-body">
+        <input type="hidden" name="acao" value="agendar">
+        <div class="d-flex flex-wrap align-items-end gap-3">
+            <div class="form-check form-switch mb-1">
+                <input class="form-check-input" type="checkbox" role="switch" id="conferencia-ligada" name="conferencia_ligada" value="1" <?= $agendada ? 'checked' : '' ?> onchange="document.getElementById('conferencia-campos').classList.toggle('d-none', !this.checked)">
+                <label class="form-check-label fw-semibold" for="conferencia-ligada">Conferir automaticamente todos os dias</label>
+            </div>
+            <div id="conferencia-campos" class="d-flex flex-wrap align-items-end gap-2 <?= $agendada ? '' : 'd-none' ?>">
+                <div><label class="form-label small mb-1">Horário</label><input type="time" name="conferencia_horario" class="form-control form-control-sm" value="<?= e(substr((string) ($contaTela['conferencia_horario'] ?? '07:00'), 0, 5)) ?>"></div>
+                <div><label class="form-label small mb-1">Quais boletos</label>
+                    <select name="conferencia_periodo" class="form-select form-select-sm">
+                        <option value="vencidos" <?= $contaTela['conferencia_periodo'] !== 'todos' ? 'selected' : '' ?>>Só os vencidos</option>
+                        <option value="todos" <?= $contaTela['conferencia_periodo'] === 'todos' ? 'selected' : '' ?>>Todos em aberto (inclui a vencer)</option>
+                    </select>
+                </div>
+            </div>
+            <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-check-lg"></i> Salvar</button>
+        </div>
+        <div class="small text-muted mt-2">
+            Faz sozinho o mesmo que o "Conferir agora", uma vez por dia no horário escolhido. O que estiver pago é baixado e avisado no sino.
+            <?php if ($contaTela['conferencia_ultima_em']): ?>
+                <br>Última conferência automática: <?= formatDateTime($contaTela['conferencia_ultima_em']) ?><?= $contaTela['conferencia_ultima_resumo'] ? ' — ' . e($contaTela['conferencia_ultima_resumo']) : '' ?>
+            <?php endif; ?>
+        </div>
+    </div></form>
     <div id="conferir-painel" class="card d-none"><div class="card-body">
         <div id="conferir-status" class="mb-2 small text-muted">Buscando boletos...</div>
         <div class="progress mb-3" style="height: 8px"><div class="progress-bar" id="conferir-barra" style="width: 0%"></div></div>
@@ -191,6 +200,7 @@ async function conferirBoletos() {
     conferindo = true;
     for (let i = 0; i < boletos.length && conferindo; i++) {
         const b = boletos[i];
+        if (i > 0) await new Promise(ok => setTimeout(ok, 1000)); // 1 consulta por segundo ao banco
         status.textContent = `Conferindo ${i + 1} de ${boletos.length}...`;
         const tr = document.createElement('tr');
         tr.innerHTML = `<td style="width: 28px"><span class="spinner-border spinner-border-sm text-muted"></span></td>`

@@ -721,3 +721,141 @@ function formatarJsonLeitura(?string $texto): string
     $json = json_decode($texto, true);
     return $json === null ? $texto : json_encode($json, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 }
+
+/**
+ * Confere um boleto no Itaú e baixa a parcela se o banco mostrar pagamento
+ * (como o aviso do webhook). $cobranca é a linha de cobrancas_bancarias com
+ * parcela_status (status da parcela). Usada pela tela Conferir boletos e
+ * pela conferência automática diária.
+ * Retorna ['resultado' => 'baixado'|'aberto'|'atencao'|'erro'|'ok', 'mensagem' => string].
+ */
+function conferirCobrancaItau(PDO $pdo, array $conta, array $cobranca, string $autor): array
+{
+    $resposta = fn (string $resultado, string $mensagem) => ['resultado' => $resultado, 'mensagem' => $mensagem];
+    if ($cobranca['status'] !== 'registrada' || $cobranca['parcela_status'] !== 'pendente') {
+        return $resposta('ok', 'Já estava resolvido no sistema.');
+    }
+
+    $r = consultarBoletoItau($pdo, $conta, (int) $cobranca['nosso_numero'], (int) $cobranca['conta_receber_id']);
+    if (!$r['ok']) {
+        return $resposta('erro', $r['mensagem']);
+    }
+    if (!$r['boleto']) {
+        return $resposta('atencao', 'O Itaú não encontrou este boleto.');
+    }
+
+    $dados = $r['boleto']['dado_boleto'] ?? [];
+    $situacao = (string) ($dados['dados_individuais_boleto'][0]['situacao_geral_boleto'] ?? '');
+    $pagamentos = array_values(array_filter((array) ($dados['pagamentos_cobranca'] ?? []), 'is_array'));
+
+    if ($pagamentos || mb_stripos($situacao, 'pag') !== false) {
+        $valorPago = null;
+        $dataPagamento = null;
+        foreach ($pagamentos as $pg) {
+            $valor = valorNotificacao($pg['valor_pago_total_cobranca'] ?? null);
+            $valorPago = $valor !== null ? ($valorPago ?? 0) + $valor : $valorPago;
+            $dataPagamento = dataNotificacao($pg['data_inclusao_pagamento'] ?? null) ?? $dataPagamento;
+        }
+        $baixa = baixarCobrancaPeloBanco($pdo, $cobranca, $valorPago, $dataPagamento, 'consulta', $autor);
+        return $resposta('baixado', $baixa['mensagem']);
+    }
+
+    if (mb_stripos($situacao, 'baixad') !== false) {
+        return $resposta('atencao', 'Baixado no Itaú sem pagamento (' . $situacao . '). Confira a parcela.');
+    }
+
+    return $resposta('aberto', $situacao ?: 'Em aberto');
+}
+
+/**
+ * Conferência automática (rotina "emails" do cron, a cada 5 minutos): cada
+ * conta do Itaú com horário marcado é conferida uma vez por dia, na primeira
+ * passada depois do horário. A conta é "reservada" antes de começar, então
+ * duas rotinas ao mesmo tempo não conferem a mesma conta.
+ * Retorna quantas contas foram conferidas.
+ */
+function conferenciaAutomaticaBoletos(PDO $pdo): int
+{
+    $contas = $pdo->query(
+        "SELECT * FROM contas_bancarias
+          WHERE integracao = 'itau' AND ativo = 1 AND conferencia_horario IS NOT NULL
+            AND NOW() >= TIMESTAMP(CURDATE(), conferencia_horario)
+            AND (conferencia_ultima_em IS NULL OR conferencia_ultima_em < TIMESTAMP(CURDATE(), conferencia_horario))"
+    )->fetchAll();
+
+    $feitas = 0;
+    foreach ($contas as $conta) {
+        $reserva = $pdo->prepare(
+            'UPDATE contas_bancarias SET conferencia_ultima_em = NOW()
+              WHERE id = ? AND (conferencia_ultima_em IS NULL OR conferencia_ultima_em < TIMESTAMP(CURDATE(), conferencia_horario))'
+        );
+        $reserva->execute([$conta['id']]);
+        if ($reserva->rowCount() !== 1) {
+            continue;
+        }
+
+        $stmt = $pdo->prepare(
+            "SELECT cb.*, cr.status AS parcela_status
+               FROM cobrancas_bancarias cb
+               JOIN contas_receber cr ON cr.id = cb.conta_receber_id
+              WHERE cb.conta_bancaria_id = ? AND cb.status = 'registrada' AND cr.status = 'pendente' AND cr.excluido_em IS NULL"
+            . ($conta['conferencia_periodo'] === 'todos' ? '' : ' AND cb.data_vencimento < CURDATE()')
+            . ' ORDER BY cb.data_vencimento, cb.id'
+        );
+        $stmt->execute([$conta['id']]);
+        $cobrancas = $stmt->fetchAll();
+
+        $cont = ['baixado' => 0, 'atencao' => 0, 'erro' => 0];
+        $primeiroErro = '';
+        $errosSeguidos = 0;
+        $conferidos = 0;
+        foreach ($cobrancas as $i => $cobranca) {
+            // Banco fora do ar / token recusado: para e tenta amanhã (ou no "Conferir agora").
+            if ($errosSeguidos >= 5) {
+                break;
+            }
+            if ($i > 0) {
+                sleep(1); // devagar: no máximo 1 consulta por segundo ao banco
+            }
+            // Relê a conta: o token pedido na 1ª consulta fica salvo nela e é
+            // reaproveitado nas próximas (sem isso, um token novo por boleto).
+            $atual = $pdo->prepare('SELECT * FROM contas_bancarias WHERE id = ?');
+            $atual->execute([$conta['id']]);
+            $conta = $atual->fetch() ?: $conta;
+            $r = conferirCobrancaItau($pdo, $conta, $cobranca, 'Itaú (conferência automática)');
+            $conferidos++;
+            $errosSeguidos = $r['resultado'] === 'erro' ? $errosSeguidos + 1 : 0;
+            if (isset($cont[$r['resultado']])) {
+                $cont[$r['resultado']]++;
+            }
+            if ($r['resultado'] === 'erro' && $primeiroErro === '') {
+                $primeiroErro = $r['mensagem'];
+            }
+            if ($r['resultado'] === 'baixado') {
+                registrarAtividadeSistema('contas_receber', 'baixa', 'Conferência automática de boletos no Itaú: nosso nº '
+                    . formatarNossoNumeroItau((int) $cobranca['nosso_numero']) . ' estava pago — ' . $r['mensagem']);
+            }
+        }
+
+        $resumo = $conferidos . ' boleto(s) conferido(s)' . ($conferidos < count($cobrancas) ? ' de ' . count($cobrancas) . ' (parou: o banco não respondeu)' : '') . ', ' . $cont['baixado'] . ' estava(m) pago(s) e foi(ram) baixado(s)'
+            . ($cont['atencao'] ? ", {$cont['atencao']} para olhar" : '') . ($cont['erro'] ? ", {$cont['erro']} com erro" : '') . '.';
+        $pdo->prepare('UPDATE contas_bancarias SET conferencia_ultima_resumo = ? WHERE id = ?')
+            ->execute([mb_strimwidth($resumo, 0, 255, '…', 'UTF-8'), $conta['id']]);
+        registrarAtividadeSistema('rotinas', 'verificacao', "Conferência automática de boletos ({$conta['apelido']}): {$resumo}");
+
+        $link = '/contas_bancarias/conferir_boletos.php?id=' . (int) $conta['id'];
+        if ($cont['baixado'] || $cont['atencao']) {
+            criarNotificacao($pdo, 'pagamento', 'Conferência automática de boletos',
+                $conta['apelido'] . ': ' . implode(' ', array_filter([
+                    $cont['baixado'] ? "{$cont['baixado']} boleto(s) pago(s) sem aviso do banco — já baixado(s)." : '',
+                    $cont['atencao'] ? "{$cont['atencao']} boleto(s) para olhar (baixado no banco sem pagamento ou não encontrado)." : '',
+                ])), $link);
+        }
+        if ($cont['erro']) {
+            criarNotificacao($pdo, 'pagamento', 'Conferência automática de boletos com erro',
+                "{$conta['apelido']}: " . ($conferidos < count($cobrancas) ? 'o banco não respondeu e a conferência parou. ' : "{$cont['erro']} boleto(s) não puderam ser conferidos. ") . $primeiroErro, $link);
+        }
+        $feitas++;
+    }
+    return $feitas;
+}

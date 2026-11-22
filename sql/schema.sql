@@ -425,6 +425,12 @@ CREATE TABLE contas_bancarias (
     webhook_client_secret_cripto TEXT DEFAULT NULL,
     webhook_cadastrado_em DATETIME DEFAULT NULL,
     webhook_pix_cadastrado_em DATETIME DEFAULT NULL,
+    -- Conferência automática de boletos (1x por dia, rotina "emails" do
+    -- cron): pergunta ao banco e baixa os pagos. Horário vazio = desligada.
+    conferencia_horario TIME DEFAULT NULL,
+    conferencia_periodo ENUM('vencidos', 'todos') NOT NULL DEFAULT 'vencidos',
+    conferencia_ultima_em DATETIME DEFAULT NULL,
+    conferencia_ultima_resumo VARCHAR(255) DEFAULT NULL,
     padrao TINYINT(1) NOT NULL DEFAULT 0,
     ativo TINYINT(1) NOT NULL DEFAULT 1,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
