@@ -723,11 +723,14 @@ function formatarJsonLeitura(?string $texto): string
 }
 
 /**
- * Confere um boleto no Itaú e baixa a parcela se o banco mostrar pagamento
- * (como o aviso do webhook). $cobranca é a linha de cobrancas_bancarias com
- * parcela_status (status da parcela). Usada pela tela Conferir boletos e
- * pela conferência automática diária.
- * Retorna ['resultado' => 'baixado'|'aberto'|'atencao'|'erro'|'ok', 'mensagem' => string].
+ * Confere um boleto no Itaú e resolve o que der para resolver sozinho:
+ *   - pago no banco → baixa a parcela (como o aviso do webhook);
+ *   - baixado no banco sem pagamento → o boleto sai da parcela (o nosso
+ *     número não vale mais) e fica no histórico dela, com a data da baixa
+ *     informada pelo banco.
+ * $cobranca é a linha de cobrancas_bancarias com parcela_status (status da
+ * parcela). Usada pela tela Conferir boletos e pela conferência automática.
+ * Retorna ['resultado' => 'baixado'|'baixado_banco'|'aberto'|'atencao'|'erro'|'ok', 'mensagem' => string].
  */
 function conferirCobrancaItau(PDO $pdo, array $conta, array $cobranca, string $autor): array
 {
@@ -761,7 +764,26 @@ function conferirCobrancaItau(PDO $pdo, array $conta, array $cobranca, string $a
     }
 
     if (mb_stripos($situacao, 'baixad') !== false) {
-        return $resposta('atencao', 'Baixado no Itaú sem pagamento (' . $situacao . '). Confira a parcela.');
+        // Data e motivo da baixa vêm do banco ("baixa": {"data_inclusao_alteracao_baixa", "motivo_baixa"}).
+        $dataBaixa = dataNotificacao(campoNotificacao($r['boleto'], ['data_inclusao_alteracao_baixa', 'data_baixa']));
+        $motivo = trim((string) (campoNotificacao($r['boleto'], ['motivo_baixa']) ?? ''));
+        // O histórico do banco diz quem/como baixou (ex.: "BAIXAR E DEVOLVER" pelo celular).
+        foreach (operacoesHistoricoBoletoItau($r['boleto']) as $op) {
+            if (mb_stripos((string) ($op['operacao'] ?? ''), 'baix') !== false) {
+                $dataBaixa ??= dataNotificacao($op['data'] ?? null);
+                $canal = trim((string) ($op['descricao_canal_origem'] ?? $op['canal_origem'] ?? ''));
+                $motivo = trim($motivo . ($motivo !== '' ? ' · ' : '') . mb_strtolower((string) $op['operacao']) . ($canal !== '' ? ' pelo ' . mb_strtolower($canal) : ''));
+                break;
+            }
+        }
+        $numero = formatarNossoNumeroItau((int) $cobranca['nosso_numero']);
+        $pdo->prepare("UPDATE cobrancas_bancarias SET status = 'baixada', mensagem_erro = NULL WHERE id = ? AND status = 'registrada'")
+            ->execute([$cobranca['id']]);
+        $texto = "Boleto nº {$numero} baixado no Itaú" . ($dataBaixa ? ' em ' . formatDate($dataBaixa) : '') . ($motivo !== '' ? " ({$motivo})" : '')
+            . ', sem pagamento. Esse nosso número não vale mais; a parcela continua em aberto, sem boleto.';
+        registrarHistoricoParcela($pdo, (int) $cobranca['conta_receber_id'], 'boleto_baixado', $texto, $dataBaixa);
+        return $resposta('baixado_banco', 'Baixado no Itaú' . ($dataBaixa ? ' em ' . formatDate($dataBaixa) : '') . ($motivo !== '' ? " ({$motivo})" : '')
+            . ' sem pagamento — boleto tirado da parcela (fica no histórico).');
     }
 
     return $resposta('aberto', $situacao ?: 'Em aberto');
@@ -771,7 +793,8 @@ function conferirCobrancaItau(PDO $pdo, array $conta, array $cobranca, string $a
  * Conferência automática (rotina "emails" do cron, a cada 5 minutos): cada
  * conta do Itaú com horário marcado é conferida uma vez por dia, na primeira
  * passada depois do horário. A conta é "reservada" antes de começar, então
- * duas rotinas ao mesmo tempo não conferem a mesma conta.
+ * duas rotinas ao mesmo tempo não conferem a mesma conta. O sino só é usado
+ * quando algo deu errado; o resto fica no resumo da tela Conferir boletos.
  * Retorna quantas contas foram conferidas.
  */
 function conferenciaAutomaticaBoletos(PDO $pdo): int
@@ -795,9 +818,10 @@ function conferenciaAutomaticaBoletos(PDO $pdo): int
         }
 
         $stmt = $pdo->prepare(
-            "SELECT cb.*, cr.status AS parcela_status
+            "SELECT cb.*, cr.status AS parcela_status, cr.descricao, a.nome AS aluno
                FROM cobrancas_bancarias cb
                JOIN contas_receber cr ON cr.id = cb.conta_receber_id
+               LEFT JOIN alunos a ON a.id = cr.aluno_id
               WHERE cb.conta_bancaria_id = ? AND cb.status = 'registrada' AND cr.status = 'pendente' AND cr.excluido_em IS NULL"
             . ($conta['conferencia_periodo'] === 'todos' ? '' : ' AND cb.data_vencimento < CURDATE()')
             . ' ORDER BY cb.data_vencimento, cb.id'
@@ -805,7 +829,8 @@ function conferenciaAutomaticaBoletos(PDO $pdo): int
         $stmt->execute([$conta['id']]);
         $cobrancas = $stmt->fetchAll();
 
-        $cont = ['baixado' => 0, 'atencao' => 0, 'erro' => 0];
+        $cont = ['baixado' => 0, 'baixado_banco' => 0, 'atencao' => 0, 'erro' => 0];
+        $itens = []; // o que não estava simplesmente em aberto, para a tela
         $primeiroErro = '';
         $errosSeguidos = 0;
         $conferidos = 0;
@@ -825,37 +850,63 @@ function conferenciaAutomaticaBoletos(PDO $pdo): int
             $r = conferirCobrancaItau($pdo, $conta, $cobranca, 'Itaú (conferência automática)');
             $conferidos++;
             $errosSeguidos = $r['resultado'] === 'erro' ? $errosSeguidos + 1 : 0;
-            if (isset($cont[$r['resultado']])) {
-                $cont[$r['resultado']]++;
+            if (!isset($cont[$r['resultado']])) {
+                continue;
             }
-            if ($r['resultado'] === 'erro' && $primeiroErro === '') {
-                $primeiroErro = $r['mensagem'];
-            }
+            $cont[$r['resultado']]++;
+            $primeiroErro = $primeiroErro === '' && $r['resultado'] === 'erro' ? $r['mensagem'] : $primeiroErro;
+            $itens[] = [
+                'parcela' => (int) $cobranca['conta_receber_id'],
+                'quem' => $cobranca['aluno'] ?: $cobranca['descricao'],
+                'descricao' => $cobranca['descricao'],
+                'nosso_numero' => formatarNossoNumeroItau((int) $cobranca['nosso_numero']),
+                'vencimento' => $cobranca['data_vencimento'],
+                'valor' => (float) $cobranca['valor'],
+                'resultado' => $r['resultado'],
+                'mensagem' => mb_strimwidth($r['mensagem'], 0, 300, '…', 'UTF-8'),
+            ];
             if ($r['resultado'] === 'baixado') {
                 registrarAtividadeSistema('contas_receber', 'baixa', 'Conferência automática de boletos no Itaú: nosso nº '
                     . formatarNossoNumeroItau((int) $cobranca['nosso_numero']) . ' estava pago — ' . $r['mensagem']);
             }
         }
 
-        $resumo = $conferidos . ' boleto(s) conferido(s)' . ($conferidos < count($cobrancas) ? ' de ' . count($cobrancas) . ' (parou: o banco não respondeu)' : '') . ', ' . $cont['baixado'] . ' estava(m) pago(s) e foi(ram) baixado(s)'
-            . ($cont['atencao'] ? ", {$cont['atencao']} para olhar" : '') . ($cont['erro'] ? ", {$cont['erro']} com erro" : '') . '.';
-        $pdo->prepare('UPDATE contas_bancarias SET conferencia_ultima_resumo = ? WHERE id = ?')
-            ->execute([mb_strimwidth($resumo, 0, 255, '…', 'UTF-8'), $conta['id']]);
+        $parou = $conferidos < count($cobrancas);
+        $resumo = $conferidos . ' boleto(s) conferido(s)' . ($parou ? ' de ' . count($cobrancas) . ' (parou: o banco não respondeu)' : '')
+            . ', ' . $cont['baixado'] . ' estava(m) pago(s) e foi(ram) baixado(s)'
+            . ($cont['baixado_banco'] ? ", {$cont['baixado_banco']} baixado(s) no banco sem pagamento (tirado(s) da parcela)" : '')
+            . ($cont['atencao'] ? ", {$cont['atencao']} não encontrado(s) no banco" : '') . ($cont['erro'] ? ", {$cont['erro']} com erro" : '') . '.';
+        $pdo->prepare('UPDATE contas_bancarias SET conferencia_ultima_resumo = ?, conferencia_ultima_itens = ? WHERE id = ?')
+            ->execute([mb_strimwidth($resumo, 0, 255, '…', 'UTF-8'), $itens ? json_encode(array_slice($itens, 0, 300), JSON_UNESCAPED_UNICODE) : null, $conta['id']]);
         registrarAtividadeSistema('rotinas', 'verificacao', "Conferência automática de boletos ({$conta['apelido']}): {$resumo}");
 
-        $link = '/contas_bancarias/conferir_boletos.php?id=' . (int) $conta['id'];
-        if ($cont['baixado'] || $cont['atencao']) {
-            criarNotificacao($pdo, 'pagamento', 'Conferência automática de boletos',
-                $conta['apelido'] . ': ' . implode(' ', array_filter([
-                    $cont['baixado'] ? "{$cont['baixado']} boleto(s) pago(s) sem aviso do banco — já baixado(s)." : '',
-                    $cont['atencao'] ? "{$cont['atencao']} boleto(s) para olhar (baixado no banco sem pagamento ou não encontrado)." : '',
-                ])), $link);
-        }
-        if ($cont['erro']) {
+        // Sino só para problema: erro na consulta ou boleto que o banco não achou.
+        if ($cont['erro'] || $cont['atencao']) {
             criarNotificacao($pdo, 'pagamento', 'Conferência automática de boletos com erro',
-                "{$conta['apelido']}: " . ($conferidos < count($cobrancas) ? 'o banco não respondeu e a conferência parou. ' : "{$cont['erro']} boleto(s) não puderam ser conferidos. ") . $primeiroErro, $link);
+                "{$conta['apelido']}: " . implode(' ', array_filter([
+                    $parou ? 'o banco não respondeu e a conferência parou.' : ($cont['erro'] ? "{$cont['erro']} boleto(s) não puderam ser conferidos." : ''),
+                    $cont['atencao'] ? "{$cont['atencao']} boleto(s) não encontrado(s) no Itaú." : '',
+                    $primeiroErro,
+                ])), '/contas_bancarias/conferir_boletos.php?id=' . (int) $conta['id'] . '#ultima-conferencia');
         }
         $feitas++;
     }
     return $feitas;
+}
+
+// Lista "historico" do boleto consultado (data, operacao, canal), em qualquer nível.
+function operacoesHistoricoBoletoItau(array $dados): array
+{
+    foreach ($dados as $chave => $valor) {
+        if (!is_array($valor)) {
+            continue;
+        }
+        if ($chave === 'historico' && array_is_list($valor)) {
+            return array_values(array_filter($valor, 'is_array'));
+        }
+        if ($achado = operacoesHistoricoBoletoItau($valor)) {
+            return $achado;
+        }
+    }
+    return [];
 }

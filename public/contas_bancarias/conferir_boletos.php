@@ -74,6 +74,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $r = conferirCobrancaItau($pdo, $contaTela, $cobranca, 'Itaú (conferência manual)');
     if ($r['resultado'] === 'baixado') {
         registrarAtividade('contas_receber', 'baixa', 'Conferência de boletos no Itaú: nosso nº ' . formatarNossoNumeroItau((int) $cobranca['nosso_numero']) . ' estava pago — ' . $r['mensagem']);
+    } elseif ($r['resultado'] === 'baixado_banco') {
+        registrarAtividade('contas_receber', 'edicao', 'Conferência de boletos no Itaú: nosso nº ' . formatarNossoNumeroItau((int) $cobranca['nosso_numero']) . ' — ' . $r['mensagem']);
     }
     responderJson($r);
 }
@@ -121,7 +123,7 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
         <button type="button" class="btn btn-brand" id="btn-conferir" onclick="conferirBoletos()" <?= (int) $abertos['qtd'] ? '' : 'disabled' ?>><i class="bi bi-arrow-repeat"></i> Conferir agora</button>
     </div></div>
     <?php $agendada = $contaTela['conferencia_horario'] !== null; ?>
-    <form method="post" class="card mb-3"><div class="card-body">
+    <form method="post" class="card mb-3" id="ultima-conferencia"><div class="card-body">
         <input type="hidden" name="acao" value="agendar">
         <div class="d-flex flex-wrap align-items-end gap-3">
             <div class="form-check form-switch mb-1">
@@ -140,11 +142,32 @@ require __DIR__ . '/../../includes/abas_conta_bancaria.php';
             <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-check-lg"></i> Salvar</button>
         </div>
         <div class="small text-muted mt-2">
-            Faz sozinho o mesmo que o "Conferir agora", uma vez por dia no horário escolhido. O que estiver pago é baixado e avisado no sino.
+            Faz sozinho o mesmo que o "Conferir agora", uma vez por dia no horário escolhido. O sino só avisa se der erro.
             <?php if ($contaTela['conferencia_ultima_em']): ?>
                 <br>Última conferência automática: <?= formatDateTime($contaTela['conferencia_ultima_em']) ?><?= $contaTela['conferencia_ultima_resumo'] ? ' — ' . e($contaTela['conferencia_ultima_resumo']) : '' ?>
             <?php endif; ?>
         </div>
+        <?php
+        $itensUltima = json_decode((string) ($contaTela['conferencia_ultima_itens'] ?? ''), true) ?: [];
+        $estiloItem = [
+            'baixado' => ['bi-check-circle-fill text-success', 'Estava pago — baixado'],
+            'baixado_banco' => ['bi-slash-circle text-secondary', 'Baixado no banco sem pagamento'],
+            'atencao' => ['bi-exclamation-triangle-fill text-warning', 'Não encontrado no banco'],
+            'erro' => ['bi-x-circle-fill text-danger', 'Erro na consulta'],
+        ];
+        ?>
+        <?php if ($itensUltima): ?>
+            <div class="table-responsive mt-3"><table class="table table-sm align-middle mb-0">
+                <?php foreach ($itensUltima as $it): [$icone, $rotulo] = $estiloItem[$it['resultado']] ?? $estiloItem['erro']; ?>
+                    <tr>
+                        <td style="width: 28px"><i class="bi <?= $icone ?>"></i></td>
+                        <td><a href="#" onclick="abrirParcela(<?= (int) $it['parcela'] ?>, 'historico'); return false" class="fw-semibold" title="Ver a parcela e o histórico"><?= e($it['quem']) ?></a><div class="small text-muted"><?= e($it['descricao']) ?> · nº <?= e($it['nosso_numero']) ?></div></td>
+                        <td class="small text-nowrap"><?= formatDate($it['vencimento']) ?><br><?= formatMoney($it['valor']) ?></td>
+                        <td class="small"><div class="fw-semibold"><?= e($rotulo) ?></div><div class="text-muted"><?= e($it['mensagem']) ?></div></td>
+                    </tr>
+                <?php endforeach; ?>
+            </table></div>
+        <?php endif; ?>
     </div></form>
     <div id="conferir-painel" class="card d-none"><div class="card-body">
         <div id="conferir-status" class="mb-2 small text-muted">Buscando boletos...</div>
@@ -183,18 +206,20 @@ async function conferirBoletos() {
         barra.style.width = '100%';
         return;
     }
-    const cont = { aberto: 0, baixado: 0, atencao: 0, erro: 0 };
+    const cont = { aberto: 0, baixado: 0, baixado_banco: 0, atencao: 0, erro: 0 };
     const estilo = {
         aberto: ['bi-hourglass-split text-muted', 'Em aberto no banco'],
         baixado: ['bi-check-circle-fill text-success', 'Estava pago — baixado agora'],
-        atencao: ['bi-exclamation-triangle-fill text-warning', 'Atenção'],
+        baixado_banco: ['bi-slash-circle text-secondary', 'Baixado no banco sem pagamento'],
+        atencao: ['bi-exclamation-triangle-fill text-warning', 'Não encontrado no banco'],
         erro: ['bi-x-circle-fill text-danger', 'Erro na consulta'],
         ok: ['bi-check2 text-muted', 'Já resolvido'],
     };
     const pintarResumo = () => {
         resumo.innerHTML = `<span class="badge text-bg-light border">${cont.aberto} em aberto</span>`
             + `<span class="badge text-bg-success">${cont.baixado} baixado(s) agora</span>`
-            + (cont.atencao ? `<span class="badge text-bg-warning">${cont.atencao} para olhar</span>` : '')
+            + (cont.baixado_banco ? `<span class="badge text-bg-secondary">${cont.baixado_banco} baixado(s) no banco sem pagamento</span>` : '')
+            + (cont.atencao ? `<span class="badge text-bg-warning">${cont.atencao} não encontrado(s)</span>` : '')
             + (cont.erro ? `<span class="badge text-bg-danger">${cont.erro} com erro</span>` : '');
     };
     conferindo = true;
@@ -234,4 +259,5 @@ async function conferirBoletos() {
     document.getElementById('btn-conferir').disabled = false;
 }
 </script>
+<?php $voltarParcela = 'lista'; require __DIR__ . '/../../includes/modal_parcela.php'; ?>
 <?php require __DIR__ . '/../../includes/layout_footer.php'; ?>

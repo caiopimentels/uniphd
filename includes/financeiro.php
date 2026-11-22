@@ -1124,13 +1124,14 @@ function validarAdministradorPresente(PDO $pdo, string $email, string $senha): a
  * estorno, cancelamento...). Quem fez sai da sessão: usuário do sistema,
  * aluno no portal ou "Sistema". Nunca derruba a operação principal.
  */
-function registrarHistoricoParcela(PDO $pdo, int $contaReceberId, string $tipo, string $descricao): void
+function registrarHistoricoParcela(PDO $pdo, int $contaReceberId, string $tipo, string $descricao, ?string $quando = null): void
 {
+    // $quando: data do acontecimento quando não é agora (ex.: a data da baixa informada pelo banco).
     try {
         $usuarioId = function_exists('usuarioLogado') && usuarioLogado() ? usuarioAtualId() : null;
         $nome = $usuarioId ? usuarioAtualNome() : (function_exists('alunoLogado') && alunoLogado() ? 'Aluno pelo portal' : 'Sistema');
-        $pdo->prepare('INSERT INTO parcela_historico (conta_receber_id, usuario_id, usuario_nome, tipo, descricao) VALUES (?, ?, ?, ?, ?)')
-            ->execute([$contaReceberId, $usuarioId, $nome, $tipo, mb_strimwidth($descricao, 0, 255, '…', 'UTF-8')]);
+        $pdo->prepare('INSERT INTO parcela_historico (conta_receber_id, usuario_id, usuario_nome, tipo, descricao, criado_em) VALUES (?, ?, ?, ?, ?, COALESCE(?, NOW()))')
+            ->execute([$contaReceberId, $usuarioId, $nome, $tipo, mb_strimwidth($descricao, 0, 255, '…', 'UTF-8'), $quando]);
     } catch (Throwable $e) {
         error_log('[Histórico parcela] ' . $e->getMessage());
     }
@@ -1171,6 +1172,7 @@ function historicoParcela(PDO $pdo, int $contaReceberId): array
         'baixa' => ['Baixa manual', 'bi-check-circle', 'success'],
         'estorno' => ['Estorno da baixa', 'bi-arrow-counterclockwise', 'danger'],
         'cancelamento' => ['Cancelamento', 'bi-x-circle', 'danger'],
+        'boleto_baixado' => ['Boleto baixado no banco', 'bi-slash-circle', 'secondary'],
     ];
     $stmt = $pdo->prepare('SELECT * FROM parcela_historico WHERE conta_receber_id = ? ORDER BY id');
     $stmt->execute([$contaReceberId]);
@@ -1225,13 +1227,21 @@ function historicoParcela(PDO $pdo, int $contaReceberId): array
     // Avisos de pagamento que o banco mandou.
     $stmt = $pdo->prepare('SELECT * FROM webhook_eventos WHERE conta_receber_id = ? ORDER BY id');
     $stmt->execute([$contaReceberId]);
+    $temAvisoPago = false;
     foreach ($stmt->fetchAll() as $ev) {
+        $temAvisoPago = $temAvisoPago || $ev['status'] === 'processado';
         $tipo = $ev['tipo_notificacao'] === 'PIX' ? 'Pix' : 'boleto' . ($ev['tipo_notificacao'] ? ' (' . strtolower(str_replace('_', ' ', $ev['tipo_notificacao'])) . ')' : '');
         $pago = $ev['status'] === 'processado';
         $itens[] = $item($ev['criado_em'], 'Itaú',
             $pago ? 'Pago — aviso de ' . $tipo : 'Aviso de ' . $tipo . ' recebido',
             trim(($ev['valor_pago'] !== null ? formatMoney($ev['valor_pago']) : '') . ($ev['data_pagamento'] ? ' em ' . formatDate($ev['data_pagamento']) : '') . ' · ' . $ev['mensagem'], ' ·'),
             $pago ? 'bi-cash-coin' : 'bi-broadcast', $pago ? 'success' : 'secondary', 3);
+    }
+
+    // Baixa pelo banco sem aviso: achada na conferência de boletos (consulta ao Itaú).
+    if ($parcela['status'] === 'pago' && $parcela['baixa_origem'] === 'banco' && !$temAvisoPago) {
+        $itens[] = $item($parcela['data_recebimento'] . ' 12:00:00', 'Itaú', 'Pago — achado na conferência de boletos',
+            formatMoney($parcela['valor_recebido'] ?? $parcela['valor']) . ' em ' . formatDate($parcela['data_recebimento']) . ' · o banco não mandou aviso', 'bi-cash-coin', 'success', 3);
     }
 
     // Baixa manual de antes do histórico existir.

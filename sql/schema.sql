@@ -431,6 +431,7 @@ CREATE TABLE contas_bancarias (
     conferencia_periodo ENUM('vencidos', 'todos') NOT NULL DEFAULT 'vencidos',
     conferencia_ultima_em DATETIME DEFAULT NULL,
     conferencia_ultima_resumo VARCHAR(255) DEFAULT NULL,
+    conferencia_ultima_itens MEDIUMTEXT DEFAULT NULL, -- JSON: o que não estava só em aberto
     padrao TINYINT(1) NOT NULL DEFAULT 0,
     ativo TINYINT(1) NOT NULL DEFAULT 1,
     criado_em TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
