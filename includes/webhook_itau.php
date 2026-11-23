@@ -780,10 +780,10 @@ function conferirCobrancaItau(PDO $pdo, array $conta, array $cobranca, string $a
         $pdo->prepare("UPDATE cobrancas_bancarias SET status = 'baixada', mensagem_erro = NULL WHERE id = ? AND status = 'registrada'")
             ->execute([$cobranca['id']]);
         $texto = "Boleto nº {$numero} baixado no Itaú" . ($dataBaixa ? ' em ' . formatDate($dataBaixa) : '') . ($motivo !== '' ? " ({$motivo})" : '')
-            . ', sem pagamento. Esse nosso número não vale mais; a parcela continua em aberto, sem boleto.';
+            . ', sem pagamento.';
         registrarHistoricoParcela($pdo, (int) $cobranca['conta_receber_id'], 'boleto_baixado', $texto, $dataBaixa);
         return $resposta('baixado_banco', 'Baixado no Itaú' . ($dataBaixa ? ' em ' . formatDate($dataBaixa) : '') . ($motivo !== '' ? " ({$motivo})" : '')
-            . ' sem pagamento — boleto tirado da parcela (fica no histórico).');
+            . ' sem pagamento.');
     }
 
     return $resposta('aberto', $situacao ?: 'Em aberto');

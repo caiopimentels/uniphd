@@ -7,6 +7,7 @@ $pdo = getDB();
 $status = implode(',', listaStatusPagar($_GET['status'] ?? 'pendente,vencido'));
 $dataInicio = $_GET['data_inicio'] ?? '';
 $dataFim = $_GET['data_fim'] ?? '';
+$busca = trim((string) ($_GET['busca'] ?? ''));
 
 $where = '1=1';
 $params = [];
@@ -18,6 +19,11 @@ if ($dataInicio !== '') {
 if ($dataFim !== '') {
     $where .= ' AND cp.data_vencimento <= ?';
     $params[] = $dataFim;
+}
+if ($busca !== '') {
+    [$sqlBusca, $paramsBusca] = filtroBuscaPagar($busca);
+    $where .= $sqlBusca;
+    $params = array_merge($params, $paramsBusca);
 }
 
 $stmt = $pdo->prepare(
@@ -79,6 +85,7 @@ $labelTotal = count(listaStatusPagar($status)) > 1 ? 'Total da seleção' : matc
         <?php if ($dataInicio || $dataFim): ?>
             &middot; Vencimento: <?= $dataInicio ? formatDate($dataInicio) : '...' ?> a <?= $dataFim ? formatDate($dataFim) : '...' ?>
         <?php endif; ?>
+        <?php if ($busca !== ''): ?>&middot; Busca: <?= e($busca) ?><?php endif; ?>
         &middot; Emitido em <?= formatDateTime(date('Y-m-d H:i:s')) ?>
     </p>
 

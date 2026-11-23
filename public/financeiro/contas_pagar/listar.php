@@ -7,17 +7,20 @@ $pdo = getDB();
 // Lembra o último filtro usado nesta tela entre uma visita e outra — sem
 // isso, todo acesso pelo menu resetava pra "Pendentes" e perdia o período
 // escolhido, obrigando a escolher tudo de novo só pra ajustar a data.
-$_SESSION['filtro_contas_pagar'] = array_merge(['status' => 'pendente,vencido', 'data_inicio' => '', 'data_fim' => ''], $_SESSION['filtro_contas_pagar'] ?? []);
-if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim'])) {
+$_SESSION['filtro_contas_pagar'] = array_merge(['status' => 'pendente,vencido', 'data_inicio' => '', 'data_fim' => '', 'busca' => ''], $_SESSION['filtro_contas_pagar'] ?? []);
+esquecerBuscaAoChegar($_SESSION['filtro_contas_pagar']);
+if (isset($_GET['status']) || isset($_GET['data_inicio']) || isset($_GET['data_fim']) || isset($_GET['busca'])) {
     $_SESSION['filtro_contas_pagar'] = [
         'status' => implode(',', listaStatusPagar($_GET['status'] ?? [])),
         'data_inicio' => $_GET['data_inicio'] ?? '',
         'data_fim' => $_GET['data_fim'] ?? '',
+        'busca' => trim((string) ($_GET['busca'] ?? '')),
     ];
 }
 $status = $_SESSION['filtro_contas_pagar']['status'];
 $dataInicio = $_SESSION['filtro_contas_pagar']['data_inicio'];
 $dataFim = $_SESSION['filtro_contas_pagar']['data_fim'];
+$busca = $_SESSION['filtro_contas_pagar']['busca'];
 
 $where = '1=1';
 $params = [];
@@ -30,6 +33,11 @@ if ($dataInicio !== '') {
 if ($dataFim !== '') {
     $where .= ' AND cp.data_vencimento <= ?';
     $params[] = $dataFim;
+}
+if ($busca !== '') {
+    [$sqlBusca, $paramsBusca] = filtroBuscaPagar($busca);
+    $where .= $sqlBusca;
+    $params = array_merge($params, $paramsBusca);
 }
 
 $stmt = $pdo->prepare(
@@ -66,6 +74,7 @@ $queryImpressao = http_build_query([
     'status' => $status,
     'data_inicio' => $dataInicio,
     'data_fim' => $dataFim,
+    'busca' => $busca,
 ]);
 
 $pageTitle = 'Contas a pagar';
@@ -79,6 +88,10 @@ require __DIR__ . '/../../../includes/layout_header.php';
 <div class="filtros">
     <form method="get">
         <?php $opcoesStatus = opcoesStatusPagar(); require __DIR__ . '/../../../includes/filtro_status.php'; ?>
+        <div class="input-group filtro-busca" style="width: 250px">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="search" name="busca" class="form-control" placeholder="Descrição, fornecedor, turma..." value="<?= e($busca) ?>" onsearch="this.form.submit()">
+        </div>
         <?php require __DIR__ . '/../../../includes/filtro_periodo.php'; ?>
     </form>
     <div class="ms-auto d-flex align-items-center gap-2">

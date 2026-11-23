@@ -406,6 +406,21 @@ function filtroBuscaAlunoReceber(string $busca): array
     return [$sql . ')', $params];
 }
 
+// Busca do Contas a pagar (aliases da listagem: cp, f, c, t, cu): descrição,
+// observação, fornecedor (nome ou dígitos do CPF/CNPJ), categoria e turma/curso.
+function filtroBuscaPagar(string $busca): array
+{
+    $like = '%' . $busca . '%';
+    $sql = ' AND (cp.descricao LIKE ? OR cp.observacao LIKE ? OR f.nome LIKE ? OR c.nome LIKE ? OR t.nome LIKE ? OR cu.nome LIKE ?';
+    $params = [$like, $like, $like, $like, $like, $like];
+    $digitos = preg_replace('/\D/', '', $busca);
+    if (strlen($digitos) >= 3) {
+        $sql .= " OR REPLACE(REPLACE(REPLACE(f.documento, '.', ''), '-', ''), '/', '') LIKE ?";
+        $params[] = '%' . $digitos . '%';
+    }
+    return [$sql . ')', $params];
+}
+
 /** Situações do filtro do Contas a receber (podem ser marcadas várias). */
 /** Situações do filtro do Contas a receber. Pendente = ainda não venceu; Vencida = passou do vencimento sem pagar. */
 function opcoesStatusReceber(): array
